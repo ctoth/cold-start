@@ -22,6 +22,7 @@ from cold_start.checker import Theory, check
 from cold_start.peano import ADD_SUCC_F, ADD_ZERO_F, PEANO, ZERO, S, add, numeral
 from cold_start.proofs import add_proof
 from cold_start.syntax import (
+    Bottom,
     Eq,
     Formula,
     Fun,
@@ -62,6 +63,8 @@ def eval_formula(f: Formula, env: dict) -> bool:
         return eval_term(f.lhs, env) == eval_term(f.rhs, env)
     if isinstance(f, Implies):
         return (not eval_formula(f.ant, env)) or eval_formula(f.con, env)
+    if isinstance(f, Bottom):
+        return False
     raise Uninterpretable(repr(f))
 
 
@@ -90,7 +93,7 @@ def nat_terms():
 
 def nat_formulas():
     return st.recursive(
-        st.builds(Eq, nat_terms(), nat_terms()),
+        st.one_of(st.builds(Eq, nat_terms(), nat_terms()), st.just(Bottom())),
         lambda kids: st.builds(Implies, kids, kids),
         max_leaves=5,
     )
@@ -117,6 +120,8 @@ def nat_proofs():
             st.builds(P.ImpIntro, nat_formulas(), kids),
             st.builds(P.Inst, kids, VAR_NAMES, nat_terms()),
             st.builds(P.Induct, VAR_NAMES, nat_formulas(), kids, kids),
+            st.builds(P.ExFalso, kids, nat_formulas()),
+            st.builds(P.RAA, nat_formulas(), kids),
         ),
         max_leaves=12,
     )

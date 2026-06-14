@@ -94,6 +94,23 @@ class Induct(Pf):
     step: Pf
 
 
+@dataclass(frozen=True, slots=True)
+class ExFalso(Pf):
+    """Ex falso quodlibet: from a proof of Bottom, conclude any formula."""
+
+    sub: Pf
+    concl: Formula
+
+
+@dataclass(frozen=True, slots=True)
+class RAA(Pf):
+    """Classical reductio: from a proof of Bottom under the hypothesis Not(goal),
+    discharge that hypothesis and conclude goal."""
+
+    goal: Formula
+    sub: Pf
+
+
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
@@ -126,6 +143,10 @@ def to_dict(p: Pf) -> dict:
             "base": to_dict(p.base),
             "step": to_dict(p.step),
         }
+    if isinstance(p, ExFalso):
+        return {"k": "ExFalso", "sub": to_dict(p.sub), "concl": formula_to_dict(p.concl)}
+    if isinstance(p, RAA):
+        return {"k": "RAA", "goal": formula_to_dict(p.goal), "sub": to_dict(p.sub)}
     raise TypeError(f"not a proof term: {p!r}")
 
 
@@ -163,6 +184,10 @@ def from_dict(d: object) -> Pf:
         if not isinstance(var, str):
             raise ValueError("Induct.var must be a string")
         return Induct(var, formula_from_dict(d["pred"]), from_dict(d["base"]), from_dict(d["step"]))
+    if kind == "ExFalso":
+        return ExFalso(from_dict(d["sub"]), formula_from_dict(d["concl"]))
+    if kind == "RAA":
+        return RAA(formula_from_dict(d["goal"]), from_dict(d["sub"]))
     raise ValueError(f"unknown proof kind: {kind!r}")
 
 

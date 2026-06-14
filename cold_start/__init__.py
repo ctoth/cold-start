@@ -11,9 +11,11 @@ from .checker import Sequent, Theory, check, validate_proof
 from .peano import PEANO, ZERO, S, add, induction, numeral
 from .proof import (
     MP,
+    RAA,
     Assume,
     Axiom,
     Cong,
+    ExFalso,
     ImpIntro,
     Induct,
     Inst,
@@ -24,13 +26,14 @@ from .proof import (
     from_json,
     to_json,
 )
-from .syntax import Eq, Formula, Fun, Implies, Term, Var
+from .syntax import Bottom, Eq, Formula, Fun, Implies, Not, Term, Var
 
 __all__ = [
     # language
-    "Term", "Var", "Fun", "Formula", "Eq", "Implies",
+    "Term", "Var", "Fun", "Formula", "Eq", "Implies", "Bottom", "Not",
     # proof terms
     "Pf", "Axiom", "Assume", "Refl", "Sym", "Trans", "Cong", "MP", "ImpIntro", "Inst", "Induct",
+    "ExFalso", "RAA",
     "to_json", "from_json",
     # checker
     "Sequent", "Theory", "check", "validate_proof",

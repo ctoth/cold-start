@@ -20,10 +20,12 @@ from functools import lru_cache
 
 from . import proof as P
 from .syntax import (
+    Bottom,
     Eq,
     Formula,
     Fun,
     Implies,
+    Not,
     Term,
     Var,
     formula_free_vars,
@@ -140,6 +142,8 @@ def _sort_structure(f: object, sig: Signature) -> None:
     elif type(f) is Implies:
         _sort_structure(f.ant, sig)
         _sort_structure(f.con, sig)
+    elif type(f) is Bottom:
+        pass  # the formula constant carries no sort
     else:
         raise TypeError(f"not a formula: {f!r}")
 
@@ -243,6 +247,12 @@ def validate_proof(pf: object) -> None:
         validate_formula(pf.pred)
         validate_proof(pf.base)
         validate_proof(pf.step)
+    elif type(pf) is P.ExFalso:
+        validate_formula(pf.concl)
+        validate_proof(pf.sub)
+    elif type(pf) is P.RAA:
+        validate_formula(pf.goal)
+        validate_proof(pf.sub)
     else:
         raise TypeError(f"not a proof term: {pf!r}")
 
@@ -393,6 +403,20 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
                     f"induction variable {pf.var!r} is free in hypothesis {h!r}"
                 )
         return Sequent(hyps, pf.pred)
+
+    if type(pf) is P.ExFalso:
+        # ex falso quodlibet: a proof of Bottom yields any (well-formed) formula.
+        s = _derive(pf.sub, theory)
+        if type(s.concl) is not Bottom:
+            raise ValueError(f"ex falso needs a proof of Bottom, got {s.concl!r}")
+        return Sequent(s.hyps, pf.concl)
+
+    if type(pf) is P.RAA:
+        # classical reductio: assuming Not(goal) leads to Bottom, so goal holds.
+        s = _derive(pf.sub, theory)
+        if type(s.concl) is not Bottom:
+            raise ValueError(f"reductio needs a proof of Bottom, got {s.concl!r}")
+        return Sequent(s.hyps - {Not(pf.goal)}, pf.goal)
 
     raise TypeError(f"not a proof term: {pf!r}")  # unreachable after validate_proof
 

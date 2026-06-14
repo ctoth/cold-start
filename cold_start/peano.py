@@ -14,6 +14,8 @@ from .syntax import (
     Eq,
     Formula,
     Fun,
+    Implies,
+    Not,
     Term,
     Var,
 )
@@ -46,12 +48,18 @@ def numeral(n: int) -> Term:
 ADD_ZERO_F: Formula = Eq(add(Var("x"), ZERO), Var("x"))  # x + 0 = x
 ADD_SUCC_F: Formula = Eq(add(Var("x"), S(Var("y"))), S(add(Var("x"), Var("y"))))  # x + S y = S(x+y)
 
+# The two Peano axioms that need negation: 0 is not a successor, and successor is
+# injective. Together they make distinct numerals provably unequal -- retiring
+# the model-only witness we used before `Not` existed.
+SUCC_NEQ_ZERO: Formula = Not(Eq(S(Var("x")), ZERO))  # S x != 0
+SUCC_INJ: Formula = Implies(Eq(S(Var("x")), S(Var("y"))), Eq(Var("x"), Var("y")))  # Sx=Sy -> x=y
+
 
 # Induction is a *rule*, not an axiom (encoding the schema as an axiom formula
 # is unsound here -- see checker.Theory). The theory just declares its zero and
 # successor so the checker's Induct rule knows the recursion structure.
 PEANO = Theory(
-    axioms=frozenset({ADD_ZERO_F, ADD_SUCC_F}),
+    axioms=frozenset({ADD_ZERO_F, ADD_SUCC_F, SUCC_NEQ_ZERO, SUCC_INJ}),
     zero=ZERO,
     succ="S",
 )

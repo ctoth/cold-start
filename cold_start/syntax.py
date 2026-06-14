@@ -97,11 +97,25 @@ class Implies(Formula):
         return f"({self.ant!r} -> {self.con!r})"
 
 
+@dataclass(frozen=True, slots=True)
+class Bottom(Formula):
+    """Absurdity (falsum). Negation is sugar: Not(A) == Implies(A, Bottom())."""
+
+    def __repr__(self) -> str:
+        return "⊥"  # ⊥
+
+
+def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
+    return Implies(a, Bottom())
+
+
 def formula_free_vars(f: Formula) -> frozenset:
     if isinstance(f, Eq):
         return term_free_vars(f.lhs) | term_free_vars(f.rhs)
     if isinstance(f, Implies):
         return formula_free_vars(f.ant) | formula_free_vars(f.con)
+    if isinstance(f, Bottom):
+        return frozenset()
     raise TypeError(f"not a formula: {f!r}")
 
 
@@ -110,6 +124,8 @@ def formula_subst(f: Formula, var: str, repl: Term) -> Formula:
         return Eq(term_subst(f.lhs, var, repl), term_subst(f.rhs, var, repl))
     if isinstance(f, Implies):
         return Implies(formula_subst(f.ant, var, repl), formula_subst(f.con, var, repl))
+    if isinstance(f, Bottom):
+        return f
     raise TypeError(f"not a formula: {f!r}")
 
 
@@ -153,6 +169,8 @@ def validate_formula(f: object) -> None:
         validate_formula(f.ant)
         validate_formula(f.con)
         return
+    if type(f) is Bottom:
+        return
     raise TypeError(f"non-canonical formula: {type(f).__name__}")
 
 
@@ -193,6 +211,8 @@ def formula_to_dict(f: Formula) -> dict:
         return {"k": "Eq", "lhs": term_to_dict(f.lhs), "rhs": term_to_dict(f.rhs)}
     if isinstance(f, Implies):
         return {"k": "Implies", "ant": formula_to_dict(f.ant), "con": formula_to_dict(f.con)}
+    if isinstance(f, Bottom):
+        return {"k": "Bottom"}
     raise TypeError(f"not a formula: {f!r}")
 
 
@@ -204,4 +224,6 @@ def formula_from_dict(d: object) -> Formula:
         return Eq(term_from_dict(d["lhs"]), term_from_dict(d["rhs"]))
     if kind == "Implies":
         return Implies(formula_from_dict(d["ant"]), formula_from_dict(d["con"]))
+    if kind == "Bottom":
+        return Bottom()
     raise ValueError(f"unknown formula kind: {kind!r}")
