@@ -73,3 +73,49 @@ MONOID_ACTION = Theory(
     axioms=frozenset({M_ASSOC, M_LEFT_ID, M_RIGHT_ID, ACT_ID, ACT_COMP}),
     signature=ACTION_SIG,
 )
+
+
+# --- rings ----------------------------------------------------------------
+# A ring with unity (not assumed commutative): an abelian group under +, a
+# monoid under *, tied by distributivity. `*` reuses `mul`; commutativity of `*`
+# is an EXTRA axiom (COMM), never a theorem -- the non-commutative matrix model
+# in the tests is the witness.
+
+R0 = Fun("0", ())  # additive identity
+R1 = Fun("1", ())  # multiplicative identity
+
+
+def add(a: Term, b: Term) -> Term:
+    return Fun("+", (a, b))
+
+
+def neg(a: Term) -> Term:
+    return Fun("neg", (a,))
+
+
+ADD_ASSOC = Eq(add(add(_x, _y), _z), add(_x, add(_y, _z)))
+ADD_COMM = Eq(add(_x, _y), add(_y, _x))
+ADD_ZERO = Eq(add(_x, R0), _x)  # x + 0 = x
+ADD_NEG = Eq(add(_x, neg(_x)), R0)  # x + (-x) = 0
+MUL_ASSOC = Eq(mul(mul(_x, _y), _z), mul(_x, mul(_y, _z)))
+MUL_LEFT_ID = Eq(mul(R1, _x), _x)  # 1*x = x
+MUL_RIGHT_ID = Eq(mul(_x, R1), _x)  # x*1 = x
+DIST_LEFT = Eq(mul(_x, add(_y, _z)), add(mul(_x, _y), mul(_x, _z)))  # x(y+z)=xy+xz
+DIST_RIGHT = Eq(mul(add(_x, _y), _z), add(mul(_x, _z), mul(_y, _z)))  # (x+y)z=xz+yz
+
+RING_AXIOMS = frozenset(
+    {
+        ADD_ASSOC,
+        ADD_COMM,
+        ADD_ZERO,
+        ADD_NEG,
+        MUL_ASSOC,
+        MUL_LEFT_ID,
+        MUL_RIGHT_ID,
+        DIST_LEFT,
+        DIST_RIGHT,
+    }
+)
+
+RING = Theory(axioms=RING_AXIOMS)
+COMM_RING = Theory(axioms=RING_AXIOMS | {COMM})  # COMM is x*y = y*x (reused)
