@@ -1,52 +1,76 @@
 # cold-start
 
-Number theory from nothing. We build the proof checker *and* the mathematics —
-nothing gets to call itself a theorem unless the kernel minted it.
+Number theory from nothing — built so that *nothing is trusted but a small
+checker re-deriving proofs from inert data*.
 
-This is an LCF-style proof kernel for first-order logic with equality, plus a
-Peano-arithmetic layer on top, written in plain Python with no dependencies.
-The point is that the trusted base is small enough to read in one sitting.
+This is a proof system in plain, dependency-free Python, organised around the
+**De Bruijn criterion**: an (untrusted, possibly buggy or hostile) prover emits
+a serializable *proof term*; one tiny trusted `check()` re-derives the
+conclusion from scratch. You never have to trust that some object "is really a
+theorem" — you trust that `check()` ran and didn't raise.
+
+## Why not just an opaque `Theorem` type?
+
+We started there (LCF-style: a guarded `Theorem` only the kernel can mint). In
+Python that guarantee is unenforceable — `object.__new__`, reaching the
+constructor token, or monkeypatching all forge one. Worse, any rule comparing
+terms with `==` trusts `__eq__`, and a hostile `Term`/`str` **subclass** can
+override it to derive `1 = 0` from reflexivity alone. (Both are regression tests
+now: see `test_checker.py`.)
+
+The De Bruijn design dissolves these: the checker consumes *recipes* (data),
+not theorem objects, so there's nothing to forge but a proof that checks. And it
+validates every term/formula with **exact-type** checks before trusting `==`, so
+a lying subclass is rejected as non-canonical.
 
 ## The pieces
 
-- **`kernel.py`** — the trusted core (~250 lines). Terms, formulas (`Eq`,
-  `Implies`), and an opaque `Theorem` type. A `Theorem` is a sequent
-  `hyps |- conclusion`. You cannot construct one directly — every inference
-  rule is the only door, and `axiom` is the explicit trusted door for
-  asserting new axioms. The kernel knows nothing about numbers.
-- **`peano.py`** — the signature (zero, successor, `+`) and the Peano axioms,
-  asserted through `kernel.axiom`. Induction is *derived* here as two
-  modus-ponens steps against an induction-schema axiom, so the kernel stays
-  theory-agnostic.
-- **`proofs.py`** — worked proofs. Currently: `0 + n = n` by induction.
-- **`test_kernel.py`** — the evidence. Covers each inference rule, the
-  trust boundary (you can't forge a `Theorem`), computation (`2 + 1 = 3`),
-  and the headline theorem.
-
-## Design commitments (v0)
-
-- **Free variables are implicitly universally quantified** (the Boyer–Moore
-  instinct). This is what makes `instantiate` sound and lets us skip an
-  explicit `forall` connective for the arithmetic we do here.
-- **Sound by construction.** The only soundness-critical code is `kernel.py`
-  plus whichever axioms `peano.py` feeds through `axiom`. Everything else is
-  checked.
-- **Minimal logic.** Just `Eq` and `Implies` for now — exactly enough to
-  bootstrap addition and prove its left identity.
+- **`syntax.py`** — the object language: terms (`Var`/`Fun`), formulas
+  (`Eq`/`Implies`), free-vars/substitution, exact-type `validate_*`, and JSON
+  ser/deser. *Not trusted* — a formula is a claim, not a proof.
+- **`proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`, `Trans`,
+  `Cong`, `MP`, `ImpIntro`, `Inst`): the inert recipe a prover emits.
+  Serializable to JSON. *Not trusted.*
+- **`checker.py`** — **THE TRUSTED CORE.** `validate_proof` (one structural
+  pass), `check(proof, theory) -> Sequent`, and the pure recursive `_derive`.
+  A `Sequent` deliberately has no construction guard: holding one proves
+  nothing; only `check()` returning it is authority.
+- **`peano.py`** — Peano as a *theory*: signature (`0`, `S`, `+`), the two
+  addition axioms, and an induction-schema **recognizer**. Defining what counts
+  as an axiom is part of choosing a theory, so the recognizer is trusted — and
+  short. Induction is *derived* (two modus-ponens against the schema).
+- **`proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
+- **`verify.py`** — a CLI that checks a JSON proof in a **separate process**,
+  trusting only `checker.py` + the named theory. The De Bruijn payoff made real.
+- **`test_checker.py`** — the suite: rules, the soundness attacks, serialization
+  round-trip, and the cross-process verification.
 
 ## Run it
 
 ```sh
-python test_kernel.py     # standalone, no pytest needed
-python proofs.py          # prints:  |- +(0, n) = n
+python -m pytest                       # the whole suite (also: python test_checker.py)
+python proofs.py                       # prints:  |- +(0, n) = n
+python proofs.py | python -c "import proof,sys; print(proof.to_json(__import__('proofs').left_identity_proof()))" \
+    | python verify.py                 # verify a proof in a fresh process
 ```
+
+## Design commitments (v0)
+
+- **Trust the verifier, not the object.** Authority is `check()` re-deriving a
+  sequent from serializable data — robust to every in-process forgery.
+- **Validate untrusted input with exact types** before trusting `==`.
+- **Free variables are implicitly universally quantified** (the Boyer–Moore
+  instinct); `instantiate` is sound for variables not free in the hypotheses.
+- **Minimal logic:** `Eq` and `Implies` only — enough to bootstrap addition.
 
 ## Roadmap / next holes to dig
 
-- [ ] `Not` (and `0 != S(x)`, successor injectivity as usable axioms)
-- [ ] Prove `n + 0 = 0 + n` → full commutativity of `+`, then associativity
-- [ ] Define `*` and prove its laws; distributivity
-- [ ] Ordering (`<=`), then divisibility and primality
-- [ ] A pretty-printer for proofs (proof trees / step listings)
-- [ ] Tactics layer (a *non-trusted* convenience layer that emits kernel calls)
+- [x] De Bruijn checker over serializable proof terms
+- [x] Soundness against lying `__eq__` (exact-type validation)
+- [ ] `Not` (so we can state `0 != S(x)`, successor injectivity)
+- [ ] `n + 0 = 0 + n` → commutativity of `+`, then associativity
+- [ ] `*` and its laws; distributivity
+- [ ] Ordering (`<=`), divisibility, primality
+- [ ] A proof-term pretty-printer (proof trees / step listings)
+- [ ] A *non-trusted* tactics layer that emits proof terms
 - [ ] Explicit quantifiers, if/when we outgrow implicit-universal free vars
