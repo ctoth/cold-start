@@ -15,7 +15,7 @@ attack. Once that passes, `_derive` is pure logic and may trust `==`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 from . import proof as P
@@ -57,21 +57,25 @@ class Sequent:
         return f"|- {self.concl!r}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Signature:
     """A many-sorted signature: the declared sort names and each function
     symbol's rank (argument sorts -> result sort). When a `Theory` carries one,
     the checker rejects ill-sorted terms and cross-sort instantiation.
+
+    `ranks` stays a (hashable) tuple so a Signature can be the lru_cache key on
+    `sort_of`; an O(1) lookup dict is derived once and excluded from eq/hash.
     """
 
     sorts: frozenset  # frozenset[str]
     ranks: tuple  # tuple[(name: str, arg_sorts: tuple[str, ...], result: str), ...]
+    _by_name: dict = field(default_factory=dict, init=False, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_by_name", {n: (args, res) for n, args, res in self.ranks})
 
     def rank(self, name: str):
-        for n, arg_sorts, result in self.ranks:
-            if n == name:
-                return arg_sorts, result
-        return None
+        return self._by_name.get(name)
 
 
 @dataclass(frozen=True, slots=True)
