@@ -4,7 +4,7 @@ recipe. It asserts nothing until checker.check() re-derives its sequent.
 
 from __future__ import annotations
 
-from .peano import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction
+from .peano import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction, numeral
 from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Trans
 from .syntax import Eq, Var
 
@@ -32,6 +32,21 @@ def left_identity_proof() -> Pf:
     step = ImpIntro(pred, step_eq)
 
     return induction("n", pred, base, step)
+
+
+def add_proof(a: int, b: int) -> Pf:
+    """Proof term for  numeral(a) + numeral(b) = numeral(a+b).
+
+    Built by unfolding the ADD_SUCC axiom on the concrete second argument -- no
+    induction needed, since `b` is a fixed numeral. Useful as a sound generator
+    for tests: the checker must agree with it for every a, b.
+    """
+    big_a = numeral(a)
+    if b == 0:
+        return Inst(Axiom(ADD_ZERO_F), "x", big_a)  # a + 0 = a
+    b_minus = numeral(b - 1)
+    succ_step = Inst(Inst(Axiom(ADD_SUCC_F), "x", big_a), "y", b_minus)
+    return Trans(succ_step, Cong("S", (add_proof(a, b - 1),)))
 
 
 if __name__ == "__main__":

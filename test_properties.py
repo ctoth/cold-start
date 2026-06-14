@@ -21,6 +21,7 @@ from cold_start.peano import (
     numeral,
 )
 from cold_start.proof import from_json, to_dict, to_json
+from cold_start.proofs import add_proof as prove_add
 from cold_start.syntax import (
     Eq,
     Fun,
@@ -81,21 +82,6 @@ def proofs():
         ),
         max_leaves=12,
     )
-
-
-def prove_add(a: int, b: int) -> P.Pf:
-    """A *sound by construction* proof of  numeral(a) + numeral(b) = numeral(a+b),
-    built by unfolding the recursion axioms on the (concrete) second argument.
-    The checker must agree with it for every a, b.
-    """
-    big_a = numeral(a)
-    if b == 0:
-        return P.Inst(P.Axiom(ADD_ZERO_F), "x", big_a)  # a + 0 = a
-    b_minus = numeral(b - 1)
-    # a + S(b-1) = S(a + (b-1))
-    succ_step = P.Inst(P.Inst(P.Axiom(ADD_SUCC_F), "x", big_a), "y", b_minus)
-    # S(a + (b-1)) = S(numeral(a+b-1)) = numeral(a+b)
-    return P.Trans(succ_step, P.Cong("S", (prove_add(a, b - 1),)))
 
 
 # --- serialization round-trips --------------------------------------------
