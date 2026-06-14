@@ -30,8 +30,10 @@ from dataclasses import dataclass
 class Term:
     """Base class for terms. Subclasses are frozen so terms are hashable."""
 
+    __slots__ = ()
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, slots=True)
 class Var(Term):
     name: str
 
@@ -39,7 +41,7 @@ class Var(Term):
         return self.name
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Fun(Term):
     name: str
     args: tuple  # tuple[Term, ...]
@@ -82,8 +84,10 @@ def term_subst(term: Term, var: str, repl: Term) -> Term:
 class Formula:
     """Base class for formulas."""
 
+    __slots__ = ()
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, slots=True)
 class Eq(Formula):
     lhs: Term
     rhs: Term
@@ -92,7 +96,7 @@ class Eq(Formula):
         return f"{self.lhs!r} = {self.rhs!r}"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Implies(Formula):
     ant: Formula
     con: Formula
