@@ -11,7 +11,7 @@ implicitly universally quantified. Exactly enough to bootstrap arithmetic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -158,6 +158,8 @@ def formula_subst(f: Formula, var: str, repl: Term) -> Formula:
         cls = type(f)
         if f.var == var:
             return f  # the binder shadows `var`; nothing free to substitute
+        if var not in formula_free_vars(f.body):
+            return f
         if f.var in term_free_vars(repl):
             # capture would occur: alpha-rename the bound variable to a fresh
             # name (the fresh name can't be captured, so the rename is safe),
@@ -227,55 +229,71 @@ def validate_formula(f: object) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Serialization  (so proofs can cross a process boundary as plain JSON)
+# Serialization  (generic, by reflection over the frozen-dataclass fields)
 # ---------------------------------------------------------------------------
-# from_dict validates rigorously: deserialized data is untrusted input.
+# Every node is a frozen dataclass whose fields are strings, tuples, or other
+# nodes -- so we serialize generically rather than hand-coding a branch per
+# node: tag each node with its class name, recurse on fields, and reconstruct
+# from a class registry. Adding a node needs no serialization code. Deserialized
+# data is untrusted, but the checker re-validates every term/formula, so the
+# parser need only refuse unknown kinds and mismatched field sets.
+
+
+def encode_node(node: object) -> dict:
+    """Encode a node (a frozen dataclass) to a tagged dict, recursing on fields."""
+    if not is_dataclass(node) or isinstance(node, type):
+        raise TypeError(f"cannot serialize {type(node).__name__}")
+    body = {f.name: _encode_value(getattr(node, f.name)) for f in fields(node)}
+    return {"k": type(node).__name__, **body}
+
+
+def _encode_value(v: object) -> object:
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (tuple, list)):
+        return [_encode_value(x) for x in v]
+    if is_dataclass(v) and not isinstance(v, type):
+        return encode_node(v)
+    raise TypeError(f"cannot serialize value of type {type(v).__name__}")
+
+
+def decode_node(raw: object, registry: dict) -> object:
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list):
+        return tuple(decode_node(x, registry) for x in raw)
+    if isinstance(raw, dict):
+        cls = registry.get(raw.get("k"))
+        if cls is None:
+            raise ValueError(f"unknown node kind: {raw.get('k')!r}")
+        names = [f.name for f in fields(cls)]
+        got = sorted(set(raw) - {"k"})
+        if got != sorted(names):
+            raise ValueError(f"{cls.__name__}: bad fields {got} (want {names})")
+        return cls(*(decode_node(raw[n], registry) for n in names))
+    raise ValueError(f"not a serializable node: {raw!r}")
+
+
+SYNTAX_REGISTRY = {c.__name__: c for c in (Var, Fun, Eq, Implies, Bottom, Forall, Exists)}
 
 
 def term_to_dict(t: Term) -> dict:
-    if isinstance(t, Var):
-        return {"k": "Var", "name": t.name, "sort": t.sort}
-    if isinstance(t, Fun):
-        return {"k": "Fun", "name": t.name, "args": [term_to_dict(a) for a in t.args]}
-    raise TypeError(f"not a term: {t!r}")
+    return encode_node(t)
 
 
 def term_from_dict(d: object) -> Term:
-    if not isinstance(d, dict) or "k" not in d:
-        raise ValueError(f"not a term node: {d!r}")
-    kind = d["k"]
-    if kind == "Var":
-        name = d["name"]
-        sort = d.get("sort", "")
-        if not isinstance(name, str) or not isinstance(sort, str):
-            raise ValueError("Var.name and Var.sort must be strings")
-        return Var(name, sort)
-    if kind == "Fun":
-        name, args = d["name"], d["args"]
-        if not isinstance(name, str) or not isinstance(args, list):
-            raise ValueError("malformed Fun node")
-        return Fun(name, tuple(term_from_dict(a) for a in args))
-    raise ValueError(f"unknown term kind: {kind!r}")
+    node = decode_node(d, SYNTAX_REGISTRY)
+    if not isinstance(node, Term):
+        raise ValueError(f"expected a term, got {type(node).__name__}")
+    return node
 
 
 def formula_to_dict(f: Formula) -> dict:
-    if isinstance(f, Eq):
-        return {"k": "Eq", "lhs": term_to_dict(f.lhs), "rhs": term_to_dict(f.rhs)}
-    if isinstance(f, Implies):
-        return {"k": "Implies", "ant": formula_to_dict(f.ant), "con": formula_to_dict(f.con)}
-    if isinstance(f, Bottom):
-        return {"k": "Bottom"}
-    raise TypeError(f"not a formula: {f!r}")
+    return encode_node(f)
 
 
 def formula_from_dict(d: object) -> Formula:
-    if not isinstance(d, dict) or "k" not in d:
-        raise ValueError(f"not a formula node: {d!r}")
-    kind = d["k"]
-    if kind == "Eq":
-        return Eq(term_from_dict(d["lhs"]), term_from_dict(d["rhs"]))
-    if kind == "Implies":
-        return Implies(formula_from_dict(d["ant"]), formula_from_dict(d["con"]))
-    if kind == "Bottom":
-        return Bottom()
-    raise ValueError(f"unknown formula kind: {kind!r}")
+    node = decode_node(d, SYNTAX_REGISTRY)
+    if not isinstance(node, Formula):
+        raise ValueError(f"expected a formula, got {type(node).__name__}")
+    return node

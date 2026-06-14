@@ -15,12 +15,11 @@ import json
 from dataclasses import dataclass
 
 from .syntax import (
+    SYNTAX_REGISTRY,
     Formula,
     Term,
-    formula_from_dict,
-    formula_to_dict,
-    term_from_dict,
-    term_to_dict,
+    decode_node,
+    encode_node,
 )
 
 
@@ -158,79 +157,29 @@ class ExistsElim(Pf):
 # ---------------------------------------------------------------------------
 
 
+# Reflection-based, like the syntax layer: the registry is every node class, so
+# a new proof rule needs no serialization code -- only its dataclass definition.
+_PROOF_REGISTRY = {
+    **SYNTAX_REGISTRY,
+    **{
+        c.__name__: c
+        for c in (
+            Axiom, Assume, Refl, Sym, Trans, Cong, MP, ImpIntro, Inst, Induct,
+            ExFalso, RAA, ForallElim, ForallIntro, ExistsIntro, ExistsElim,
+        )
+    },
+}
+
+
 def to_dict(p: Pf) -> dict:
-    if isinstance(p, Axiom):
-        return {"k": "Axiom", "formula": formula_to_dict(p.formula)}
-    if isinstance(p, Assume):
-        return {"k": "Assume", "formula": formula_to_dict(p.formula)}
-    if isinstance(p, Refl):
-        return {"k": "Refl", "term": term_to_dict(p.term)}
-    if isinstance(p, Sym):
-        return {"k": "Sym", "sub": to_dict(p.sub)}
-    if isinstance(p, Trans):
-        return {"k": "Trans", "left": to_dict(p.left), "right": to_dict(p.right)}
-    if isinstance(p, Cong):
-        return {"k": "Cong", "fun": p.fun, "args": [to_dict(a) for a in p.args]}
-    if isinstance(p, MP):
-        return {"k": "MP", "imp": to_dict(p.imp), "ant": to_dict(p.ant)}
-    if isinstance(p, ImpIntro):
-        return {"k": "ImpIntro", "hyp": formula_to_dict(p.hyp), "body": to_dict(p.body)}
-    if isinstance(p, Inst):
-        return {"k": "Inst", "sub": to_dict(p.sub), "var": p.var, "term": term_to_dict(p.term)}
-    if isinstance(p, Induct):
-        return {
-            "k": "Induct",
-            "var": p.var,
-            "pred": formula_to_dict(p.pred),
-            "base": to_dict(p.base),
-            "step": to_dict(p.step),
-        }
-    if isinstance(p, ExFalso):
-        return {"k": "ExFalso", "sub": to_dict(p.sub), "concl": formula_to_dict(p.concl)}
-    if isinstance(p, RAA):
-        return {"k": "RAA", "goal": formula_to_dict(p.goal), "sub": to_dict(p.sub)}
-    raise TypeError(f"not a proof term: {p!r}")
+    return encode_node(p)
 
 
 def from_dict(d: object) -> Pf:
-    """Rebuild a Pf from untrusted data, validating structure as we go."""
-    if not isinstance(d, dict) or "k" not in d:
-        raise ValueError(f"not a proof node: {d!r}")
-    kind = d["k"]
-    if kind == "Axiom":
-        return Axiom(formula_from_dict(d["formula"]))
-    if kind == "Assume":
-        return Assume(formula_from_dict(d["formula"]))
-    if kind == "Refl":
-        return Refl(term_from_dict(d["term"]))
-    if kind == "Sym":
-        return Sym(from_dict(d["sub"]))
-    if kind == "Trans":
-        return Trans(from_dict(d["left"]), from_dict(d["right"]))
-    if kind == "Cong":
-        fun, args = d["fun"], d["args"]
-        if not isinstance(fun, str) or not isinstance(args, list):
-            raise ValueError("malformed Cong node")
-        return Cong(fun, tuple(from_dict(a) for a in args))
-    if kind == "MP":
-        return MP(from_dict(d["imp"]), from_dict(d["ant"]))
-    if kind == "ImpIntro":
-        return ImpIntro(formula_from_dict(d["hyp"]), from_dict(d["body"]))
-    if kind == "Inst":
-        var = d["var"]
-        if not isinstance(var, str):
-            raise ValueError("Inst.var must be a string")
-        return Inst(from_dict(d["sub"]), var, term_from_dict(d["term"]))
-    if kind == "Induct":
-        var = d["var"]
-        if not isinstance(var, str):
-            raise ValueError("Induct.var must be a string")
-        return Induct(var, formula_from_dict(d["pred"]), from_dict(d["base"]), from_dict(d["step"]))
-    if kind == "ExFalso":
-        return ExFalso(from_dict(d["sub"]), formula_from_dict(d["concl"]))
-    if kind == "RAA":
-        return RAA(formula_from_dict(d["goal"]), from_dict(d["sub"]))
-    raise ValueError(f"unknown proof kind: {kind!r}")
+    node = decode_node(d, _PROOF_REGISTRY)
+    if not isinstance(node, Pf):
+        raise ValueError(f"expected a proof term, got {type(node).__name__}")
+    return node
 
 
 def to_json(p: Pf, *, indent: int | None = None) -> str:

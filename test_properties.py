@@ -23,9 +23,14 @@ from cold_start.peano import (
 from cold_start.proof import from_json, to_dict, to_json
 from cold_start.proofs import add_proof as prove_add
 from cold_start.syntax import (
+    Bottom,
     Eq,
+    Exists,
+    Forall,
+    Formula,
     Fun,
     Implies,
+    Term,
     Var,
     formula_free_vars,
     formula_from_dict,
@@ -57,8 +62,12 @@ def terms():
 
 def formulas():
     return st.recursive(
-        st.builds(Eq, terms(), terms()),
-        lambda kids: st.builds(Implies, kids, kids),
+        st.one_of(st.builds(Eq, terms(), terms()), st.builds(Bottom)),
+        lambda kids: st.one_of(
+            st.builds(Implies, kids, kids),
+            st.builds(Forall, VAR_NAMES, st.just(""), kids),
+            st.builds(Exists, VAR_NAMES, st.just(""), kids),
+        ),
         max_leaves=6,
     )
 
@@ -79,12 +88,96 @@ def proofs():
             st.builds(P.MP, kids, kids),
             st.builds(P.ImpIntro, formulas(), kids),
             st.builds(P.Inst, kids, VAR_NAMES, terms()),
+            st.builds(P.Induct, VAR_NAMES, formulas(), kids, kids),
+            st.builds(P.ExFalso, kids, formulas()),
+            st.builds(P.RAA, formulas(), kids),
+            st.builds(P.ForallElim, kids, terms()),
+            st.builds(P.ForallIntro, VAR_NAMES, st.just(""), kids),
+            st.builds(P.ExistsIntro, formulas(), terms(), kids),
+            st.builds(P.ExistsElim, VAR_NAMES, kids, kids),
         ),
         max_leaves=12,
     )
 
 
+BASE_TERM = Var("x")
+BASE_FORMULA = Eq(BASE_TERM, BASE_TERM)
+BASE_PROOF = P.Assume(BASE_FORMULA)
+
+TERM_JSON_EXAMPLES = {
+    Var: BASE_TERM,
+    Fun: Fun("f", (BASE_TERM,)),
+}
+
+FORMULA_JSON_EXAMPLES = {
+    Eq: BASE_FORMULA,
+    Implies: Implies(BASE_FORMULA, BASE_FORMULA),
+    Bottom: Bottom(),
+    Forall: Forall("x", "", BASE_FORMULA),
+    Exists: Exists("x", "", BASE_FORMULA),
+}
+
+PROOF_JSON_EXAMPLES = {
+    P.Axiom: P.Axiom(BASE_FORMULA),
+    P.Assume: BASE_PROOF,
+    P.Refl: P.Refl(BASE_TERM),
+    P.Sym: P.Sym(BASE_PROOF),
+    P.Trans: P.Trans(BASE_PROOF, BASE_PROOF),
+    P.Cong: P.Cong("f", (BASE_PROOF,)),
+    P.MP: P.MP(BASE_PROOF, BASE_PROOF),
+    P.ImpIntro: P.ImpIntro(BASE_FORMULA, BASE_PROOF),
+    P.Inst: P.Inst(BASE_PROOF, "x", BASE_TERM),
+    P.Induct: P.Induct("x", BASE_FORMULA, BASE_PROOF, BASE_PROOF),
+    P.ExFalso: P.ExFalso(BASE_PROOF, BASE_FORMULA),
+    P.RAA: P.RAA(BASE_FORMULA, BASE_PROOF),
+    P.ForallElim: P.ForallElim(BASE_PROOF, BASE_TERM),
+    P.ForallIntro: P.ForallIntro("x", "", BASE_PROOF),
+    P.ExistsIntro: P.ExistsIntro(Exists("x", "", BASE_FORMULA), BASE_TERM, BASE_PROOF),
+    P.ExistsElim: P.ExistsElim("x", BASE_PROOF, BASE_PROOF),
+}
+
+
+def class_names(classes):
+    return {cls.__name__ for cls in classes if cls.__module__.startswith("cold_start.")}
+
+
 # --- serialization round-trips --------------------------------------------
+
+
+def test_json_examples_cover_every_concrete_node_class():
+    assert class_names(TERM_JSON_EXAMPLES) == class_names(Term.__subclasses__())
+    assert class_names(FORMULA_JSON_EXAMPLES) == class_names(Formula.__subclasses__())
+    assert class_names(PROOF_JSON_EXAMPLES) == class_names(P.Pf.__subclasses__())
+
+
+@given(st.sampled_from(list(TERM_JSON_EXAMPLES.items())))
+def test_every_term_json_kind_has_a_term_and_vice_versa(item):
+    cls, term = item
+    encoded = term_to_dict(term)
+    assert encoded["k"] == cls.__name__
+    decoded = term_from_dict(encoded)
+    assert type(decoded) is cls
+    assert decoded == term
+
+
+@given(st.sampled_from(list(FORMULA_JSON_EXAMPLES.items())))
+def test_every_formula_json_kind_has_a_formula_and_vice_versa(item):
+    cls, formula = item
+    encoded = formula_to_dict(formula)
+    assert encoded["k"] == cls.__name__
+    decoded = formula_from_dict(encoded)
+    assert type(decoded) is cls
+    assert decoded == formula
+
+
+@given(st.sampled_from(list(PROOF_JSON_EXAMPLES.items())))
+def test_every_proof_json_kind_has_a_proof_and_vice_versa(item):
+    cls, proof = item
+    encoded = to_dict(proof)
+    assert encoded["k"] == cls.__name__
+    decoded = P.from_dict(encoded)
+    assert type(decoded) is cls
+    assert decoded == proof
 
 
 @given(terms())
