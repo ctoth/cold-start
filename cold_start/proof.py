@@ -131,6 +131,28 @@ class ForallIntro(Pf):
     sub: Pf
 
 
+@dataclass(frozen=True, slots=True)
+class ExistsIntro(Pf):
+    """Existential introduction: from a proof of `body[var := witness]`, conclude
+    the existential `claim` (an Exists formula)."""
+
+    claim: Formula
+    witness: Term
+    sub: Pf
+
+
+@dataclass(frozen=True, slots=True)
+class ExistsElim(Pf):
+    """Existential elimination: from a proof of `exists x. body` and a proof of
+    `phi` that assumes `body[x := eigenvar]`, conclude `phi` -- provided the
+    eigenvariable does not escape (not free in `phi` or any remaining
+    hypothesis)."""
+
+    eigenvar: str
+    sub_ex: Pf
+    sub_use: Pf
+
+
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------

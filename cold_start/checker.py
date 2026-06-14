@@ -22,6 +22,7 @@ from . import proof as P
 from .syntax import (
     Bottom,
     Eq,
+    Exists,
     Forall,
     Formula,
     Fun,
@@ -261,6 +262,15 @@ def validate_proof(pf: object) -> None:
         if type(pf.var) is not str or type(pf.sort) is not str:
             raise TypeError("ForallIntro.var and .sort must be genuine strs")
         validate_proof(pf.sub)
+    elif type(pf) is P.ExistsIntro:
+        validate_formula(pf.claim)
+        validate_term(pf.witness)
+        validate_proof(pf.sub)
+    elif type(pf) is P.ExistsElim:
+        if type(pf.eigenvar) is not str:
+            raise TypeError("ExistsElim.eigenvar must be a genuine str")
+        validate_proof(pf.sub_ex)
+        validate_proof(pf.sub_use)
     else:
         raise TypeError(f"not a proof term: {pf!r}")
 
@@ -450,6 +460,51 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
                     f"cannot generalize {pf.var!r}: free in hypothesis {h!r}"
                 )
         return Sequent(s.hyps, Forall(pf.var, pf.sort, s.concl))
+
+    if type(pf) is P.ExistsIntro:
+        # from a witness proof of body[x := witness], conclude `exists x. body`.
+        if type(pf.claim) is not Exists:
+            raise ValueError(f"exists-intro needs an existential claim, got {pf.claim!r}")
+        s = _derive(pf.sub, theory)
+        expected = formula_subst(pf.claim.body, pf.claim.var, pf.witness)
+        if s.concl != expected:
+            raise ValueError(
+                f"exists-intro: sub-proof must prove {expected!r}, got {s.concl!r}"
+            )
+        if sig is not None and pf.claim.sort:
+            t_sort = sort_of(pf.witness, sig)
+            if t_sort != pf.claim.sort:
+                raise ValueError(
+                    f"exists-intro witness has sort {t_sort!r}, expected {pf.claim.sort!r}"
+                )
+        return Sequent(s.hyps, pf.claim)
+
+    if type(pf) is P.ExistsElim:
+        # from `exists x. body` and a proof of phi assuming body[x := eigenvar],
+        # conclude phi -- provided the eigenvariable does not escape.
+        s_ex = _derive(pf.sub_ex, theory)
+        if type(s_ex.concl) is not Exists:
+            raise ValueError(f"exists-elim needs an existential, got {s_ex.concl!r}")
+        instance = formula_subst(
+            s_ex.concl.body, s_ex.concl.var, Var(pf.eigenvar, s_ex.concl.sort)
+        )
+        s_use = _derive(pf.sub_use, theory)
+        if instance not in s_use.hyps:
+            raise ValueError(
+                f"exists-elim: the using proof must assume the instance {instance!r}"
+            )
+        phi = s_use.concl
+        result_hyps = s_ex.hyps | (s_use.hyps - {instance})
+        if pf.eigenvar in formula_free_vars(phi):
+            raise ValueError(
+                f"exists-elim eigenvariable {pf.eigenvar!r} escapes into the conclusion {phi!r}"
+            )
+        for h in result_hyps:
+            if pf.eigenvar in formula_free_vars(h):
+                raise ValueError(
+                    f"exists-elim eigenvariable {pf.eigenvar!r} is free in hypothesis {h!r}"
+                )
+        return Sequent(result_hyps, phi)
 
     raise TypeError(f"not a proof term: {pf!r}")  # unreachable after validate_proof
 
