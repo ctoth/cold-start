@@ -51,8 +51,13 @@ The code is the `cold_start/` package (flat, no src-layout):
 - **`test_checker.py`** — example tests: rules, the soundness attacks,
   serialization round-trip, cross-process verification.
 - **`test_properties.py`** — Hypothesis property tests: round-trips, checker
-  totality, substitution algebra, a sound proof generator the checker must
-  agree with, and adversarial hammering of the induction recognizer.
+  totality, substitution algebra, and a sound proof generator the checker must
+  agree with.
+- **`test_model.py`** — model-soundness probes: every closed theorem is true in
+  ℕ, plus per-rule local soundness.
+- **`test_algebra.py` / `test_rings.py` / `test_sorts.py`** — abstract theories
+  (monoids, rings, a sorted monoid action) checked against multiple models,
+  including non-commutative ones, with sort-checking invariants.
 
 ## Run it
 

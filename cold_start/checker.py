@@ -16,6 +16,7 @@ attack. Once that passes, `_derive` is pure logic and may trust `==`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from . import proof as P
 from .syntax import (
@@ -99,8 +100,18 @@ class Theory:
         return f in self.axioms
 
 
+@lru_cache(maxsize=8192)
 def sort_of(t: object, sig: Signature) -> str:
-    """The sort of a well-sorted term, or raise ValueError if ill-sorted."""
+    """The sort of a well-sorted term, or raise ValueError if ill-sorted.
+
+    Memoized: `sort_of` is a pure function of (term, signature) -- both are
+    immutable and hashable -- so each term's sort is computed once and reused.
+    This is the SOUND form of "cache well-sortedness": the verifier memoizes its
+    own computation. It never trusts a sort tag carried on an input term, which
+    would be a forgeable token (and would be wrong anyway, since sort is
+    relative to the signature). Exceptions are not cached, so ill-sorted terms
+    still raise on every check.
+    """
     if type(t) is Var:
         if t.sort not in sig.sorts:
             raise ValueError(f"variable {t!r} has undeclared sort {t.sort!r}")
@@ -120,16 +131,59 @@ def sort_of(t: object, sig: Signature) -> str:
     raise TypeError(f"not a term: {t!r}")
 
 
-def sort_check_formula(f: object, sig: Signature) -> None:
+def _sort_structure(f: object, sig: Signature) -> None:
+    """Structural well-sortedness: each equality is between same-sort terms."""
     if type(f) is Eq:
         ls, rs = sort_of(f.lhs, sig), sort_of(f.rhs, sig)
         if ls != rs:
             raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {f!r}")
     elif type(f) is Implies:
-        sort_check_formula(f.ant, sig)
-        sort_check_formula(f.con, sig)
+        _sort_structure(f.ant, sig)
+        _sort_structure(f.con, sig)
     else:
         raise TypeError(f"not a formula: {f!r}")
+
+
+def _collect_consistent(obj: object, acc: dict) -> None:
+    """Accumulate variable name -> sort, raising if a name appears at two sorts.
+
+    Because substitution targets variables by name, a name must denote a single
+    sort everywhere it occurs; otherwise instantiating it would rewrite
+    positions of a different sort. This makes name-based substitution sound.
+    """
+    if type(obj) is Var:
+        prev = acc.get(obj.name)
+        if prev is not None and prev != obj.sort:
+            raise ValueError(
+                f"variable {obj.name!r} used at sorts {prev!r} and {obj.sort!r}"
+            )
+        acc[obj.name] = obj.sort
+    elif type(obj) is Fun:
+        for a in obj.args:
+            _collect_consistent(a, acc)
+    elif type(obj) is Eq:
+        _collect_consistent(obj.lhs, acc)
+        _collect_consistent(obj.rhs, acc)
+    elif type(obj) is Implies:
+        _collect_consistent(obj.ant, acc)
+        _collect_consistent(obj.con, acc)
+
+
+def sort_check_formula(f: object, sig: Signature) -> None:
+    """A single formula is well-sorted and uses each variable name at one sort."""
+    _sort_structure(f, sig)
+    _collect_consistent(f, {})
+
+
+def _sort_check_sequent(seq: Sequent, sig: Signature) -> None:
+    """The rule invariant: every derived sequent is well-sorted, and a variable
+    name has one sort across all of its hypotheses and conclusion together."""
+    acc: dict = {}
+    _sort_structure(seq.concl, sig)
+    _collect_consistent(seq.concl, acc)
+    for h in seq.hyps:
+        _sort_structure(h, sig)
+        _collect_consistent(h, acc)
 
 
 def _sorts_of_var(obj: object, name: str, out: set) -> None:
@@ -208,27 +262,36 @@ def check(pf: object, theory: object) -> Sequent:
 
 
 def _derive(pf: object, theory: Theory) -> Sequent:
-    """The pure logic core. Assumes `pf` already passed validate_proof, so `==`
-    on any term/formula here is honest and no input-type guards are needed --
-    only the logical side-conditions of each rule.
+    """Derive a sequent, then enforce the sort invariant on the result.
+
+    Sort-checking is a *rule invariant*: instead of trusting each rule to
+    preserve well-sortedness, we re-check every sequent a rule produces (when
+    the theory is sorted) -- structural well-sortedness plus "one sort per
+    variable name across the whole sequent". Single-sorted theories (signature
+    None) skip it entirely, so their behaviour is byte-for-byte unchanged.
     """
-    sig = theory.signature  # None for single-sorted theories: no sort-checking
+    seq = _derive_rule(pf, theory)
+    if theory.signature is not None:
+        _sort_check_sequent(seq, theory.signature)
+    return seq
+
+
+def _derive_rule(pf: object, theory: Theory) -> Sequent:
+    """The pure logic core. Assumes `pf` already passed validate_proof, so `==`
+    on any term/formula here is honest. The `_derive` wrapper handles sorts; the
+    only sort logic here is the Inst cross-sort guard, which needs the variable.
+    """
+    sig = theory.signature
 
     if type(pf) is P.Axiom:
         if not theory.accepts(pf.formula):
             raise ValueError(f"not an axiom of this theory: {pf.formula!r}")
-        if sig is not None:
-            sort_check_formula(pf.formula, sig)
         return Sequent(frozenset(), pf.formula)
 
     if type(pf) is P.Assume:
-        if sig is not None:
-            sort_check_formula(pf.formula, sig)
         return Sequent(frozenset({pf.formula}), pf.formula)
 
     if type(pf) is P.Refl:
-        if sig is not None:
-            sort_of(pf.term, sig)
         return Sequent(frozenset(), Eq(pf.term, pf.term))
 
     if type(pf) is P.Sym:
@@ -258,10 +321,7 @@ def _derive(pf: object, theory: Theory) -> Sequent:
             hyps |= s.hyps
             lhs.append(s.concl.lhs)
             rhs.append(s.concl.rhs)
-        result = Eq(Fun(pf.fun, tuple(lhs)), Fun(pf.fun, tuple(rhs)))
-        if sig is not None:
-            sort_check_formula(result, sig)  # arg sorts must match the rank
-        return Sequent(hyps, result)
+        return Sequent(hyps, Eq(Fun(pf.fun, tuple(lhs)), Fun(pf.fun, tuple(rhs))))
 
     if type(pf) is P.MP:
         imp = _derive(pf.imp, theory)

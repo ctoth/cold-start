@@ -23,7 +23,7 @@ from cold_start.algebra import (
     act,
     mul,
 )
-from cold_start.checker import check, sort_check_formula
+from cold_start.checker import check, sort_check_formula, sort_of
 from cold_start.syntax import Eq, Fun, Implies, Term, Var
 
 M_VARS = [Var("m", "M"), Var("n", "M"), Var("p", "M")]
@@ -101,6 +101,15 @@ def test_model_satisfies_action_axioms(data):
 # --- a worked sorted proof ------------------------------------------------
 
 
+def test_sort_of_is_memoized():
+    # Repeated subterms must hit the sort cache: this is the sound form of
+    # "check well-sortedness once". `e` appears twice in act(e, act(e, x)).
+    sort_of.cache_clear()
+    x = Var("x", "X")
+    check(P.Refl(act(E, act(E, x))), MONOID_ACTION)
+    assert sort_of.cache_info().hits > 0
+
+
 def test_sorted_proof_checks():
     # act(e, act(e, x)) = x : inst ACT_ID at x := act(e,x), then trans with ACT_ID
     x = Var("x", "X")
@@ -143,6 +152,32 @@ def test_equality_across_sorts_rejected():
     except ValueError:
         return
     raise AssertionError("accepted an equality between an M and an X")
+
+
+def test_impintro_rejects_ill_sorted_hypothesis():
+    # ImpIntro(Eq(m:M, x:X), Refl(e)) would yield |- (m=x) -> (e=e) with an
+    # ill-sorted antecedent -- the same thing Assume rejects, so ImpIntro must
+    # reject it too.
+    bad = P.ImpIntro(Eq(Var("m", "M"), Var("x", "X")), P.Refl(E))
+    try:
+        check(bad, MONOID_ACTION)
+    except ValueError:
+        return
+    raise AssertionError("ImpIntro accepted an ill-sorted hypothesis")
+
+
+def test_variable_name_at_two_sorts_rejected():
+    # A formula using `x` at both M and X is ill-formed: name-based substitution
+    # would otherwise rewrite the X-positions with an M-term. Must be rejected.
+    phi = Implies(
+        Eq(act(Var("m", "M"), Var("x", "X")), Var("x", "X")),
+        Eq(Var("x", "M"), Var("x", "M")),
+    )
+    try:
+        check(P.Assume(phi), MONOID_ACTION)
+    except ValueError:
+        return
+    raise AssertionError("accepted a formula using one name at two sorts")
 
 
 def test_unknown_symbol_rejected():
@@ -201,8 +236,14 @@ def action_proofs(draw):
     def pick():
         return draw(st.sampled_from(facts))[0]
 
+    well_sorted_eq = st.one_of(
+        st.builds(Eq, m_terms(), m_terms()),
+        st.builds(Eq, x_terms(), x_terms()),
+    )
     for _ in range(draw(st.integers(2, 8))):
-        rule = draw(st.sampled_from(["sym", "trans", "cong*", "congact", "instM", "instX"]))
+        rule = draw(
+            st.sampled_from(["sym", "trans", "cong*", "congact", "instM", "instX", "impintro"])
+        )
         if rule == "sym":
             add(P.Sym(pick()))
         elif rule == "trans":
@@ -215,6 +256,8 @@ def action_proofs(draw):
             add(P.Inst(pick(), draw(st.sampled_from(M_VARS)).name, draw(m_terms())))
         elif rule == "instX":
             add(P.Inst(pick(), draw(st.sampled_from(X_VARS)).name, draw(x_terms())))
+        elif rule == "impintro":
+            add(P.ImpIntro(draw(well_sorted_eq), pick()))
 
     return draw(st.sampled_from([pf for pf, _ in facts]))
 

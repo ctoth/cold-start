@@ -7,8 +7,9 @@ axioms. These are the first rung toward non-commutative algebra (the road to
 Clifford): structures where commutativity is an *extra* assumption, never a
 theorem.
 
-Signature here is single-sorted: a binary product `*` and a unit `e`. (Sorts --
-scalars vs vectors -- come later, when we need them for modules and forms.)
+The monoid and ring theories are single-sorted (no `Signature`). MONOID_ACTION
+is many-sorted (sorts `M` and `X`, via `ACTION_SIG`) -- the first place sorts
+earn their keep, on the way to modules and Clifford.
 """
 
 from __future__ import annotations

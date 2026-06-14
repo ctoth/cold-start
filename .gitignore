@@ -8,3 +8,6 @@ venv/
 
 # stray non-project artifacts that appeared in this dir (not ours)
 pyghidra_mcp_projects/
+
+# reviewer/tooling scratch copies (not part of the project)
+temp/
