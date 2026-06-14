@@ -260,3 +260,105 @@ def test_addition_proofs_are_true_in_N(a, b):
     assert isinstance(seq.concl, Eq)
     lhs, rhs = eval_term(seq.concl.lhs, {}), eval_term(seq.concl.rhs, {})
     assert lhs == rhs == a + b
+
+
+# --- each inference rule preserves model truth ----------------------------
+# Local soundness: a rule, applied to model-valid premises, yields a model-valid
+# conclusion. Together with "the checker only applies the rules" (the broad/
+# forward nets above) this gives global soundness. A sequent is valid at an
+# assignment when its hypotheses being all true forces its conclusion true.
+
+
+def model_valid(seq, env) -> bool:
+    if any(not eval_formula(h, env) for h in seq.hyps):
+        return True  # vacuously valid: some hypothesis is false here
+    return eval_formula(seq.concl, env)
+
+
+def eq_proofs():
+    """Proof terms that always check to an equality true in N for *every*
+    assignment: reflexivity, and the concrete addition proofs."""
+    return st.one_of(
+        st.builds(P.Refl, nat_terms()),
+        st.builds(add_proof, st.integers(0, 6), st.integers(0, 6)),
+    )
+
+
+@given(eq_proofs(), ENV)
+def test_sym_preserves_validity(p, env):
+    premise = check(p, PEANO)
+    concl = check(P.Sym(p), PEANO)
+    if model_valid(premise, env):
+        assert model_valid(concl, env)
+
+
+@given(eq_proofs(), ENV)
+def test_trans_preserves_validity(p, env):
+    premise = check(p, PEANO)
+    assert isinstance(premise.concl, Eq)
+    chained = check(P.Trans(p, P.Refl(premise.concl.rhs)), PEANO)  # a=b then b=b
+    if model_valid(premise, env):
+        assert model_valid(chained, env)
+
+
+@given(eq_proofs(), ENV)
+def test_cong_preserves_validity(p, env):
+    premise = check(p, PEANO)
+    concl = check(P.Cong("S", (p,)), PEANO)  # a = b  ==>  S a = S b
+    if model_valid(premise, env):
+        assert model_valid(concl, env)
+
+
+@given(eq_proofs(), ENV)
+def test_mp_preserves_validity(p, env):
+    a = check(p, PEANO).concl
+    imp = P.ImpIntro(a, P.Assume(a))  # |- a -> a
+    concl = check(P.MP(imp, p), PEANO)  # |- a
+    if model_valid(check(p, PEANO), env):
+        assert model_valid(concl, env)
+
+
+@given(eq_proofs(), nat_formulas(), ENV)
+def test_impintro_preserves_validity(p, h, env):
+    premise = check(p, PEANO)
+    concl = check(P.ImpIntro(h, p), PEANO)  # G\{h} |- h -> premise
+    if model_valid(premise, env):
+        assert model_valid(concl, env)
+
+
+@given(eq_proofs(), VAR_NAMES, nat_terms(), ENV)
+def test_inst_preserves_validity(p, x, t, env):
+    # eq_proofs are valid for every assignment, so every instance is valid too.
+    concl = check(P.Inst(p, x, t), PEANO)
+    assert model_valid(concl, env)
+
+
+@given(nat_formulas(), VAR_NAMES, nat_terms(), ENV)
+def test_substitution_lemma(phi, x, t, env):
+    """The semantic core of Inst: evaluating after substitution equals
+    evaluating in the shifted environment. A subst/eval mismatch breaks this."""
+    shifted = dict(env)
+    shifted[x] = eval_term(t, env)
+    assert eval_formula(formula_subst(phi, x, t), env) == eval_formula(phi, shifted)
+
+
+@given(nat_formulas(), VAR_NAMES, st.integers(1, 6), ENV)
+@settings(suppress_health_check=[HealthCheck.filter_too_much])
+def test_induction_principle_holds_in_N(pred, x, bound, env):
+    """The semantic justification of the Induct rule: in N, base + step up to a
+    bound forces the predicate up to that bound."""
+    base_ok = eval_formula(formula_subst(pred, x, ZERO), env)
+    step_ok = all(
+        eval_formula(
+            Implies(
+                formula_subst(pred, x, numeral(k)),
+                formula_subst(pred, x, numeral(k + 1)),
+            ),
+            env,
+        )
+        for k in range(bound)
+    )
+    assume(base_ok and step_ok)
+    assert all(
+        eval_formula(formula_subst(pred, x, numeral(k)), env) for k in range(bound + 1)
+    )
