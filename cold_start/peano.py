@@ -1,9 +1,9 @@
-"""Peano arithmetic as a *theory*: a signature plus axioms (and one schema).
+"""Peano arithmetic as a *theory*: a signature, axioms, and induction data.
 
 The checker is theory-agnostic; this module supplies what makes it arithmetic.
-Everything trusted here is small and on the page: two addition axioms and the
-induction-schema recognizer. Defining what counts as an axiom is inherently
-part of choosing a theory, so the recognizer is trusted -- and short.
+Everything trusted here is small and on the page: two addition axioms plus the
+zero term and successor symbol used by the checker's first-class `Induct` rule.
+Induction is deliberately not exposed as an axiom formula.
 """
 
 from __future__ import annotations

@@ -83,36 +83,36 @@ def validate_proof(pf: object) -> None:
     hostile __eq__-overriding subclass is rejected). Run once, up front, so the
     derivation below can trust Python `==` and stay pure logic.
     """
-    if isinstance(pf, P.Axiom):
+    if type(pf) is P.Axiom:
         validate_formula(pf.formula)
-    elif isinstance(pf, P.Assume):
+    elif type(pf) is P.Assume:
         validate_formula(pf.formula)
-    elif isinstance(pf, P.Refl):
+    elif type(pf) is P.Refl:
         validate_term(pf.term)
-    elif isinstance(pf, P.Sym):
+    elif type(pf) is P.Sym:
         validate_proof(pf.sub)
-    elif isinstance(pf, P.Trans):
+    elif type(pf) is P.Trans:
         validate_proof(pf.left)
         validate_proof(pf.right)
-    elif isinstance(pf, P.Cong):
+    elif type(pf) is P.Cong:
         if type(pf.fun) is not str:
             raise TypeError("Cong.fun must be a genuine str")
         if type(pf.args) is not tuple:
             raise TypeError("Cong.args must be a tuple")
         for a in pf.args:
             validate_proof(a)
-    elif isinstance(pf, P.MP):
+    elif type(pf) is P.MP:
         validate_proof(pf.imp)
         validate_proof(pf.ant)
-    elif isinstance(pf, P.ImpIntro):
+    elif type(pf) is P.ImpIntro:
         validate_formula(pf.hyp)
         validate_proof(pf.body)
-    elif isinstance(pf, P.Inst):
+    elif type(pf) is P.Inst:
         if type(pf.var) is not str:
             raise TypeError("Inst.var must be a genuine str")
         validate_term(pf.term)
         validate_proof(pf.sub)
-    elif isinstance(pf, P.Induct):
+    elif type(pf) is P.Induct:
         if type(pf.var) is not str:
             raise TypeError("Induct.var must be a genuine str")
         validate_formula(pf.pred)
@@ -130,7 +130,7 @@ def check(pf: object, theory: object) -> Sequent:
     typed `object`: the trusted checker validates them, it does not trust the
     caller's annotations.
     """
-    if not isinstance(theory, Theory):
+    if type(theory) is not Theory:
         raise TypeError(f"not a theory: {theory!r}")
     validate_proof(pf)
     return _derive(pf, theory)
@@ -141,27 +141,27 @@ def _derive(pf: object, theory: Theory) -> Sequent:
     on any term/formula here is honest and no input-type guards are needed --
     only the logical side-conditions of each rule.
     """
-    if isinstance(pf, P.Axiom):
+    if type(pf) is P.Axiom:
         if not theory.accepts(pf.formula):
             raise ValueError(f"not an axiom of this theory: {pf.formula!r}")
         return Sequent(frozenset(), pf.formula)
 
-    if isinstance(pf, P.Assume):
+    if type(pf) is P.Assume:
         return Sequent(frozenset({pf.formula}), pf.formula)
 
-    if isinstance(pf, P.Refl):
+    if type(pf) is P.Refl:
         return Sequent(frozenset(), Eq(pf.term, pf.term))
 
-    if isinstance(pf, P.Sym):
+    if type(pf) is P.Sym:
         s = _derive(pf.sub, theory)
-        if not isinstance(s.concl, Eq):
+        if type(s.concl) is not Eq:
             raise ValueError(f"sym needs an equality, got {s.concl!r}")
         return Sequent(s.hyps, Eq(s.concl.rhs, s.concl.lhs))
 
-    if isinstance(pf, P.Trans):
+    if type(pf) is P.Trans:
         a = _derive(pf.left, theory)
         b = _derive(pf.right, theory)
-        if not isinstance(a.concl, Eq) or not isinstance(b.concl, Eq):
+        if type(a.concl) is not Eq or type(b.concl) is not Eq:
             raise ValueError("trans needs two equalities")
         if a.concl.rhs != b.concl.lhs:
             raise ValueError(
@@ -169,22 +169,22 @@ def _derive(pf: object, theory: Theory) -> Sequent:
             )
         return Sequent(a.hyps | b.hyps, Eq(a.concl.lhs, b.concl.rhs))
 
-    if isinstance(pf, P.Cong):
+    if type(pf) is P.Cong:
         hyps: frozenset = frozenset()
         lhs, rhs = [], []
         for sub in pf.args:
             s = _derive(sub, theory)
-            if not isinstance(s.concl, Eq):
+            if type(s.concl) is not Eq:
                 raise ValueError(f"cong needs equalities, got {s.concl!r}")
             hyps |= s.hyps
             lhs.append(s.concl.lhs)
             rhs.append(s.concl.rhs)
         return Sequent(hyps, Eq(Fun(pf.fun, tuple(lhs)), Fun(pf.fun, tuple(rhs))))
 
-    if isinstance(pf, P.MP):
+    if type(pf) is P.MP:
         imp = _derive(pf.imp, theory)
         ant = _derive(pf.ant, theory)
-        if not isinstance(imp.concl, Implies):
+        if type(imp.concl) is not Implies:
             raise ValueError(f"mp needs an implication, got {imp.concl!r}")
         if imp.concl.ant != ant.concl:
             raise ValueError(
@@ -192,11 +192,11 @@ def _derive(pf: object, theory: Theory) -> Sequent:
             )
         return Sequent(imp.hyps | ant.hyps, imp.concl.con)
 
-    if isinstance(pf, P.ImpIntro):
+    if type(pf) is P.ImpIntro:
         body = _derive(pf.body, theory)
         return Sequent(body.hyps - {pf.hyp}, Implies(pf.hyp, body.concl))
 
-    if isinstance(pf, P.Inst):
+    if type(pf) is P.Inst:
         s = _derive(pf.sub, theory)
         for h in s.hyps:
             if pf.var in formula_free_vars(h):
@@ -205,7 +205,7 @@ def _derive(pf: object, theory: Theory) -> Sequent:
                 )
         return Sequent(s.hyps, formula_subst(s.concl, pf.var, pf.term))
 
-    if isinstance(pf, P.Induct):
+    if type(pf) is P.Induct:
         # Mathematical induction as a first-class rule (NOT an axiom formula):
         #   base : G |- pred[var := 0]
         #   step : D |- pred -> pred[var := S var]
