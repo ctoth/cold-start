@@ -1,75 +1,67 @@
-# Working notes — De Bruijn refactor
+# Working notes — cold-start
 
-## Goal
-Rebuild the prover around the **De Bruijn criterion**: untrusted prover emits an
-inert, serializable *proof term*; one small trusted `check(proof, theory)`
-re-derives the conclusion. Trust moves from "Theorem object was kernel-minted"
-(unenforceable in Python: `object.__new__`, token reach, monkeypatch all forge
-it) to "check() re-ran the recipe." Also: real `isinstance` validation on the
-inert proof data (it can be malformed/hostile post-deserialization).
+## What this is
+Number theory from scratch in dependency-free Python, built on the **De Bruijn
+criterion**: untrusted prover emits a serializable *proof term*; one small
+trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
+the verifier, not the object.
 
-## Target layout
-- `syntax.py`   — language: Term/Var/Fun, Formula/Eq/Implies, free_vars/subst,
-                  to_dict/from_dict. NOT trusted. **DONE.**
-- `proof.py`    — proof-term nodes (Axiom/Assume/Refl/Sym/Trans/Cong/MP/
-                  ImpIntro/Inst), frozen+slots, JSON ser/deser. **TODO.**
-- `checker.py`  — TRUSTED. `Sequent`, `Theory(axioms, schemas)`,
-                  `check(proof, theory) -> Sequent`. isinstance-heavy. **TODO.**
-- `peano.py`    — signature (ZERO/S/add/numeral), axiom formulas ADD_ZERO_F /
-                  ADD_SUCC_F, `is_induction_instance` recognizer, `PEANO`
-                  theory, `induction(...)` proof builder. **TODO (rewrite).**
-- `proofs.py`   — `left_identity_proof()` returns a Pf. **TODO (rewrite).**
-- `verify.py`   — CLI: load JSON proof, check vs PEANO, print sequent / exit. **TODO.**
-- tests         — replace test_kernel.py with test_checker.py. **TODO.**
-- delete old `kernel.py`. **TODO.**
+## Current state: DONE & GREEN
+- pytest: **21 passed** (added 2 sentinels for the frozenset-discharge attack)
+- ruff check .: clean
+- pyright (repo-rooted CLI, uses pyrightconfig.json): **0 errors, 0 warnings**
+  (NOTE: the editor's inline Pyright is rooted at parent `code\` and ignores our
+   pyrightconfig.json, so it shows bogus import-resolution errors. The CLI run
+   is authoritative.)
 
-## Key design decisions
-- Checker is generic FOL+equality; theory-agnostic. Axioms passed in.
-- Induction is an **axiom schema**: `Theory` carries `schemas` (recognizer
-  predicates). `is_induction_instance(f)` structurally matches
-  `P[0] -> ((P -> P[S x]) -> P)`, finds x by scanning free vars of P.
-  The recognizer is part of the trusted theory definition (small, auditable).
-- `induction()` builds `MP(MP(Axiom(schema), base), step)`; checker validates
-  via MP antecedent matching + schema acceptance.
-- Sequent is plain data with NO construction guard — that's the point: holding
-  one proves nothing; only `check()` returning it is authority.
+## Layout
+- `syntax.py`  — language: Var/Fun, Eq/Implies, free_vars/subst, EXACT-type
+                 `validate_term`/`validate_formula`, JSON ser/deser. Not trusted.
+- `proof.py`   — proof terms (Axiom/Assume/Refl/Sym/Trans/Cong/MP/ImpIntro/
+                 Inst) + to_json/from_json. Not trusted.
+- `checker.py` — TRUSTED CORE (~190 lines): Sequent, Theory, validate_proof
+                 (one up-front structural pass), check(), pure `_derive`.
+- `peano.py`   — theory: 0/S/+, ADD_ZERO_F, ADD_SUCC_F, is_induction_instance
+                 recognizer, PEANO, induction() builder.
+- `proofs.py`  — left_identity_proof(): 0 + n = n by induction.
+- `verify.py`  — CLI: checks a JSON proof in a SEPARATE process.
+- `test_checker.py` — 19 tests.
+- `pyproject.toml` (ruff/pytest), `pyrightconfig.json`.
 
-## Checker rule semantics (mirror of old kernel)
-Axiom(f): theory.accepts(f); ∅⊢f. Assume(f): {f}⊢f. Refl(t): ∅⊢t=t.
-Sym/Trans/Cong on equalities. MP: antecedent must match. ImpIntro: remove hyp.
-Inst: var not free in any hyp (guard).
+## History / decisions
+1. Started LCF-style (opaque guarded Theorem). Q noted: non-frozen/no-slots
+   bases -> fixed (commit fada2a2: __slots__=() on bases, slots=True dataclasses).
+2. Q: `object.__new__(Theorem)` forges a theorem. Confirmed. Conclusion: opaque
+   Theorem is unenforceable in Python (token/ctypes/monkeypatch all forge).
+   Decided to build the principled De Bruijn version instead.
+3. Q: rules duck-type premises + trust `==`; a lying Term/str **subclass**
+   __eq__ derives 1 = 0 from reflexivity. CONFIRMED against new checker
+   (`Trans(Refl(S0), Trans(Refl(Evil), Refl(0)))` -> `|- S(0)=0`).
+   FIX: exact-type validate_* + single up-front validate_proof pass (answering
+   Q's "decorator?" — lifted validation out of bodies entirely). Now REJECTED
+   ("non-canonical term: Evil"); real proof still checks.
+4. Q: stop ad-hoc one-liners, use TDD. Captured every claim as a regression
+   test, incl. both attacks as permanent sentinels + cross-process subprocess.
+5. Q (reading old kernel.py): implies_intro's `hyps - {hyp}` frozenset
+   subtraction trusts __hash__/__eq__; a malicious formula can hash+compare
+   equal to a real hypothesis and strip it -> discharge an unproved assumption.
+   Real in the OLD version. In the NEW version it's ALREADY closed: every
+   formula reaching a set op came via Assume (validated) or is ImpIntro.hyp
+   (validated), so all are exact-type canonical with honest hash/eq.
+   Proved with 2 new tests (test_lying_formula_*), incl. a sanity assertion
+   that the malicious formula really strips h (so the sentinel isn't vacuous).
+   STATUS: not yet committed -- commit next.
 
-## Status
-syntax.py, proof.py, checker.py, peano.py, proofs.py, verify.py all written.
+## Soundness model (current)
+Trusted base = checker.py (validate_proof + _derive) + each Theory's axioms and
+schema recognizers. Serialized path immune by construction (from_dict only mints
+Var/Fun). In-process path now immune via exact-type validation.
 
-### MAJOR soundness finding (Q caught it)
-`refl` + any rule using Python `==` trusts `__eq__`. A hostile Term/str
-**subclass** can override `__eq__` to return True and derive `1 = 0` from
-reflexivity. CONFIRMED against the new checker:
-  `Trans(Refl(S0), Trans(Refl(Evil()), Refl(0)))` -> accepted `|- S(0) = 0`.
-The serialized path was already immune (from_dict only mints Var/Fun); the
-in-process hand-built path was not.
+## Next step (not started)
+- `n + 0 = 0 + n` -> commutativity of `+`, then associativity. First proof that
+  exercises nested induction. (Alternatively: add `Not` to state 0 != S(x) and
+  successor injectivity.)
+- Possible: proof-term pretty-printer; non-trusted tactics layer emitting Pf.
 
-### Fix applied
-Added `validate_term`/`validate_formula` in syntax.py using EXACT type checks
-(`type(x) is Var`, not isinstance — subclasses ARE the attack), recursing into
-args and str fields. Then (answering Q's "decorator?" nudge) lifted validation
-out of the rule bodies into ONE up-front `validate_proof(pf)` pass in
-checker.py. New shape:
-  - `validate_proof(pf)`  — structural well-formedness, once.
-  - `check(pf, theory)`   — validate_proof then `_derive`.
-  - `_derive(pf, theory)` — pure logic, recurses on itself, trusts `==`.
-Separates "well-formed proof term?" from "valid derivation?".
-
-## TODO before commit
-- [ ] Re-run the Evil-term attack: must now be REJECTED.
-- [ ] Write test_checker.py (rules, attack rejection, serialization roundtrip,
-      cross-process verify.py subprocess, unknown-axiom rejection).
-- [ ] Delete old kernel.py + test_kernel.py.
-- [ ] Add pyproject.toml / pyrightconfig.json (fix import-resolution noise;
-      all current Pyright errors are that cascade, not real bugs).
-- [ ] Update README (check off proof terms; document trust model + this attack).
-- [ ] Run full suite, commit.
-
-## Blocker
+## Blockers
 None.

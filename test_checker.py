@@ -24,7 +24,7 @@ from peano import (
 )
 from proof import from_json, to_json
 from proofs import left_identity_proof
-from syntax import Eq, Fun, Implies, Term, Var, validate_term
+from syntax import Eq, Formula, Fun, Implies, Term, Var, validate_term
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -76,6 +76,49 @@ class _EvilStr(str):
 
     def __hash__(self):
         return 0
+
+
+class _EvilFormula(Formula):
+    """A Formula subclass that hashes into a target's bucket and claims equality
+    to it -- the way to make frozenset subtraction in ImpIntro discharge a
+    hypothesis that was never proved. Must be rejected as non-canonical."""
+
+    __slots__ = ("target",)
+
+    def __init__(self, target):
+        self.target = target
+
+    def __eq__(self, other):
+        return True
+
+    def __hash__(self):
+        return hash(self.target)
+
+
+def test_lying_formula_cannot_discharge_unproved_hypothesis():
+    # Genuinely depend on h, then try to discharge a DIFFERENT (malicious)
+    # formula that compares/hashes equal to h, which would strip h from the
+    # hypotheses and yield `|- evil -> h` with no real assumptions.
+    h = Eq(add(ZERO, Var("n")), Var("n"))
+    evil = _EvilFormula(h)
+    # Sanity: the threat is real -- evil genuinely strips h from a hyp set, so
+    # this sentinel guards the actual discharge mechanism, not a vacuous reject.
+    assert frozenset({h}) - {evil} == frozenset()
+    attack = P.ImpIntro(evil, P.Assume(h))  # would remove h via hyps - {evil}
+    try:
+        check(attack, PEANO)
+    except TypeError:
+        return
+    raise AssertionError("lying formula discharged an unproved hypothesis")
+
+
+def test_lying_formula_in_assume_rejected():
+    h = Eq(ZERO, ZERO)
+    try:
+        check(P.Assume(_EvilFormula(h)), PEANO)
+    except TypeError:
+        return
+    raise AssertionError("lying formula accepted as a hypothesis")
 
 
 def test_lying_term_cannot_derive_falsehood():
