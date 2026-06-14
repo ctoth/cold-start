@@ -249,6 +249,17 @@ def test_subst_idempotent_when_var_absent_from_replacement(t, x, repl):
     assert term_subst(once, x, repl) == once  # no x left to replace
 
 
+@given(formulas())
+def test_alpha_equivalence_is_structural_equality(body):
+    # The bound NAME is irrelevant: abstracting the same variable under two
+    # different (fresh) names yields identical locally-nameless data, so
+    # alpha-equivalence is literal `==`. ("Q1"/"Q2" are not in VAR_NAMES, so they
+    # cannot already occur free in `body`.)
+    fa = forall("Q1", "", formula_subst(body, "x", Var("Q1")))
+    fb = forall("Q2", "", formula_subst(body, "x", Var("Q2")))
+    assert fa == fb
+
+
 # --- the sound generator: the checker must agree with arithmetic ----------
 
 
