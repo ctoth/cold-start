@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import sys
 
-from checker import check
-from proof import from_json
+from .checker import check
+from .proof import from_json
 
 THEORIES = {}
 
 
 def _load_theories() -> None:
-    from peano import PEANO
+    from .peano import PEANO
 
     THEORIES["peano"] = PEANO
 

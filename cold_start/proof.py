@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from syntax import (
+from .syntax import (
     Formula,
     Term,
     formula_from_dict,

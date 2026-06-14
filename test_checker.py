@@ -10,9 +10,9 @@ import os
 import subprocess
 import sys
 
-import proof as P
-from checker import Sequent, check, validate_proof
-from peano import (
+import cold_start.proof as P
+from cold_start.checker import Sequent, check, validate_proof
+from cold_start.peano import (
     ADD_SUCC_F,
     ADD_ZERO_F,
     PEANO,
@@ -22,9 +22,9 @@ from peano import (
     induction,
     is_induction_instance,
 )
-from proof import from_json, to_json
-from proofs import left_identity_proof
-from syntax import Eq, Formula, Fun, Implies, Term, Var, validate_term
+from cold_start.proof import from_json, to_json
+from cold_start.proofs import left_identity_proof
+from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate_term
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -289,7 +289,7 @@ def test_validate_proof_runs_on_wellformed():
 
 def _run_verify(stdin_text: str):
     return subprocess.run(
-        [sys.executable, "verify.py"],
+        [sys.executable, "-m", "cold_start.verify"],
         input=stdin_text,
         capture_output=True,
         text=True,

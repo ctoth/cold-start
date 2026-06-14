@@ -25,33 +25,43 @@ a lying subclass is rejected as non-canonical.
 
 ## The pieces
 
-- **`syntax.py`** — the object language: terms (`Var`/`Fun`), formulas
+The code is the `cold_start/` package (flat, no src-layout):
+
+- **`cold_start/syntax.py`** — the object language: terms (`Var`/`Fun`), formulas
   (`Eq`/`Implies`), free-vars/substitution, exact-type `validate_*`, and JSON
   ser/deser. *Not trusted* — a formula is a claim, not a proof.
-- **`proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`, `Trans`,
-  `Cong`, `MP`, `ImpIntro`, `Inst`): the inert recipe a prover emits.
+- **`cold_start/proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`,
+  `Trans`, `Cong`, `MP`, `ImpIntro`, `Inst`): the inert recipe a prover emits.
   Serializable to JSON. *Not trusted.*
-- **`checker.py`** — **THE TRUSTED CORE.** `validate_proof` (one structural
-  pass), `check(proof, theory) -> Sequent`, and the pure recursive `_derive`.
-  A `Sequent` deliberately has no construction guard: holding one proves
-  nothing; only `check()` returning it is authority.
-- **`peano.py`** — Peano as a *theory*: signature (`0`, `S`, `+`), the two
-  addition axioms, and an induction-schema **recognizer**. Defining what counts
-  as an axiom is part of choosing a theory, so the recognizer is trusted — and
-  short. Induction is *derived* (two modus-ponens against the schema).
-- **`proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
-- **`verify.py`** — a CLI that checks a JSON proof in a **separate process**,
-  trusting only `checker.py` + the named theory. The De Bruijn payoff made real.
-- **`test_checker.py`** — the suite: rules, the soundness attacks, serialization
-  round-trip, and the cross-process verification.
+- **`cold_start/checker.py`** — **THE TRUSTED CORE.** `validate_proof` (one
+  structural pass), `check(proof, theory) -> Sequent`, and the pure recursive
+  `_derive`. A `Sequent` deliberately has no construction guard: holding one
+  proves nothing; only `check()` returning it is authority.
+- **`cold_start/peano.py`** — Peano as a *theory*: signature (`0`, `S`, `+`), the
+  two addition axioms, and an induction-schema **recognizer**. Defining what
+  counts as an axiom is part of choosing a theory, so the recognizer is trusted
+  — and short. Induction is *derived* (two modus-ponens against the schema).
+- **`cold_start/proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
+- **`cold_start/verify.py`** — a CLI that checks a JSON proof in a **separate
+  process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
+- **`test_checker.py`** — example tests: rules, the soundness attacks,
+  serialization round-trip, cross-process verification.
+- **`test_properties.py`** — Hypothesis property tests: round-trips, checker
+  totality, substitution algebra, a sound proof generator the checker must
+  agree with, and adversarial hammering of the induction recognizer.
 
 ## Run it
 
+Managed with [uv](https://docs.astral.sh/uv/) — isolated `.venv`, locked deps.
+
 ```sh
-python -m pytest                       # the whole suite (also: python test_checker.py)
-python proofs.py                       # prints:  |- +(0, n) = n
-python proofs.py | python -c "import proof,sys; print(proof.to_json(__import__('proofs').left_identity_proof()))" \
-    | python verify.py                 # verify a proof in a fresh process
+uv run pytest                          # the whole suite
+uv run python -m cold_start.proofs     # prints:  |- +(0, n) = n
+uv run ruff check . && uv run pyright  # lint + type-check
+
+# verify a proof in a fresh process, end to end:
+uv run python -c "from cold_start.proof import to_json; from cold_start.proofs import left_identity_proof; print(to_json(left_identity_proof()))" \
+    | uv run python -m cold_start.verify
 ```
 
 ## Design commitments (v0)
@@ -66,7 +76,8 @@ python proofs.py | python -c "import proof,sys; print(proof.to_json(__import__('
 ## Roadmap / next holes to dig
 
 - [x] De Bruijn checker over serializable proof terms
-- [x] Soundness against lying `__eq__` (exact-type validation)
+- [x] Soundness against lying `__eq__` / `__hash__` / mutable-args aliasing
+- [x] Property-based tests (Hypothesis); uv-managed, locked deps
 - [ ] `Not` (so we can state `0 != S(x)`, successor injectivity)
 - [ ] `n + 0 = 0 + n` → commutativity of `+`, then associativity
 - [ ] `*` and its laws; distributivity

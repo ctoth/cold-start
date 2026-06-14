@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import proof as P
-from syntax import (
+from . import proof as P
+from .syntax import (
     Eq,
     Formula,
     Fun,
@@ -106,11 +106,13 @@ def validate_proof(pf: object) -> None:
         raise TypeError(f"not a proof term: {pf!r}")
 
 
-def check(pf: object, theory: Theory) -> Sequent:
+def check(pf: object, theory: object) -> Sequent:
     """Re-derive the sequent proved by `pf` under `theory`, or raise.
 
     Validates the proof's structure once, then derives. Raises TypeError for a
-    malformed proof and ValueError for an invalid derivation step.
+    malformed proof and ValueError for an invalid derivation step. Inputs are
+    typed `object`: the trusted checker validates them, it does not trust the
+    caller's annotations.
     """
     if not isinstance(theory, Theory):
         raise TypeError(f"not a theory: {theory!r}")

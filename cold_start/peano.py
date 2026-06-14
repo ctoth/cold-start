@@ -8,9 +8,9 @@ part of choosing a theory, so the recognizer is trusted -- and short.
 
 from __future__ import annotations
 
-from checker import Theory
-from proof import MP, Axiom, Pf
-from syntax import (
+from .checker import Theory
+from .proof import MP, Axiom, Pf
+from .syntax import (
     Eq,
     Formula,
     Fun,

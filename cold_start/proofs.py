@@ -4,9 +4,9 @@ recipe. It asserts nothing until checker.check() re-derives its sequent.
 
 from __future__ import annotations
 
-from peano import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction
-from proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Trans
-from syntax import Eq, Var
+from .peano import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction
+from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Trans
+from .syntax import Eq, Var
 
 
 def left_identity_proof() -> Pf:
@@ -35,7 +35,7 @@ def left_identity_proof() -> Pf:
 
 
 if __name__ == "__main__":
-    from checker import check
-    from peano import PEANO
+    from .checker import check
+    from .peano import PEANO
 
     print("left identity:", check(left_identity_proof(), PEANO))
