@@ -19,8 +19,6 @@ from cold_start.peano import (
     ZERO,
     S,
     add,
-    induction,
-    is_induction_instance,
 )
 from cold_start.proof import from_json, to_json
 from cold_start.proofs import left_identity_proof
@@ -197,6 +195,28 @@ def test_sequent_is_not_authority():
     raise AssertionError("checker accepted 0 = 1 as an axiom")
 
 
+def test_induction_schema_not_exploitable_to_derive_falsehood():
+    """The induction principle must not let us derive 0 = 1. With induction
+    encoded as a free-variable axiom `P[0] -> ((P -> P[Sx]) -> P)`, taking
+    P(n) := n=0 and instantiating x:=1 yields a *false* axiom instance whose
+    step (1=0)->(2=0) is provable, extracting |- 1=0. This must be rejected."""
+    x = Var("x")
+    pred = Eq(x, ZERO)
+    one, two = S(ZERO), S(S(ZERO))
+    schema = Implies(Eq(ZERO, ZERO), Implies(Implies(pred, Eq(S(x), ZERO)), pred))
+    inst = P.Inst(P.Axiom(schema), "x", one)  # (0=0) -> (((1=0)->(2=0)) -> (1=0))
+    # prove the (closed) step (1=0)->(2=0):  from 1=0, cong S gives 2=1, trans 2=0
+    assume1 = P.Assume(Eq(one, ZERO))
+    step_proof = P.ImpIntro(Eq(one, ZERO), P.Trans(P.Cong("S", (assume1,)), assume1))
+    exploit = P.MP(P.MP(inst, P.Refl(ZERO)), step_proof)
+    try:
+        seq = check(exploit, PEANO)
+    except (ValueError, TypeError):
+        return  # rejected -- sound
+    assert seq.concl != Eq(one, ZERO), f"SOUNDNESS BUG: derived {seq}"
+    assert two  # keep the binding referenced
+
+
 # --- per-rule side conditions ---------------------------------------------
 
 
@@ -248,29 +268,56 @@ def test_implies_intro_discharges():
 # --- the induction schema recognizer --------------------------------------
 
 
-def test_induction_recognizer_accepts_genuine_instance():
+def _left_identity_base_and_step():
+    """Genuine base/step proofs for  0 + n = n  by induction on n."""
     n = Var("n")
     pred = Eq(add(ZERO, n), n)
-    pred0 = Eq(add(ZERO, ZERO), ZERO)
-    predS = Eq(add(ZERO, S(n)), S(n))
-    schema = Implies(pred0, Implies(Implies(pred, predS), pred))
-    assert is_induction_instance(schema)
-
-
-def test_induction_recognizer_rejects_bogus():
-    assert not is_induction_instance(Eq(ZERO, S(ZERO)))
-    assert not is_induction_instance(Implies(Eq(ZERO, ZERO), Eq(ZERO, S(ZERO))))
-
-
-def test_induction_builder_roundtrips_through_checker():
-    n = Var("n")
-    pred = Eq(add(ZERO, n), n)
-    base = P.Inst(P.Axiom(ADD_ZERO_F), "x", ZERO)
+    base = P.Inst(P.Axiom(ADD_ZERO_F), "x", ZERO)  # 0 + 0 = 0
     ih = P.Assume(pred)
     unfold = P.Inst(P.Inst(P.Axiom(ADD_SUCC_F), "x", ZERO), "y", n)
     step = P.ImpIntro(pred, P.Trans(unfold, P.Cong("S", (ih,))))
-    seq = check(induction("n", pred, base, step), PEANO)
+    return pred, base, step
+
+
+def test_induction_rule_proves_left_identity():
+    pred, base, step = _left_identity_base_and_step()
+    seq = check(P.Induct("n", pred, base, step), PEANO)
     assert seq.concl == pred and seq.hyps == frozenset()
+
+
+def test_induction_rejects_wrong_base():
+    pred, _base, step = _left_identity_base_and_step()
+    wrong_base = P.Refl(ZERO)  # proves 0=0, not pred[n:=0] which is 0+0=0
+    try:
+        check(P.Induct("n", pred, wrong_base, step), PEANO)
+    except ValueError:
+        return
+    raise AssertionError("induction accepted a base that doesn't prove pred[0]")
+
+
+def test_induction_rejects_wrong_step():
+    pred, base, _step = _left_identity_base_and_step()
+    wrong_step = P.Refl(ZERO)  # not an implication of the right shape
+    try:
+        check(P.Induct("n", pred, base, wrong_step), PEANO)
+    except ValueError:
+        return
+    raise AssertionError("induction accepted a malformed step")
+
+
+def test_induction_rejects_var_free_in_hypothesis():
+    # base/step that leave the induction variable free in an undischarged
+    # hypothesis must be refused -- that is the side condition that keeps the
+    # step universally quantified and blocks the 1=0 exploit.
+    n = Var("n")
+    pred = Eq(add(ZERO, n), n)
+    leaky_base = P.Assume(Eq(n, n))  # hypothesis n=n keeps n free, undischarged
+    _, _, step = _left_identity_base_and_step()
+    try:
+        check(P.Induct("n", pred, leaky_base, step), PEANO)
+    except ValueError:
+        return
+    raise AssertionError("induction allowed its variable free in a hypothesis")
 
 
 # --- serialization & cross-process verification ---------------------------

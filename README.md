@@ -38,9 +38,13 @@ The code is the `cold_start/` package (flat, no src-layout):
   `_derive`. A `Sequent` deliberately has no construction guard: holding one
   proves nothing; only `check()` returning it is authority.
 - **`cold_start/peano.py`** — Peano as a *theory*: signature (`0`, `S`, `+`), the
-  two addition axioms, and an induction-schema **recognizer**. Defining what
-  counts as an axiom is part of choosing a theory, so the recognizer is trusted
-  — and short. Induction is *derived* (two modus-ponens against the schema).
+  two addition axioms, and the theory's induction structure (`zero`/`succ`).
+  Induction is a **first-class rule** (`Induct`), *not* an axiom formula —
+  encoding the schema `P[0] -> ((P -> P[Sx]) -> P)` as an axiom is **unsound**
+  under our implicit-∀ reading (its free `x` wrongly quantifies the whole
+  implication, letting `P(n):=n=0`, x:=1 derive `1 = 0`). The rule keeps the
+  step quantified correctly and enforces *var not free in the hypotheses*. The
+  exploit is a permanent regression test.
 - **`cold_start/proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
 - **`cold_start/verify.py`** — a CLI that checks a JSON proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
@@ -78,6 +82,7 @@ uv run python -c "from cold_start.proof import to_json; from cold_start.proofs i
 - [x] De Bruijn checker over serializable proof terms
 - [x] Soundness against lying `__eq__` / `__hash__` / mutable-args aliasing
 - [x] Property-based tests (Hypothesis); uv-managed, locked deps
+- [x] Induction as a sound first-class rule (was an unsound axiom schema)
 - [ ] `Not` (so we can state `0 != S(x)`, successor injectivity)
 - [ ] `n + 0 = 0 + n` → commutativity of `+`, then associativity
 - [ ] `*` and its laws; distributivity

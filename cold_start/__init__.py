@@ -15,6 +15,7 @@ from .proof import (
     Axiom,
     Cong,
     ImpIntro,
+    Induct,
     Inst,
     Pf,
     Refl,
@@ -29,7 +30,7 @@ __all__ = [
     # language
     "Term", "Var", "Fun", "Formula", "Eq", "Implies",
     # proof terms
-    "Pf", "Axiom", "Assume", "Refl", "Sym", "Trans", "Cong", "MP", "ImpIntro", "Inst",
+    "Pf", "Axiom", "Assume", "Refl", "Sym", "Trans", "Cong", "MP", "ImpIntro", "Inst", "Induct",
     "to_json", "from_json",
     # checker
     "Sequent", "Theory", "check", "validate_proof",

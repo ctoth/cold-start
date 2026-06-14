@@ -23,6 +23,8 @@ from .syntax import (
     Formula,
     Fun,
     Implies,
+    Term,
+    Var,
     formula_free_vars,
     formula_subst,
     validate_formula,
@@ -55,16 +57,24 @@ class Theory:
     """A choice of axioms -- the mathematics we commit to, hence trusted.
 
     `axioms` are concrete formulas (with implicitly-universal free variables).
-    `schemas` are recognizer predicates for axiom *schemas* (e.g. induction),
-    each returning True for a formula that is a legitimate instance. The
-    recognizers are part of the trusted base; keep them small and obvious.
+    `zero` and `succ` name the theory's induction structure: the base term and
+    the successor function symbol used by the first-class `Induct` rule. A
+    theory without them (both None) admits no induction.
+
+    NB: induction is a *rule*, not an axiom formula. Asserting the schema
+    `P[0] -> ((P -> P[Sx]) -> P)` as an axiom is UNSOUND here, because under the
+    implicit-universal reading its free `x` quantifies over the whole
+    implication rather than only the step -- which lets `P(n):=n=0`, x:=1 derive
+    `1 = 0`. The `Induct` rule keeps the step quantified correctly and never
+    exposes that formula as a standalone theorem.
     """
 
     axioms: frozenset  # frozenset[Formula]
-    schemas: tuple = ()  # tuple[Callable[[Formula], bool], ...]
+    zero: Term | None = None
+    succ: str | None = None  # successor function symbol
 
     def accepts(self, f: Formula) -> bool:
-        return f in self.axioms or any(rec(f) for rec in self.schemas)
+        return f in self.axioms
 
 
 def validate_proof(pf: object) -> None:
@@ -102,6 +112,12 @@ def validate_proof(pf: object) -> None:
             raise TypeError("Inst.var must be a genuine str")
         validate_term(pf.term)
         validate_proof(pf.sub)
+    elif isinstance(pf, P.Induct):
+        if type(pf.var) is not str:
+            raise TypeError("Induct.var must be a genuine str")
+        validate_formula(pf.pred)
+        validate_proof(pf.base)
+        validate_proof(pf.step)
     else:
         raise TypeError(f"not a proof term: {pf!r}")
 
@@ -188,6 +204,40 @@ def _derive(pf: object, theory: Theory) -> Sequent:
                     f"cannot instantiate {pf.var!r}: free in hypothesis {h!r}"
                 )
         return Sequent(s.hyps, formula_subst(s.concl, pf.var, pf.term))
+
+    if isinstance(pf, P.Induct):
+        # Mathematical induction as a first-class rule (NOT an axiom formula):
+        #   base : G |- pred[var := 0]
+        #   step : D |- pred -> pred[var := S var]
+        #   var not free in G u D
+        #   ---------------------------------------
+        #   G u D |- pred
+        # The side condition is what keeps the step universally quantified over
+        # `var`; without it (or by citing the schema as an axiom) you can derive
+        # 1 = 0. See Theory's docstring.
+        if theory.zero is None or type(theory.succ) is not str:
+            raise ValueError("theory defines no induction principle (no zero/succ)")
+        validate_term(theory.zero)  # the trusted theory's base term must be canonical
+        base = _derive(pf.base, theory)
+        step = _derive(pf.step, theory)
+        pred_zero = formula_subst(pf.pred, pf.var, theory.zero)
+        pred_succ = formula_subst(pf.pred, pf.var, Fun(theory.succ, (Var(pf.var),)))
+        if base.concl != pred_zero:
+            raise ValueError(
+                f"induction base must prove {pred_zero!r}, got {base.concl!r}"
+            )
+        if step.concl != Implies(pf.pred, pred_succ):
+            raise ValueError(
+                f"induction step must prove {Implies(pf.pred, pred_succ)!r}, "
+                f"got {step.concl!r}"
+            )
+        hyps = base.hyps | step.hyps
+        for h in hyps:
+            if pf.var in formula_free_vars(h):
+                raise ValueError(
+                    f"induction variable {pf.var!r} is free in hypothesis {h!r}"
+                )
+        return Sequent(hyps, pf.pred)
 
     raise TypeError(f"not a proof term: {pf!r}")  # unreachable after validate_proof
 

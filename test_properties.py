@@ -16,9 +16,8 @@ from cold_start.peano import (
     ADD_ZERO_F,
     PEANO,
     ZERO,
-    S,
     add,
-    is_induction_instance,
+    induction,
     numeral,
 )
 from cold_start.proof import from_json, to_dict, to_json
@@ -192,24 +191,38 @@ def test_check_is_deterministic(a, b):
     assert check(pf, PEANO) == check(pf, PEANO)
 
 
-# --- the trusted induction-schema recognizer ------------------------------
+# --- the first-class induction rule ---------------------------------------
 
 
-@given(formulas(), VAR_NAMES)
-def test_induction_recognizer_is_complete(pred, x):
-    """Every genuine schema instance must be accepted (else induction is
-    incompletely recognized and valid proofs get rejected)."""
-    schema = Implies(
-        formula_subst(pred, x, ZERO),
-        Implies(Implies(pred, formula_subst(pred, x, S(Var(x)))), pred),
-    )
-    assert is_induction_instance(schema)
+def _left_identity_induction():
+    """An Induct proof term for  0 + n = n  (genuine base + step)."""
+    n = Var("n")
+    pred = Eq(add(ZERO, n), n)
+    base = P.Inst(P.Axiom(ADD_ZERO_F), "x", ZERO)
+    ih = P.Assume(pred)
+    unfold = P.Inst(P.Inst(P.Axiom(ADD_SUCC_F), "x", ZERO), "y", n)
+    step = P.ImpIntro(pred, P.Trans(unfold, P.Cong("S", (ih,))))
+    return pred, induction("n", pred, base, step)
 
 
-@given(formulas(), formulas(), formulas())
-def test_induction_recognizer_rejects_wrong_shape(a, b, c):
-    """If the step's antecedent isn't the recurring predicate, it's not the
-    schema and must be rejected."""
-    assume(b != c)
-    bogus = Implies(a, Implies(Implies(b, a), c))  # step.ant=b but predicate=c
-    assert not is_induction_instance(bogus)
+def test_induction_proof_checks_and_serializes():
+    pred, pf = _left_identity_induction()
+    assert check(pf, PEANO).concl == pred
+    assert check(from_json(to_json(pf)), PEANO) == check(pf, PEANO)
+
+
+@given(VAR_NAMES)
+def test_induction_rejects_var_free_in_hypothesis(v):
+    """The side condition that blocks the 1=0 exploit: if the induction variable
+    is free in an undischarged hypothesis of base/step, reject. Here base leaks
+    a hypothesis mentioning the variable."""
+    var = Var(v)
+    pred = Eq(var, var)  # trivially has the variable free
+    leaky_base = P.Assume(Eq(var, var))  # undischarged hyp keeps `v` free
+    step = P.ImpIntro(pred, P.Refl(Fun("S", (var,))))  # |- pred -> (S v = S v)
+    pf = P.Induct(v, pred, leaky_base, step)
+    try:
+        check(pf, PEANO)
+    except (ValueError, TypeError):
+        return
+    raise AssertionError("induction allowed its variable free in a hypothesis")

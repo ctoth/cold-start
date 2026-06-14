@@ -81,6 +81,19 @@ class Inst(Pf):
     term: Term
 
 
+@dataclass(frozen=True, slots=True)
+class Induct(Pf):
+    """Mathematical induction on `var` over predicate `pred`, with sub-proofs
+    of the base (`pred[var:=0]`) and step (`pred -> pred[var:=S var]`). A
+    first-class rule, NOT an axiom formula -- the checker enforces the side
+    condition that `var` is not free in the sub-proofs' hypotheses."""
+
+    var: str
+    pred: Formula
+    base: Pf
+    step: Pf
+
+
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
@@ -105,6 +118,14 @@ def to_dict(p: Pf) -> dict:
         return {"k": "ImpIntro", "hyp": formula_to_dict(p.hyp), "body": to_dict(p.body)}
     if isinstance(p, Inst):
         return {"k": "Inst", "sub": to_dict(p.sub), "var": p.var, "term": term_to_dict(p.term)}
+    if isinstance(p, Induct):
+        return {
+            "k": "Induct",
+            "var": p.var,
+            "pred": formula_to_dict(p.pred),
+            "base": to_dict(p.base),
+            "step": to_dict(p.step),
+        }
     raise TypeError(f"not a proof term: {p!r}")
 
 
@@ -137,6 +158,11 @@ def from_dict(d: object) -> Pf:
         if not isinstance(var, str):
             raise ValueError("Inst.var must be a string")
         return Inst(from_dict(d["sub"]), var, term_from_dict(d["term"]))
+    if kind == "Induct":
+        var = d["var"]
+        if not isinstance(var, str):
+            raise ValueError("Induct.var must be a string")
+        return Induct(var, formula_from_dict(d["pred"]), from_dict(d["base"]), from_dict(d["step"]))
     raise ValueError(f"unknown proof kind: {kind!r}")
 
 

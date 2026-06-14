@@ -9,16 +9,13 @@ part of choosing a theory, so the recognizer is trusted -- and short.
 from __future__ import annotations
 
 from .checker import Theory
-from .proof import MP, Axiom, Pf
+from .proof import Induct, Pf
 from .syntax import (
     Eq,
     Formula,
     Fun,
-    Implies,
     Term,
     Var,
-    formula_free_vars,
-    formula_subst,
 )
 
 # --- signature ------------------------------------------------------------
@@ -50,55 +47,28 @@ ADD_ZERO_F: Formula = Eq(add(Var("x"), ZERO), Var("x"))  # x + 0 = x
 ADD_SUCC_F: Formula = Eq(add(Var("x"), S(Var("y"))), S(add(Var("x"), Var("y"))))  # x + S y = S(x+y)
 
 
-def is_induction_instance(f: Formula) -> bool:
-    """True iff `f` is an instance of the induction schema
-
-        P[x:=0] -> ( (P -> P[x:=S x]) -> P )
-
-    for some predicate P and induction variable x. We recover P as the final
-    consequent, then search the free variables of P for an x that makes the
-    antecedent and the step match. The check is structural and total.
-    """
-    if not isinstance(f, Implies):
-        return False
-    base = f.ant
-    rest = f.con
-    if not isinstance(rest, Implies):
-        return False
-    step = rest.ant  # expected: Implies(P, P[x:=S x])
-    pred = rest.con  # expected: P
-    if not isinstance(step, Implies) or step.ant != pred:
-        return False
-    succ_case = step.con  # expected: P[x:=S x]
-    for x in formula_free_vars(pred):
-        if formula_subst(pred, x, ZERO) == base and formula_subst(pred, x, S(Var(x))) == succ_case:
-            return True
-    # Degenerate: induction variable not free in P (vacuous but valid).
-    return base == pred and succ_case == pred
-
-
+# Induction is a *rule*, not an axiom (encoding the schema as an axiom formula
+# is unsound here -- see checker.Theory). The theory just declares its zero and
+# successor so the checker's Induct rule knows the recursion structure.
 PEANO = Theory(
     axioms=frozenset({ADD_ZERO_F, ADD_SUCC_F}),
-    schemas=(is_induction_instance,),
+    zero=ZERO,
+    succ="S",
 )
 
 
-# --- derived inference: induction ----------------------------------------
+# --- inference: induction ------------------------------------------------
 
 
 def induction(var: str, pred: Formula, base: Pf, step: Pf) -> Pf:
-    """Build a proof term for induction on `var` over `pred`.
+    """Build an induction proof term.
 
         base : |- pred[var := 0]
         step : |- pred -> pred[var := S(var)]
         ----------------------------------------
               |- pred
 
-    It cites the induction-schema axiom (accepted by PEANO via
-    is_induction_instance) and discharges it with two modus-ponens steps. The
-    checker re-validates that `base` and `step` are exactly the right shape.
+    Just the `Induct` node constructor; the checker enforces base/step shape and
+    the side condition that `var` is not free in their hypotheses.
     """
-    pred_zero = formula_subst(pred, var, ZERO)
-    pred_succ = formula_subst(pred, var, S(Var(var)))
-    schema = Implies(pred_zero, Implies(Implies(pred, pred_succ), pred))
-    return MP(MP(Axiom(schema), base), step)
+    return Induct(var, pred, base, step)
