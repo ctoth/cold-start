@@ -7,7 +7,12 @@ trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
 the verifier, not the object.
 
 ## Current state: DONE & GREEN
-- pytest: **21 passed** (added 2 sentinels for the frozenset-discharge attack)
+- pytest: **23 passed** (+2 for the term-args aliasing attack)
+- Attack #6 (Q): `Fun("f", list)` aliases a mutable list into a term; mutating
+  it later retroactively rewrites a proved term. Fixed two ways: Fun.__post_init__
+  snapshots args to a tuple (immutable by construction), AND validate_term's
+  exact `type(args) is tuple` is the backstop against object.__new__ bypass.
+  Tests: test_term_args_snapshotted_*, test_forged_fun_with_mutable_args_rejected.
 - ruff check .: clean
 - pyright (repo-rooted CLI, uses pyrightconfig.json): **0 errors, 0 warnings**
   (NOTE: the editor's inline Pyright is rooted at parent `code\` and ignores our

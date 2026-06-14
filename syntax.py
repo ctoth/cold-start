@@ -35,6 +35,14 @@ class Fun(Term):
     name: str
     args: tuple  # tuple[Term, ...]
 
+    def __post_init__(self) -> None:
+        # Snapshot args into an immutable tuple. Without this, a caller's
+        # mutable list is aliased into the term, so mutating it later would
+        # retroactively rewrite a term already used in a proof. (Elements are
+        # themselves immutable terms, so a shallow snapshot is deep enough.)
+        if type(self.args) is not tuple:
+            object.__setattr__(self, "args", tuple(self.args))
+
     def __repr__(self) -> str:
         if not self.args:
             return self.name

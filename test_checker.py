@@ -121,6 +121,33 @@ def test_lying_formula_in_assume_rejected():
     raise AssertionError("lying formula accepted as a hypothesis")
 
 
+def test_term_args_snapshotted_against_caller_mutation():
+    # The aliasing attack: build a term from a mutable list, use it, then mutate
+    # the list. A term that aliased the list would change retroactively.
+    args: list[Term] = [Var("x")]
+    term = Fun("f", args)  # pyright: ignore[reportArgumentType]  -- a list is the attack
+    proof = P.Refl(term)
+    before = check(proof, PEANO).concl
+    args[0] = Fun("0", ())  # mutate the caller's list AFTER proving
+    after = check(proof, PEANO).concl
+    expected = Eq(Fun("f", (Var("x"),)), Fun("f", (Var("x"),)))
+    assert term.args == (Var("x"),)  # snapshotted at construction, not aliased
+    assert before == after == expected  # the proof did not change under us
+
+
+def test_forged_fun_with_mutable_args_rejected():
+    # Bypass __post_init__ via object.__new__ to smuggle in a live list, and
+    # confirm the checker's validation is an independent backstop.
+    bad = object.__new__(Fun)
+    object.__setattr__(bad, "name", "f")
+    object.__setattr__(bad, "args", [Var("x")])  # mutable, never snapshotted
+    try:
+        check(P.Refl(bad), PEANO)
+    except TypeError:
+        return
+    raise AssertionError("checker accepted a Fun carrying a mutable list")
+
+
 def test_lying_term_cannot_derive_falsehood():
     # Trans(Refl(S0), Trans(Refl(Evil), Refl(0)))  once derived  S(0) = 0.
     attack = P.Trans(P.Refl(S(ZERO)), P.Trans(P.Refl(_EvilTerm()), P.Refl(ZERO)))
