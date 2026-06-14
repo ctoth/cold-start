@@ -25,9 +25,10 @@ class Term:
 @dataclass(frozen=True, slots=True)
 class Var(Term):
     name: str
+    sort: str = ""  # "" means unsorted (single-sorted theories ignore it)
 
     def __repr__(self) -> str:
-        return self.name
+        return f"{self.name}:{self.sort}" if self.sort else self.name
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +132,7 @@ def _check_str(s: object, what: str) -> None:
 def validate_term(t: object) -> None:
     if type(t) is Var:
         _check_str(t.name, "Var.name")
+        _check_str(t.sort, "Var.sort")
         return
     if type(t) is Fun:
         _check_str(t.name, "Fun.name")
@@ -162,7 +164,7 @@ def validate_formula(f: object) -> None:
 
 def term_to_dict(t: Term) -> dict:
     if isinstance(t, Var):
-        return {"k": "Var", "name": t.name}
+        return {"k": "Var", "name": t.name, "sort": t.sort}
     if isinstance(t, Fun):
         return {"k": "Fun", "name": t.name, "args": [term_to_dict(a) for a in t.args]}
     raise TypeError(f"not a term: {t!r}")
@@ -174,9 +176,10 @@ def term_from_dict(d: object) -> Term:
     kind = d["k"]
     if kind == "Var":
         name = d["name"]
-        if not isinstance(name, str):
-            raise ValueError("Var.name must be a string")
-        return Var(name)
+        sort = d.get("sort", "")
+        if not isinstance(name, str) or not isinstance(sort, str):
+            raise ValueError("Var.name and Var.sort must be strings")
+        return Var(name, sort)
     if kind == "Fun":
         name, args = d["name"], d["args"]
         if not isinstance(name, str) or not isinstance(args, list):

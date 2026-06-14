@@ -53,6 +53,23 @@ class Sequent:
 
 
 @dataclass(frozen=True, slots=True)
+class Signature:
+    """A many-sorted signature: the declared sort names and each function
+    symbol's rank (argument sorts -> result sort). When a `Theory` carries one,
+    the checker rejects ill-sorted terms and cross-sort instantiation.
+    """
+
+    sorts: frozenset  # frozenset[str]
+    ranks: tuple  # tuple[(name: str, arg_sorts: tuple[str, ...], result: str), ...]
+
+    def rank(self, name: str):
+        for n, arg_sorts, result in self.ranks:
+            if n == name:
+                return arg_sorts, result
+        return None
+
+
+@dataclass(frozen=True, slots=True)
 class Theory:
     """A choice of axioms -- the mathematics we commit to, hence trusted.
 
@@ -60,6 +77,10 @@ class Theory:
     `zero` and `succ` name the theory's induction structure: the base term and
     the successor function symbol used by the first-class `Induct` rule. A
     theory without them (both None) admits no induction.
+
+    `signature` (optional) makes the theory many-sorted: when present, the
+    checker sort-checks every term and forbids instantiating a variable with a
+    term of a different sort. When None, no sort-checking happens at all.
 
     NB: induction is a *rule*, not an axiom formula. Asserting the schema
     `P[0] -> ((P -> P[Sx]) -> P)` as an axiom is UNSOUND here, because under the
@@ -72,9 +93,59 @@ class Theory:
     axioms: frozenset  # frozenset[Formula]
     zero: Term | None = None
     succ: str | None = None  # successor function symbol
+    signature: Signature | None = None
 
     def accepts(self, f: Formula) -> bool:
         return f in self.axioms
+
+
+def sort_of(t: object, sig: Signature) -> str:
+    """The sort of a well-sorted term, or raise ValueError if ill-sorted."""
+    if type(t) is Var:
+        if t.sort not in sig.sorts:
+            raise ValueError(f"variable {t!r} has undeclared sort {t.sort!r}")
+        return t.sort
+    if type(t) is Fun:
+        r = sig.rank(t.name)
+        if r is None:
+            raise ValueError(f"undeclared function symbol {t.name!r}")
+        arg_sorts, result = r
+        if len(t.args) != len(arg_sorts):
+            raise ValueError(f"{t.name!r} expects {len(arg_sorts)} args, got {len(t.args)}")
+        for a, expected in zip(t.args, arg_sorts, strict=True):
+            actual = sort_of(a, sig)
+            if actual != expected:
+                raise ValueError(f"{t.name!r} arg has sort {actual!r}, expected {expected!r}")
+        return result
+    raise TypeError(f"not a term: {t!r}")
+
+
+def sort_check_formula(f: object, sig: Signature) -> None:
+    if type(f) is Eq:
+        ls, rs = sort_of(f.lhs, sig), sort_of(f.rhs, sig)
+        if ls != rs:
+            raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {f!r}")
+    elif type(f) is Implies:
+        sort_check_formula(f.ant, sig)
+        sort_check_formula(f.con, sig)
+    else:
+        raise TypeError(f"not a formula: {f!r}")
+
+
+def _sorts_of_var(obj: object, name: str, out: set) -> None:
+    """Collect the sorts at which variable `name` occurs in a term/formula."""
+    if type(obj) is Var:
+        if obj.name == name:
+            out.add(obj.sort)
+    elif type(obj) is Fun:
+        for a in obj.args:
+            _sorts_of_var(a, name, out)
+    elif type(obj) is Eq:
+        _sorts_of_var(obj.lhs, name, out)
+        _sorts_of_var(obj.rhs, name, out)
+    elif type(obj) is Implies:
+        _sorts_of_var(obj.ant, name, out)
+        _sorts_of_var(obj.con, name, out)
 
 
 def validate_proof(pf: object) -> None:
@@ -141,15 +212,23 @@ def _derive(pf: object, theory: Theory) -> Sequent:
     on any term/formula here is honest and no input-type guards are needed --
     only the logical side-conditions of each rule.
     """
+    sig = theory.signature  # None for single-sorted theories: no sort-checking
+
     if type(pf) is P.Axiom:
         if not theory.accepts(pf.formula):
             raise ValueError(f"not an axiom of this theory: {pf.formula!r}")
+        if sig is not None:
+            sort_check_formula(pf.formula, sig)
         return Sequent(frozenset(), pf.formula)
 
     if type(pf) is P.Assume:
+        if sig is not None:
+            sort_check_formula(pf.formula, sig)
         return Sequent(frozenset({pf.formula}), pf.formula)
 
     if type(pf) is P.Refl:
+        if sig is not None:
+            sort_of(pf.term, sig)
         return Sequent(frozenset(), Eq(pf.term, pf.term))
 
     if type(pf) is P.Sym:
@@ -179,7 +258,10 @@ def _derive(pf: object, theory: Theory) -> Sequent:
             hyps |= s.hyps
             lhs.append(s.concl.lhs)
             rhs.append(s.concl.rhs)
-        return Sequent(hyps, Eq(Fun(pf.fun, tuple(lhs)), Fun(pf.fun, tuple(rhs))))
+        result = Eq(Fun(pf.fun, tuple(lhs)), Fun(pf.fun, tuple(rhs)))
+        if sig is not None:
+            sort_check_formula(result, sig)  # arg sorts must match the rank
+        return Sequent(hyps, result)
 
     if type(pf) is P.MP:
         imp = _derive(pf.imp, theory)
@@ -203,6 +285,19 @@ def _derive(pf: object, theory: Theory) -> Sequent:
                 raise ValueError(
                     f"cannot instantiate {pf.var!r}: free in hypothesis {h!r}"
                 )
+        if sig is not None:
+            # the replacement's sort must match the variable's declared sort --
+            # instantiating x:K with a V-term is a sort error even when the
+            # resulting formula happens to be well-sorted.
+            var_sorts: set = set()
+            _sorts_of_var(s.concl, pf.var, var_sorts)
+            if var_sorts:
+                term_sort = sort_of(pf.term, sig)
+                if term_sort not in var_sorts:
+                    raise ValueError(
+                        f"cannot instantiate {pf.var!r}:{var_sorts} with a "
+                        f"term of sort {term_sort!r}"
+                    )
         return Sequent(s.hyps, formula_subst(s.concl, pf.var, pf.term))
 
     if type(pf) is P.Induct:
