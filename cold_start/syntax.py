@@ -109,6 +109,19 @@ def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
     return Implies(a, Bottom())
 
 
+@dataclass(frozen=True, slots=True)
+class Forall(Formula):
+    """Universal quantifier: binds `var` (of `sort`) in `body`."""
+
+    var: str
+    sort: str
+    body: Formula
+
+    def __repr__(self) -> str:
+        v = f"{self.var}:{self.sort}" if self.sort else self.var
+        return f"(forall {v}. {self.body!r})"
+
+
 def formula_free_vars(f: Formula) -> frozenset:
     if isinstance(f, Eq):
         return term_free_vars(f.lhs) | term_free_vars(f.rhs)
@@ -116,6 +129,8 @@ def formula_free_vars(f: Formula) -> frozenset:
         return formula_free_vars(f.ant) | formula_free_vars(f.con)
     if isinstance(f, Bottom):
         return frozenset()
+    if isinstance(f, Forall):
+        return formula_free_vars(f.body) - {f.var}
     raise TypeError(f"not a formula: {f!r}")
 
 
@@ -126,7 +141,25 @@ def formula_subst(f: Formula, var: str, repl: Term) -> Formula:
         return Implies(formula_subst(f.ant, var, repl), formula_subst(f.con, var, repl))
     if isinstance(f, Bottom):
         return f
+    if isinstance(f, Forall):
+        if f.var == var:
+            return f  # the binder shadows `var`; nothing free to substitute
+        if f.var in term_free_vars(repl):
+            # capture would occur: alpha-rename the bound variable to a fresh
+            # name (the fresh name can't be captured, so the rename is safe),
+            # then substitute into the renamed body.
+            fresh = _fresh(f.var, term_free_vars(repl) | formula_free_vars(f.body) | {var})
+            renamed = formula_subst(f.body, f.var, Var(fresh, f.sort))
+            return Forall(fresh, f.sort, formula_subst(renamed, var, repl))
+        return Forall(f.var, f.sort, formula_subst(f.body, var, repl))
     raise TypeError(f"not a formula: {f!r}")
+
+
+def _fresh(base: str, avoid: frozenset) -> str:
+    candidate = base
+    while candidate in avoid:
+        candidate += "'"
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +203,11 @@ def validate_formula(f: object) -> None:
         validate_formula(f.con)
         return
     if type(f) is Bottom:
+        return
+    if type(f) is Forall:
+        _check_str(f.var, "Forall.var")
+        _check_str(f.sort, "Forall.sort")
+        validate_formula(f.body)
         return
     raise TypeError(f"non-canonical formula: {type(f).__name__}")
 

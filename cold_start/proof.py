@@ -111,6 +111,26 @@ class RAA(Pf):
     sub: Pf
 
 
+@dataclass(frozen=True, slots=True)
+class ForallElim(Pf):
+    """Universal instantiation: from a proof of `forall x. body`, conclude
+    `body[x := term]` (capture-avoiding)."""
+
+    sub: Pf
+    term: Term
+
+
+@dataclass(frozen=True, slots=True)
+class ForallIntro(Pf):
+    """Universal generalization: from a proof of `body` in which `var` is not
+    free in any hypothesis (the eigenvariable condition), conclude
+    `forall var. body`."""
+
+    var: str
+    sort: str
+    sub: Pf
+
+
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------

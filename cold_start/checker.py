@@ -22,6 +22,7 @@ from . import proof as P
 from .syntax import (
     Bottom,
     Eq,
+    Forall,
     Formula,
     Fun,
     Implies,
@@ -253,6 +254,13 @@ def validate_proof(pf: object) -> None:
     elif type(pf) is P.RAA:
         validate_formula(pf.goal)
         validate_proof(pf.sub)
+    elif type(pf) is P.ForallElim:
+        validate_term(pf.term)
+        validate_proof(pf.sub)
+    elif type(pf) is P.ForallIntro:
+        if type(pf.var) is not str or type(pf.sort) is not str:
+            raise TypeError("ForallIntro.var and .sort must be genuine strs")
+        validate_proof(pf.sub)
     else:
         raise TypeError(f"not a proof term: {pf!r}")
 
@@ -417,6 +425,31 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
         if type(s.concl) is not Bottom:
             raise ValueError(f"reductio needs a proof of Bottom, got {s.concl!r}")
         return Sequent(s.hyps - {Not(pf.goal)}, pf.goal)
+
+    if type(pf) is P.ForallElim:
+        # from `forall x. body` conclude body[x := term] (capture-avoiding).
+        s = _derive(pf.sub, theory)
+        if type(s.concl) is not Forall:
+            raise ValueError(f"forall-elim needs a universal, got {s.concl!r}")
+        if sig is not None and s.concl.sort:
+            t_sort = sort_of(pf.term, sig)
+            if t_sort != s.concl.sort:
+                raise ValueError(
+                    f"cannot instantiate forall {s.concl.var!r}:{s.concl.sort!r} "
+                    f"with a term of sort {t_sort!r}"
+                )
+        return Sequent(s.hyps, formula_subst(s.concl.body, s.concl.var, pf.term))
+
+    if type(pf) is P.ForallIntro:
+        # generalize a schematic variable, provided it is not constrained by a
+        # hypothesis (the eigenvariable condition).
+        s = _derive(pf.sub, theory)
+        for h in s.hyps:
+            if pf.var in formula_free_vars(h):
+                raise ValueError(
+                    f"cannot generalize {pf.var!r}: free in hypothesis {h!r}"
+                )
+        return Sequent(s.hyps, Forall(pf.var, pf.sort, s.concl))
 
     raise TypeError(f"not a proof term: {pf!r}")  # unreachable after validate_proof
 
