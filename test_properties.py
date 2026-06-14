@@ -24,6 +24,7 @@ from cold_start.proof import from_json, to_dict, to_json
 from cold_start.proofs import add_proof as prove_add
 from cold_start.syntax import (
     Bottom,
+    BVar,
     Eq,
     Exists,
     Forall,
@@ -32,6 +33,8 @@ from cold_start.syntax import (
     Implies,
     Term,
     Var,
+    exists,
+    forall,
     formula_free_vars,
     formula_from_dict,
     formula_subst,
@@ -65,8 +68,8 @@ def formulas():
         st.one_of(st.builds(Eq, terms(), terms()), st.builds(Bottom)),
         lambda kids: st.one_of(
             st.builds(Implies, kids, kids),
-            st.builds(Forall, VAR_NAMES, st.just(""), kids),
-            st.builds(Exists, VAR_NAMES, st.just(""), kids),
+            st.builds(forall, VAR_NAMES, st.just(""), kids),
+            st.builds(exists, VAR_NAMES, st.just(""), kids),
         ),
         max_leaves=6,
     )
@@ -106,6 +109,7 @@ BASE_PROOF = P.Assume(BASE_FORMULA)
 
 TERM_JSON_EXAMPLES = {
     Var: BASE_TERM,
+    BVar: BVar(0),
     Fun: Fun("f", (BASE_TERM,)),
 }
 
@@ -113,8 +117,8 @@ FORMULA_JSON_EXAMPLES = {
     Eq: BASE_FORMULA,
     Implies: Implies(BASE_FORMULA, BASE_FORMULA),
     Bottom: Bottom(),
-    Forall: Forall("x", "", BASE_FORMULA),
-    Exists: Exists("x", "", BASE_FORMULA),
+    Forall: forall("x", "", BASE_FORMULA),
+    Exists: exists("x", "", BASE_FORMULA),
 }
 
 PROOF_JSON_EXAMPLES = {
@@ -132,7 +136,7 @@ PROOF_JSON_EXAMPLES = {
     P.RAA: P.RAA(BASE_FORMULA, BASE_PROOF),
     P.ForallElim: P.ForallElim(BASE_PROOF, BASE_TERM),
     P.ForallIntro: P.ForallIntro("x", "", BASE_PROOF),
-    P.ExistsIntro: P.ExistsIntro(Exists("x", "", BASE_FORMULA), BASE_TERM, BASE_PROOF),
+    P.ExistsIntro: P.ExistsIntro(exists("x", "", BASE_FORMULA), BASE_TERM, BASE_PROOF),
     P.ExistsElim: P.ExistsElim("x", BASE_PROOF, BASE_PROOF),
 }
 

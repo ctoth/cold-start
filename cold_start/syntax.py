@@ -50,9 +50,26 @@ class Fun(Term):
         return f"{self.name}({', '.join(map(repr, self.args))})"
 
 
+@dataclass(frozen=True, slots=True)
+class BVar(Term):
+    """A bound variable, as a de Bruijn index (0 = nearest enclosing binder).
+
+    Bound variables carry no name, so alpha-equivalent formulas are *identical*
+    data: `==` is alpha-equivalence, with no fresh names and no separate alpha
+    relation. The binder (Forall/Exists) records the sort.
+    """
+
+    index: int
+
+    def __repr__(self) -> str:
+        return f"#{self.index}"
+
+
 def term_free_vars(t: Term) -> frozenset:
     if isinstance(t, Var):
         return frozenset({t.name})
+    if isinstance(t, BVar):
+        return frozenset()  # bound variables are nameless, never free
     if isinstance(t, Fun):
         out: frozenset = frozenset()
         for a in t.args:
@@ -62,9 +79,12 @@ def term_free_vars(t: Term) -> frozenset:
 
 
 def term_subst(t: Term, var: str, repl: Term) -> Term:
-    """Replace Var(var) with repl. No binders inside terms, so no capture."""
+    """Replace the free variable Var(var) with repl. Capture is impossible: free
+    variables are named, binders are nameless (de Bruijn), so nothing captures."""
     if isinstance(t, Var):
         return repl if t.name == var else t
+    if isinstance(t, BVar):
+        return t
     if isinstance(t, Fun):
         return Fun(t.name, tuple(term_subst(a, var, repl) for a in t.args))
     raise TypeError(f"not a term: {t!r}")
@@ -111,28 +131,93 @@ def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
 
 @dataclass(frozen=True, slots=True)
 class Forall(Formula):
-    """Universal quantifier: binds `var` (of `sort`) in `body`."""
+    """Universal quantifier (locally nameless). `body` refers to the bound
+    variable via BVar(0); the bound name is gone, so `==` is alpha-equivalence.
+    Build with `forall(name, sort, body)`, which abstracts the named variable."""
 
-    var: str
     sort: str
     body: Formula
 
     def __repr__(self) -> str:
-        v = f"{self.var}:{self.sort}" if self.sort else self.var
-        return f"(forall {v}. {self.body!r})"
+        return f"(forall :{self.sort}. {self.body!r})" if self.sort else f"(forall. {self.body!r})"
 
 
 @dataclass(frozen=True, slots=True)
 class Exists(Formula):
-    """Existential quantifier: binds `var` (of `sort`) in `body`."""
+    """Existential quantifier (locally nameless); see Forall."""
 
-    var: str
     sort: str
     body: Formula
 
     def __repr__(self) -> str:
-        v = f"{self.var}:{self.sort}" if self.sort else self.var
-        return f"(exists {v}. {self.body!r})"
+        return f"(exists :{self.sort}. {self.body!r})" if self.sort else f"(exists. {self.body!r})"
+
+
+# --- binding operations (locally nameless) --------------------------------
+# `abstract` turns a free variable into a bound one (close a binder); `instantiate`
+# replaces the outermost bound variable with a term (open a binder). Smart
+# constructors `forall`/`exists` let us still WRITE named binders at the surface.
+
+
+def _abstract_term(name: str, t: Term, depth: int) -> Term:
+    if isinstance(t, Var):
+        return BVar(depth) if t.name == name else t
+    if isinstance(t, BVar):
+        return t
+    if isinstance(t, Fun):
+        return Fun(t.name, tuple(_abstract_term(name, a, depth) for a in t.args))
+    raise TypeError(f"not a term: {t!r}")
+
+
+def _abstract(name: str, f: Formula, depth: int) -> Formula:
+    if isinstance(f, Eq):
+        return Eq(_abstract_term(name, f.lhs, depth), _abstract_term(name, f.rhs, depth))
+    if isinstance(f, Implies):
+        return Implies(_abstract(name, f.ant, depth), _abstract(name, f.con, depth))
+    if isinstance(f, Bottom):
+        return f
+    if isinstance(f, (Forall, Exists)):
+        return type(f)(f.sort, _abstract(name, f.body, depth + 1))
+    raise TypeError(f"not a formula: {f!r}")
+
+
+def _instantiate_term(t: Term, repl: Term, depth: int) -> Term:
+    if isinstance(t, BVar):
+        if t.index == depth:
+            return repl
+        return BVar(t.index - 1) if t.index > depth else t
+    if isinstance(t, Var):
+        return t
+    if isinstance(t, Fun):
+        return Fun(t.name, tuple(_instantiate_term(a, repl, depth) for a in t.args))
+    raise TypeError(f"not a term: {t!r}")
+
+
+def _instantiate(f: Formula, repl: Term, depth: int) -> Formula:
+    if isinstance(f, Eq):
+        return Eq(_instantiate_term(f.lhs, repl, depth), _instantiate_term(f.rhs, repl, depth))
+    if isinstance(f, Implies):
+        return Implies(_instantiate(f.ant, repl, depth), _instantiate(f.con, repl, depth))
+    if isinstance(f, Bottom):
+        return f
+    if isinstance(f, (Forall, Exists)):
+        return type(f)(f.sort, _instantiate(f.body, repl, depth + 1))
+    raise TypeError(f"not a formula: {f!r}")
+
+
+def forall(name: str, sort: str, body: Formula) -> Formula:  # noqa: N802 -- connective
+    return Forall(sort, _abstract(name, body, 0))
+
+
+def exists(name: str, sort: str, body: Formula) -> Formula:  # noqa: N802 -- connective
+    return Exists(sort, _abstract(name, body, 0))
+
+
+def instantiate(binder: Formula, repl: Term) -> Formula:
+    """Open the outermost binder of `binder` (a Forall/Exists) with `repl`."""
+    if not isinstance(binder, (Forall, Exists)):
+        raise TypeError(f"not a quantifier: {binder!r}")
+    return _instantiate(binder.body, repl, 0)
 
 
 def formula_free_vars(f: Formula) -> frozenset:
@@ -143,11 +228,14 @@ def formula_free_vars(f: Formula) -> frozenset:
     if isinstance(f, Bottom):
         return frozenset()
     if isinstance(f, (Forall, Exists)):
-        return formula_free_vars(f.body) - {f.var}
+        return formula_free_vars(f.body)  # bound vars are nameless; all names are free
     raise TypeError(f"not a formula: {f!r}")
 
 
 def formula_subst(f: Formula, var: str, repl: Term) -> Formula:
+    """Substitute a free variable. No capture-avoidance needed: free variables
+    are named and binders are nameless, so a substituted free variable can never
+    be captured by a binder."""
     if isinstance(f, Eq):
         return Eq(term_subst(f.lhs, var, repl), term_subst(f.rhs, var, repl))
     if isinstance(f, Implies):
@@ -155,27 +243,8 @@ def formula_subst(f: Formula, var: str, repl: Term) -> Formula:
     if isinstance(f, Bottom):
         return f
     if isinstance(f, (Forall, Exists)):
-        cls = type(f)
-        if f.var == var:
-            return f  # the binder shadows `var`; nothing free to substitute
-        if var not in formula_free_vars(f.body):
-            return f
-        if f.var in term_free_vars(repl):
-            # capture would occur: alpha-rename the bound variable to a fresh
-            # name (the fresh name can't be captured, so the rename is safe),
-            # then substitute into the renamed body.
-            fresh = _fresh(f.var, term_free_vars(repl) | formula_free_vars(f.body) | {var})
-            renamed = formula_subst(f.body, f.var, Var(fresh, f.sort))
-            return cls(fresh, f.sort, formula_subst(renamed, var, repl))
-        return cls(f.var, f.sort, formula_subst(f.body, var, repl))
+        return type(f)(f.sort, formula_subst(f.body, var, repl))
     raise TypeError(f"not a formula: {f!r}")
-
-
-def _fresh(base: str, avoid: frozenset) -> str:
-    candidate = base
-    while candidate in avoid:
-        candidate += "'"
-    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -194,36 +263,41 @@ def _check_str(s: object, what: str) -> None:
         raise TypeError(f"{what} must be a genuine str, got {type(s).__name__}")
 
 
-def validate_term(t: object) -> None:
+def validate_term(t: object, depth: int = 0) -> None:
     if type(t) is Var:
         _check_str(t.name, "Var.name")
         _check_str(t.sort, "Var.sort")
+        return
+    if type(t) is BVar:
+        if type(t.index) is not int or not (0 <= t.index < depth):
+            raise TypeError(f"dangling bound variable {t.index!r} at binder depth {depth}")
         return
     if type(t) is Fun:
         _check_str(t.name, "Fun.name")
         if type(t.args) is not tuple:
             raise TypeError("Fun.args must be a tuple")
         for a in t.args:
-            validate_term(a)
+            validate_term(a, depth)
         return
     raise TypeError(f"non-canonical term: {type(t).__name__}")
 
 
-def validate_formula(f: object) -> None:
+def validate_formula(f: object, depth: int = 0) -> None:
+    # `depth` counts enclosing binders; a BVar is well-formed only if its index
+    # is below it (local closure: no dangling bound variable).
     if type(f) is Eq:
-        validate_term(f.lhs)
-        validate_term(f.rhs)
+        validate_term(f.lhs, depth)
+        validate_term(f.rhs, depth)
         return
     if type(f) is Implies:
-        validate_formula(f.ant)
-        validate_formula(f.con)
+        validate_formula(f.ant, depth)
+        validate_formula(f.con, depth)
         return
     if type(f) is Bottom:
         return
     if type(f) is Forall or type(f) is Exists:
-        _check_str(f.var, "quantifier var")
         _check_str(f.sort, "quantifier sort")
-        validate_formula(f.body)
+        validate_formula(f.body, depth + 1)
         return
     raise TypeError(f"non-canonical formula: {type(f).__name__}")
 
@@ -248,8 +322,8 @@ def encode_node(node: object) -> dict:
 
 
 def _encode_value(v: object) -> object:
-    if isinstance(v, str):
-        return v
+    if isinstance(v, str) or (isinstance(v, int) and not isinstance(v, bool)):
+        return v  # str labels, or int de Bruijn indices
     if isinstance(v, (tuple, list)):
         return [_encode_value(x) for x in v]
     if is_dataclass(v) and not isinstance(v, type):
@@ -258,7 +332,7 @@ def _encode_value(v: object) -> object:
 
 
 def decode_node(raw: object, registry: dict) -> object:
-    if isinstance(raw, str):
+    if isinstance(raw, str) or (isinstance(raw, int) and not isinstance(raw, bool)):
         return raw
     if isinstance(raw, list):
         return tuple(decode_node(x, registry) for x in raw)
@@ -274,7 +348,7 @@ def decode_node(raw: object, registry: dict) -> object:
     raise ValueError(f"not a serializable node: {raw!r}")
 
 
-SYNTAX_REGISTRY = {c.__name__: c for c in (Var, Fun, Eq, Implies, Bottom, Forall, Exists)}
+SYNTAX_REGISTRY = {c.__name__: c for c in (Var, BVar, Fun, Eq, Implies, Bottom, Forall, Exists)}
 
 
 def term_to_dict(t: Term) -> dict:

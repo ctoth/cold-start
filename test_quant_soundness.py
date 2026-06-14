@@ -18,12 +18,15 @@ from cold_start.algebra import COMM_RING, R0, R1, add, mul, neg
 from cold_start.checker import Sequent, check
 from cold_start.syntax import (
     Bottom,
+    BVar,
     Eq,
     Exists,
     Forall,
     Fun,
     Implies,
     Var,
+    exists,
+    forall,
 )
 
 
@@ -47,33 +50,35 @@ Z3 = FiniteModel(
 )
 
 
-def ev_term(t, model, env):
+def ev_term(t, model, env, denv=()):
     if type(t) is Var:
         return env[t.name]
+    if type(t) is BVar:
+        return denv[t.index]  # de Bruijn: 0 is the innermost binder
     if type(t) is Fun:
-        return model.interp[t.name](*[ev_term(a, model, env) for a in t.args])
+        return model.interp[t.name](*[ev_term(a, model, env, denv) for a in t.args])
     raise TypeError(repr(t))
 
 
-def ev_formula(f, model, env) -> bool:
+def ev_formula(f, model, env, denv=()) -> bool:
     if type(f) is Eq:
-        return ev_term(f.lhs, model, env) == ev_term(f.rhs, model, env)
+        return ev_term(f.lhs, model, env, denv) == ev_term(f.rhs, model, env, denv)
     if type(f) is Bottom:
         return False
     if type(f) is Implies:
-        return (not ev_formula(f.ant, model, env)) or ev_formula(f.con, model, env)
+        return (not ev_formula(f.ant, model, env, denv)) or ev_formula(f.con, model, env, denv)
     if type(f) is Forall:
-        return all(ev_formula(f.body, model, {**env, f.var: e}) for e in model.carrier)
+        return all(ev_formula(f.body, model, env, (e, *denv)) for e in model.carrier)
     if type(f) is Exists:
-        return any(ev_formula(f.body, model, {**env, f.var: e}) for e in model.carrier)
+        return any(ev_formula(f.body, model, env, (e, *denv)) for e in model.carrier)
     raise TypeError(f"evaluator does not handle {type(f).__name__}")
 
 
 def test_eval_quantifiers():
     # ∀x. x = x is true; ∀x. x = 0 is false in Z/3; ∃x. x = 1+1 is true.
-    assert ev_formula(Forall("x", "", Eq(Var("x"), Var("x"))), Z3, {})
-    assert not ev_formula(Forall("x", "", Eq(Var("x"), R0)), Z3, {})
-    assert ev_formula(Exists("x", "", Eq(Var("x"), add(R1, R1))), Z3, {})
+    assert ev_formula(forall("x", "", Eq(Var("x"), Var("x"))), Z3, {})
+    assert not ev_formula(forall("x", "", Eq(Var("x"), R0)), Z3, {})
+    assert ev_formula(exists("x", "", Eq(Var("x"), add(R1, R1))), Z3, {})
 
 
 # --- the honesty net ------------------------------------------------------
@@ -143,7 +148,7 @@ def ring_proofs(draw):
             # vacuous existential over an unused name `q`: from `concl` introduce
             # `exists q. concl` (q does not occur in concl, so any witness works).
             f_pf, f_seq = draw(st.sampled_from(facts))
-            addf(P.ExistsIntro(Exists("q", "", f_seq.concl), R0, f_pf))
+            addf(P.ExistsIntro(exists("q", "", f_seq.concl), R0, f_pf))
 
     return draw(st.sampled_from([pf for pf, _ in facts]))
 
@@ -161,7 +166,7 @@ def test_net_catches_a_false_universal():
     # The eigenvariable bug would yield {x=0} |- ∀x. x=0. Show the net's validity
     # check fires on it: at x=0 the hypothesis holds but ∀x.x=0 is false in Z/3.
     hyp = Eq(Var("x"), R0)
-    bogus = Sequent(frozenset({hyp}), Forall("x", "", Eq(Var("x"), R0)))
+    bogus = Sequent(frozenset({hyp}), forall("x", "", Eq(Var("x"), R0)))
     env = {"x": 0, "y": 0, "z": 0}
     assert ev_formula(hyp, Z3, env)  # hypothesis holds
     assert not ev_formula(bogus.concl, Z3, env)  # but the universal is false

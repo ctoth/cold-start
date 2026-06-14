@@ -30,8 +30,10 @@ from .syntax import (
     Not,
     Term,
     Var,
+    forall,
     formula_free_vars,
     formula_subst,
+    instantiate,
     validate_formula,
     validate_term,
 )
@@ -449,10 +451,9 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
             t_sort = sort_of(pf.term, sig)
             if t_sort != s.concl.sort:
                 raise ValueError(
-                    f"cannot instantiate forall {s.concl.var!r}:{s.concl.sort!r} "
-                    f"with a term of sort {t_sort!r}"
+                    f"cannot instantiate forall :{s.concl.sort!r} with a term of sort {t_sort!r}"
                 )
-        return Sequent(s.hyps, formula_subst(s.concl.body, s.concl.var, pf.term))
+        return Sequent(s.hyps, instantiate(s.concl, pf.term))
 
     if type(pf) is P.ForallIntro:
         # generalize a schematic variable, provided it is not constrained by a
@@ -463,14 +464,14 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
                 raise ValueError(
                     f"cannot generalize {pf.var!r}: free in hypothesis {h!r}"
                 )
-        return Sequent(s.hyps, Forall(pf.var, pf.sort, s.concl))
+        return Sequent(s.hyps, forall(pf.var, pf.sort, s.concl))
 
     if type(pf) is P.ExistsIntro:
         # from a witness proof of body[x := witness], conclude `exists x. body`.
         if type(pf.claim) is not Exists:
             raise ValueError(f"exists-intro needs an existential claim, got {pf.claim!r}")
         s = _derive(pf.sub, theory)
-        expected = formula_subst(pf.claim.body, pf.claim.var, pf.witness)
+        expected = instantiate(pf.claim, pf.witness)
         if s.concl != expected:
             raise ValueError(
                 f"exists-intro: sub-proof must prove {expected!r}, got {s.concl!r}"
@@ -489,9 +490,7 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
         s_ex = _derive(pf.sub_ex, theory)
         if type(s_ex.concl) is not Exists:
             raise ValueError(f"exists-elim needs an existential, got {s_ex.concl!r}")
-        instance = formula_subst(
-            s_ex.concl.body, s_ex.concl.var, Var(pf.eigenvar, s_ex.concl.sort)
-        )
+        instance = instantiate(s_ex.concl, Var(pf.eigenvar, s_ex.concl.sort))
         s_use = _derive(pf.sub_use, theory)
         if instance not in s_use.hyps:
             raise ValueError(
