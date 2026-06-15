@@ -12,7 +12,7 @@ implicitly universally quantified. Exactly enough to bootstrap arithmetic.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
-from typing import overload
+from typing import ClassVar, overload
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -79,6 +79,8 @@ class Formula:
 
 @dataclass(frozen=True, slots=True)
 class Eq(Formula):
+    symbol: ClassVar[str] = "="
+
     lhs: Term
     rhs: Term
 
@@ -88,6 +90,8 @@ class Eq(Formula):
 
 @dataclass(frozen=True, slots=True)
 class Implies(Formula):
+    symbol: ClassVar[str] = "→"
+
     ant: Formula
     con: Formula
 
@@ -99,8 +103,10 @@ class Implies(Formula):
 class Bottom(Formula):
     """Absurdity (falsum). Negation is sugar: Not(A) == Implies(A, Bottom())."""
 
+    symbol: ClassVar[str] = "⊥"
+
     def __repr__(self) -> str:
-        return "⊥"  # ⊥
+        return self.symbol
 
 
 def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
@@ -113,6 +119,8 @@ class Forall(Formula):
     variable via BVar(0); the bound name is gone, so `==` is alpha-equivalence.
     Build with `forall(name, sort, body)`, which abstracts the named variable."""
 
+    symbol: ClassVar[str] = "∀"
+
     sort: str
     body: Formula
 
@@ -123,6 +131,8 @@ class Forall(Formula):
 @dataclass(frozen=True, slots=True)
 class Exists(Formula):
     """Existential quantifier (locally nameless); see Forall."""
+
+    symbol: ClassVar[str] = "∃"
 
     sort: str
     body: Formula
