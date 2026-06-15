@@ -100,3 +100,60 @@ def test_exists_elim_rejects_eigenvariable_escape():
     except ValueError:
         return
     raise AssertionError("eigenvariable escaped into the conclusion")
+
+
+# --- coverage gaps found by pytest-cov: soundness branches with no test ----
+
+
+def test_exists_elim_rejects_eigenvariable_in_remaining_hypothesis():
+    # The eigenvariable must not escape into a *remaining* hypothesis either.
+    # Here the using proof derives ⊥ from {w=0, ¬(w=0)}; discharging the instance
+    # (w=0) leaves ¬(w=0), which still mentions w -- so elimination must be refused.
+    ex = exists("x", "", Eq(Var("x"), ZERO))  # ∃x. x = 0
+    instance = Eq(Var("w"), ZERO)  # w = 0
+    not_instance = Not(instance)  # (w=0) -> ⊥, mentions w
+    sub_use = P.MP(P.Assume(not_instance), P.Assume(instance))  # {w=0, ¬(w=0)} |- ⊥
+    bad = P.ExistsElim("w", P.Assume(ex), sub_use)
+    try:
+        check(bad, PEANO)
+    except ValueError:
+        return
+    raise AssertionError("eigenvariable free in a remaining hypothesis was allowed")
+
+
+def test_forall_elim_through_implication_and_bottom():
+    # ∀x. ¬(x = 0); eliminate at S(0) -> ¬(S0 = 0). The body is Implies(.., ⊥), so
+    # this exercises `instantiate` recursing through both connectives (untested
+    # binder-open paths until now).
+    phi = forall("x", "", Not(Eq(Var("x"), ZERO)))
+    seq = check(P.ForallElim(P.Assume(phi), S(ZERO)), PEANO)
+    assert seq.concl == Not(Eq(S(ZERO), ZERO))
+    assert seq.hyps == frozenset({phi})
+
+
+def test_exists_intro_rejects_non_existential_claim():
+    bad = P.ExistsIntro(Eq(ZERO, ZERO), ZERO, P.Refl(ZERO))  # claim is not an Exists
+    try:
+        check(bad, PEANO)
+    except ValueError:
+        return
+    raise AssertionError("exists-intro accepted a non-existential claim")
+
+
+def test_exists_elim_rejects_non_existential():
+    bad = P.ExistsElim("w", P.Refl(ZERO), P.Assume(Eq(Var("w"), ZERO)))  # sub_ex not ∃
+    try:
+        check(bad, PEANO)
+    except ValueError:
+        return
+    raise AssertionError("exists-elim accepted a non-existential premise")
+
+
+def test_exists_elim_rejects_missing_instance():
+    ex = exists("x", "", Eq(Var("x"), ZERO))
+    bad = P.ExistsElim("w", P.Assume(ex), P.Refl(ZERO))  # using proof never assumes w=0
+    try:
+        check(bad, PEANO)
+    except ValueError:
+        return
+    raise AssertionError("exists-elim accepted a using-proof missing the instance")
