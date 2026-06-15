@@ -25,6 +25,13 @@ def _is_node(v: object) -> bool:
     return is_dataclass(v) and not isinstance(v, type)
 
 
+def node_fields(node: object):
+    """The dataclass fields of a node (guarded, so callers can pass `object`)."""
+    if not is_dataclass(node) or isinstance(node, type):
+        raise TypeError(f"not a node: {type(node).__name__}")
+    return fields(node)
+
+
 def children(node: object) -> list:
     """Immediate sub-nodes of `node`, in field order (tuple fields flattened)."""
     if not is_dataclass(node) or isinstance(node, type):
@@ -105,6 +112,64 @@ class Node:
     """
 
     __slots__ = ()
+
+    def __eq__(self, other: object) -> bool:
+        """Structural equality -- which, for locally-nameless binders, IS alpha-
+        equivalence -- computed ITERATIVELY, so deeply nested terms compare without
+        recursion. Equal iff same exact type and all fields match (sub-nodes
+        structurally, scalars by `==`). Replaces the dataclass-generated `__eq__`,
+        whose recursion blows the stack on deep terms (hence `eq=False` on the
+        node dataclasses)."""
+        if self is other:
+            return True
+        if type(self) is not type(other):
+            return False
+        stack: list[tuple[object, object]] = [(self, other)]
+        while stack:
+            a, b = stack.pop()
+            if a is b:
+                continue
+            if type(a) is not type(b):
+                return False
+            for f in node_fields(a):
+                va, vb = getattr(a, f.name), getattr(b, f.name)
+                if _is_node(va):
+                    stack.append((va, vb))
+                elif isinstance(va, tuple):
+                    if not isinstance(vb, tuple) or len(va) != len(vb):
+                        return False
+                    for xa, xb in zip(va, vb, strict=True):
+                        if _is_node(xa):
+                            stack.append((xa, xb))
+                        elif xa != xb:
+                            return False
+                elif va != vb:
+                    return False
+        return True
+
+    def __hash__(self) -> int:
+        """Hash consistent with `__eq__`, computed ITERATIVELY (post-order over the
+        children, each node's hash built from its children's), so deeply nested
+        terms hash without recursion."""
+        order: list = []
+        stack: list = [self]
+        while stack:
+            n = stack.pop()
+            order.append(n)
+            stack.extend(children(n))
+        hashes: dict = {}
+        for n in reversed(order):
+            parts: list = [type(n).__name__]
+            for f in node_fields(n):
+                v = getattr(n, f.name)
+                if _is_node(v):
+                    parts.append(hashes[id(v)])
+                elif isinstance(v, tuple):
+                    parts.append(tuple(hashes[id(x)] if _is_node(x) else x for x in v))
+                else:
+                    parts.append(v)
+            hashes[id(n)] = hash(tuple(parts))
+        return hashes[id(self)]
 
     def free_vars(self) -> frozenset:
         """Free variable names. Locally nameless, so every `Var` in the tree is free
@@ -193,7 +258,7 @@ class Term(Node):
         raise TypeError(f"not a term: {self!r}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Var(Term):
     name: str
     sort: str = ""  # "" means unsorted (single-sorted theories ignore it)
@@ -218,7 +283,7 @@ class Var(Term):
         return f"{name}:{ctx.name(sort)}" if sort else name
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Fun(Term):
     name: str
     args: tuple  # tuple[Term, ...]
@@ -269,7 +334,7 @@ class Fun(Term):
         return f"{name}({args})"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class BVar(Term):
     """A bound variable, as a de Bruijn index (0 = nearest enclosing binder).
 
@@ -328,7 +393,7 @@ class Formula(Node):
         raise TypeError(f"not a formula: {self!r}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Eq(Formula):
     symbol: ClassVar[str] = "="
 
@@ -352,7 +417,7 @@ class Eq(Formula):
         return f"({text})" if 40 < parent_prec else text
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Implies(Formula):
     symbol: ClassVar[str] = "→"
 
@@ -378,7 +443,7 @@ class Implies(Formula):
         return f"({text})" if 10 < parent_prec else text
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Bottom(Formula):
     """Absurdity (falsum). Negation is sugar: Not(A) == Implies(A, Bottom())."""
 
@@ -408,7 +473,7 @@ def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
 # `Node` versions (a quantifier's only child node is `body`; the `sort` is a str).
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Forall(Formula):
     """Universal quantifier (locally nameless). `body` refers to the bound
     variable via BVar(0); the bound name is gone, so `==` is alpha-equivalence.
@@ -433,7 +498,7 @@ class Forall(Formula):
         return _format_binder(self, ctx, parent_prec)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Exists(Formula):
     """Existential quantifier (locally nameless); see Forall."""
 
