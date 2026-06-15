@@ -216,6 +216,25 @@ def test_deep_proof_survives_serialization_without_recursion():
     assert seq.concl == Eq(t, t)
 
 
+def test_deep_term_repr_without_recursion():
+    """The output path: repr of a term nested far deeper than the recursion limit
+    prints without blowing the stack. The verifier echoes its conclusion via repr,
+    so an arbitrarily deep VERIFIED sequent can actually be shown."""
+    import sys as _sys
+
+    t = Var("x")
+    for _ in range(50_000):
+        t = Fun("s", (t,))
+    old = _sys.getrecursionlimit()
+    _sys.setrecursionlimit(300)
+    try:
+        rendered = repr(Eq(t, t))
+    finally:
+        _sys.setrecursionlimit(old)
+    assert rendered.count("s(") == 100_000  # 50k per side
+    assert rendered.count("x") == 2
+
+
 # --- checker is total: only Sequent or a declared failure -----------------
 
 

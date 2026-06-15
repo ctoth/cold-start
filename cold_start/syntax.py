@@ -173,6 +173,29 @@ class Node:
             hashes[id(n)] = hash(tuple(parts))
         return hashes[id(self)]
 
+    def __repr__(self) -> str:
+        """Structural repr, computed ITERATIVELY (post-order over the children, each
+        node's repr built from its children's), so a deeply nested term or formula
+        prints without recursion. Each concrete node overrides `_repr_with`, which
+        renders the node from its children's already-computed reprs (looked up by
+        id). Replaces the per-class recursive `__repr__` (hence `repr=False` on the
+        node dataclasses), whose recursion blew the stack on deep terms."""
+        order: list = []
+        stack: list = [self]
+        while stack:
+            n = stack.pop()
+            order.append(n)
+            stack.extend(children(n))
+        reprs: dict = {}
+        for n in reversed(order):
+            reprs[id(n)] = n._repr_with(reprs)
+        return reprs[id(self)]
+
+    def _repr_with(self, reprs: dict) -> str:
+        """This node's repr given its children's already-computed reprs (by id).
+        Each concrete node overrides."""
+        raise NotImplementedError(f"cannot repr {type(self).__name__}")
+
     def free_vars(self) -> frozenset:
         """Free variable names. Locally nameless, so every `Var` in the tree is free
         (a bound variable is a nameless `BVar`) -- the free names are just the names
@@ -260,12 +283,12 @@ class Term(Node):
         raise TypeError(f"not a term: {self!r}")
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Var(Term):
     name: str
     sort: str = ""  # "" means unsorted (single-sorted theories ignore it)
 
-    def __repr__(self) -> str:
+    def _repr_with(self, reprs: dict) -> str:
         return f"{self.name}:{self.sort}" if self.sort else self.name
 
     def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
@@ -285,7 +308,7 @@ class Var(Term):
         return f"{name}:{ctx.name(sort)}" if sort else name
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Fun(Term):
     name: str
     args: tuple  # tuple[Term, ...]
@@ -298,10 +321,10 @@ class Fun(Term):
         if type(self.args) is not tuple:
             object.__setattr__(self, "args", tuple(self.args))
 
-    def __repr__(self) -> str:
+    def _repr_with(self, reprs: dict) -> str:
         if not self.args:
             return self.name
-        return f"{self.name}({', '.join(map(repr, self.args))})"
+        return f"{self.name}({', '.join(reprs[id(a)] for a in self.args)})"
 
     def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         rank = sig.rank(self.name)
@@ -336,7 +359,7 @@ class Fun(Term):
         return f"{name}({args})"
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class BVar(Term):
     """A bound variable, as a de Bruijn index (0 = nearest enclosing binder).
 
@@ -347,7 +370,7 @@ class BVar(Term):
 
     index: int
 
-    def __repr__(self) -> str:
+    def _repr_with(self, reprs: dict) -> str:
         return f"#{self.index}"
 
     def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
@@ -395,15 +418,15 @@ class Formula(Node):
         raise TypeError(f"not a formula: {self!r}")
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Eq(Formula):
     symbol: ClassVar[str] = "="
 
     lhs: Term
     rhs: Term
 
-    def __repr__(self) -> str:
-        return f"{self.lhs!r} = {self.rhs!r}"
+    def _repr_with(self, reprs: dict) -> str:
+        return f"{reprs[id(self.lhs)]} = {reprs[id(self.rhs)]}"
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         ls, rs = self.lhs.sort_of(sig, scope), self.rhs.sort_of(sig, scope)
@@ -419,15 +442,15 @@ class Eq(Formula):
         return f"({text})" if 40 < parent_prec else text
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Implies(Formula):
     symbol: ClassVar[str] = "→"
 
     ant: Formula
     con: Formula
 
-    def __repr__(self) -> str:
-        return f"({self.ant!r} -> {self.con!r})"
+    def _repr_with(self, reprs: dict) -> str:
+        return f"({reprs[id(self.ant)]} -> {reprs[id(self.con)]})"
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ((self.ant, scope), (self.con, scope))
@@ -445,13 +468,13 @@ class Implies(Formula):
         return f"({text})" if 10 < parent_prec else text
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Bottom(Formula):
     """Absurdity (falsum). Negation is sugar: Not(A) == Implies(A, Bottom())."""
 
     symbol: ClassVar[str] = "⊥"
 
-    def __repr__(self) -> str:
+    def _repr_with(self, reprs: dict) -> str:
         return self.symbol
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
@@ -486,8 +509,9 @@ class Forall(Formula):
     sort: str
     body: Formula
 
-    def __repr__(self) -> str:
-        return f"(forall :{self.sort}. {self.body!r})" if self.sort else f"(forall. {self.body!r})"
+    def _repr_with(self, reprs: dict) -> str:
+        b = reprs[id(self.body)]
+        return f"(forall :{self.sort}. {b})" if self.sort else f"(forall. {b})"
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ((self.body, (self.sort, *scope)),)
@@ -509,8 +533,9 @@ class Exists(Formula):
     sort: str
     body: Formula
 
-    def __repr__(self) -> str:
-        return f"(exists :{self.sort}. {self.body!r})" if self.sort else f"(exists. {self.body!r})"
+    def _repr_with(self, reprs: dict) -> str:
+        b = reprs[id(self.body)]
+        return f"(exists :{self.sort}. {b})" if self.sort else f"(exists. {b})"
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ((self.body, (self.sort, *scope)),)
