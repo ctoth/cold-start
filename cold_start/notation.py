@@ -24,7 +24,6 @@ from .syntax import (
     Var,
     exists,
     forall,
-    free_vars,
     instantiate,
 )
 
@@ -350,7 +349,7 @@ def _format_formula(
         text = f"{left} {Implies.symbol} {right}"
         prec = 10
     elif type(formula) is Forall or type(formula) is Exists:
-        name = _fresh_name(free_vars(formula.body) | used)
+        name = _fresh_name(formula.body.free_vars() | used)
         bound[name] = formula.sort
         used.add(name)
         opened = instantiate(formula, Var(name, formula.sort))

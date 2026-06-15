@@ -29,7 +29,6 @@ from cold_start.syntax import (
     Fun,
     Implies,
     Var,
-    subst,
 )
 
 VAR_POOL = ["x", "y", "z", "n", "m", "a", "b"]
@@ -184,8 +183,8 @@ def test_no_accepted_formula_is_false(pred, x, env):
     building induction-schema-shaped formulas -- exactly what the old recognizer
     wrongly accepted as axioms."""
     schema = Implies(
-        subst(pred, x, ZERO),
-        Implies(Implies(pred, subst(pred, x, S(Var(x)))), pred),
+        pred.subst(x, ZERO),
+        Implies(Implies(pred, pred.subst(x, S(Var(x)))), pred),
     )
     for f in (schema, pred):
         if PEANO.accepts(f):
@@ -199,8 +198,8 @@ def test_induction_schema_formula_is_false_in_N():
     x = Var("x")
     pred = Eq(x, ZERO)
     schema = Implies(
-        subst(pred, "x", ZERO),
-        Implies(Implies(pred, subst(pred, "x", S(x))), pred),
+        pred.subst("x", ZERO),
+        Implies(Implies(pred, pred.subst("x", S(x))), pred),
     )
     assert not evaluate(schema, N, {"x": 1})  # 0=0 -> ((1=0->2=0) -> 1=0) is False
     assert not PEANO.accepts(schema)  # and the rule-based checker won't take it
@@ -213,8 +212,8 @@ def test_model_probe_is_not_vacuous():
     x = Var("x")
     pred = Eq(x, ZERO)
     schema = Implies(
-        subst(pred, "x", ZERO),
-        Implies(Implies(pred, subst(pred, "x", S(x))), pred),
+        pred.subst("x", ZERO),
+        Implies(Implies(pred, pred.subst("x", S(x))), pred),
     )
     bad = Theory(axioms=frozenset({schema}), zero=ZERO, succ="S")
     assert bad.accepts(schema) and not evaluate(schema, N, {"x": 1})
@@ -328,7 +327,7 @@ def test_substitution_lemma(phi, x, t, env):
     evaluating in the shifted environment. A subst/eval mismatch breaks this."""
     shifted = dict(env)
     shifted[x] = evaluate(t, N, env)
-    assert evaluate(subst(phi, x, t), N, env) == evaluate(phi, N, shifted)
+    assert evaluate(phi.subst(x, t), N, env) == evaluate(phi, N, shifted)
 
 
 @given(nat_formulas(), VAR_NAMES, st.integers(1, 6), ENV)
@@ -336,12 +335,12 @@ def test_substitution_lemma(phi, x, t, env):
 def test_induction_principle_holds_in_N(pred, x, bound, env):
     """The semantic justification of the Induct rule: in N, base + step up to a
     bound forces the predicate up to that bound."""
-    base_ok = evaluate(subst(pred, x, ZERO), N, env)
+    base_ok = evaluate(pred.subst(x, ZERO), N, env)
     step_ok = all(
         evaluate(
             Implies(
-                subst(pred, x, numeral(k)),
-                subst(pred, x, numeral(k + 1)),
+                pred.subst(x, numeral(k)),
+                pred.subst(x, numeral(k + 1)),
             ), N,
             env,
         )
@@ -349,5 +348,5 @@ def test_induction_principle_holds_in_N(pred, x, bound, env):
     )
     assume(base_ok and step_ok)
     assert all(
-        evaluate(subst(pred, x, numeral(k)), N, env) for k in range(bound + 1)
+        evaluate(pred.subst(x, numeral(k)), N, env) for k in range(bound + 1)
     )

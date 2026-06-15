@@ -37,8 +37,6 @@ from cold_start.syntax import (
     forall,
     formula_from_dict,
     formula_to_dict,
-    free_vars,
-    subst,
     term_from_dict,
     term_to_dict,
     validate,
@@ -224,22 +222,22 @@ def test_validate_accepts_canonical_nodes(node):
 
 @given(formulas(), VAR_NAMES, terms())
 def test_subst_of_nonfree_var_is_identity(f, x, t):
-    assume(x not in free_vars(f))
-    assert subst(f, x, t) == f
+    assume(x not in f.free_vars())
+    assert f.subst(x, t) == f
 
 
 @given(formulas(), VAR_NAMES, terms())
 def test_free_vars_after_subst(f, x, t):
-    ff = free_vars(f)
-    expected = (ff - {x}) | (free_vars(t) if x in ff else frozenset())
-    assert free_vars(subst(f, x, t)) == expected
+    ff = f.free_vars()
+    expected = (ff - {x}) | (t.free_vars() if x in ff else frozenset())
+    assert f.subst(x, t).free_vars() == expected
 
 
 @given(terms(), VAR_NAMES, terms())
 def test_subst_idempotent_when_var_absent_from_replacement(t, x, repl):
-    assume(x not in free_vars(repl))
-    once = subst(t, x, repl)
-    assert subst(once, x, repl) == once  # no x left to replace
+    assume(x not in repl.free_vars())
+    once = t.subst(x, repl)
+    assert once.subst(x, repl) == once  # no x left to replace
 
 
 @given(formulas())
@@ -248,8 +246,8 @@ def test_alpha_equivalence_is_structural_equality(body):
     # different (fresh) names yields identical locally-nameless data, so
     # alpha-equivalence is literal `==`. ("Q1"/"Q2" are not in VAR_NAMES, so they
     # cannot already occur free in `body`.)
-    fa = forall("Q1", "", subst(body, "x", Var("Q1")))
-    fb = forall("Q2", "", subst(body, "x", Var("Q2")))
+    fa = forall("Q1", "", body.subst("x", Var("Q1")))
+    fb = forall("Q2", "", body.subst("x", Var("Q2")))
     assert fa == fb
 
 

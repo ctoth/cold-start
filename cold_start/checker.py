@@ -31,9 +31,7 @@ from .syntax import (
     Term,
     Var,
     forall,
-    free_vars,
     instantiate,
-    subst,
     validate,
 )
 
@@ -374,7 +372,7 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
     if type(pf) is P.Inst:
         s = _derive(pf.sub, theory)
         for h in s.hyps:
-            if pf.var in free_vars(h):
+            if pf.var in h.free_vars():
                 raise ValueError(
                     f"cannot instantiate {pf.var!r}: free in hypothesis {h!r}"
                 )
@@ -391,7 +389,7 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
                         f"cannot instantiate {pf.var!r}:{var_sorts} with a "
                         f"term of sort {term_sort!r}"
                     )
-        return Sequent(s.hyps, subst(s.concl, pf.var, pf.term))
+        return Sequent(s.hyps, s.concl.subst(pf.var, pf.term))
 
     if type(pf) is P.Induct:
         # Mathematical induction as a first-class rule (NOT an axiom formula):
@@ -408,8 +406,8 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
         validate(theory.zero)  # the trusted theory's base term must be canonical
         base = _derive(pf.base, theory)
         step = _derive(pf.step, theory)
-        pred_zero = subst(pf.pred, pf.var, theory.zero)
-        pred_succ = subst(pf.pred, pf.var, Fun(theory.succ, (Var(pf.var),)))
+        pred_zero = pf.pred.subst(pf.var, theory.zero)
+        pred_succ = pf.pred.subst(pf.var, Fun(theory.succ, (Var(pf.var),)))
         if base.concl != pred_zero:
             raise ValueError(
                 f"induction base must prove {pred_zero!r}, got {base.concl!r}"
@@ -421,7 +419,7 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
             )
         hyps = base.hyps | step.hyps
         for h in hyps:
-            if pf.var in free_vars(h):
+            if pf.var in h.free_vars():
                 raise ValueError(
                     f"induction variable {pf.var!r} is free in hypothesis {h!r}"
                 )
@@ -459,7 +457,7 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
         # hypothesis (the eigenvariable condition).
         s = _derive(pf.sub, theory)
         for h in s.hyps:
-            if pf.var in free_vars(h):
+            if pf.var in h.free_vars():
                 raise ValueError(
                     f"cannot generalize {pf.var!r}: free in hypothesis {h!r}"
                 )
@@ -497,12 +495,12 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
             )
         phi = s_use.concl
         result_hyps = s_ex.hyps | (s_use.hyps - {instance})
-        if pf.eigenvar in free_vars(phi):
+        if pf.eigenvar in phi.free_vars():
             raise ValueError(
                 f"exists-elim eigenvariable {pf.eigenvar!r} escapes into the conclusion {phi!r}"
             )
         for h in result_hyps:
-            if pf.eigenvar in free_vars(h):
+            if pf.eigenvar in h.free_vars():
                 raise ValueError(
                     f"exists-elim eigenvariable {pf.eigenvar!r} is free in hypothesis {h!r}"
                 )

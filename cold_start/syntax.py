@@ -5,22 +5,99 @@ This module is NOT trusted. It is pure, immutable data plus structural helpers
 formula they like -- a formula is just a claim, not a proof. Trust lives in
 checker.py, which re-derives conclusions from proof terms over this language.
 
-Logic for v0 is minimal: equality and implication, with free variables read as
-implicitly universally quantified. Exactly enough to bootstrap arithmetic.
+Design: one `Node` root. Structural operations are *methods*, dispatched by
+Python on the node's class -- the base `Node` carries the generic recursion over a
+node's children, and only `Var` and the binders override. The single exception is
+`validate`, the trust gate, which must reject hostile subclasses and so dispatches
+on EXACT type (a method could be overridden by the subclass it must reject).
+
+Binders are locally nameless: a bound variable is a de Bruijn index `BVar(i)` and
+the binder records only the sort, so alpha-equivalence is literal `==`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
-from typing import ClassVar, overload
+from typing import ClassVar, cast
+
+
+def _is_node(v: object) -> bool:
+    return is_dataclass(v) and not isinstance(v, type)
+
+
+def children(node: object) -> list:
+    """Immediate sub-nodes of `node`, in field order (tuple fields flattened)."""
+    if not is_dataclass(node) or isinstance(node, type):
+        raise TypeError(f"not a node: {type(node).__name__}")
+    out: list = []
+    for f in fields(node):
+        v = getattr(node, f.name)
+        if _is_node(v):
+            out.append(v)
+        elif isinstance(v, tuple):
+            out.extend(x for x in v if _is_node(x))
+    return out
+
+
+def map_children(node, fn):
+    """Rebuild `node`, replacing each immediate sub-node with `fn(sub-node)`."""
+    if not is_dataclass(node) or isinstance(node, type):
+        raise TypeError(f"not a node: {type(node).__name__}")
+    new = {}
+    for f in fields(node):
+        v = getattr(node, f.name)
+        if _is_node(v):
+            new[f.name] = fn(v)
+        elif isinstance(v, tuple):
+            new[f.name] = tuple(fn(x) if _is_node(x) else x for x in v)
+        else:
+            new[f.name] = v
+    return type(node)(**new)
+
+
+class Node:
+    """Base of every syntax node. Operations are methods here, dispatched by class.
+    The generic versions recurse over a node's children; only `Var` and the binders
+    override. `abstract`/`instantiate` thread the binder depth (the scope); `Var`
+    and `BVar` are the leaves that read it, and the binders raise it.
+    """
+
+    __slots__ = ()
+
+    def free_vars(self) -> frozenset:
+        """Free variable names. Var contributes its name (override); bound
+        variables are nameless; everything else is the union of its children."""
+        out: frozenset = frozenset()
+        for c in children(self):
+            out |= c.free_vars()
+        return out
+
+    def subst(self, var: str, repl: Term) -> Node:
+        """Replace the free variable `var` with `repl`. Locally nameless, so no
+        capture-avoidance; only `Var` is special (override)."""
+        return cast(Node, map_children(self, lambda c: c.subst(var, repl)))
+
+    def abstract(self, name: str, depth: int) -> Node:
+        """Close a binder: replace the free variable `name` with the bound index
+        `depth`. `Var` makes the index; the binders raise `depth`."""
+        return cast(Node, map_children(self, lambda c: c.abstract(name, depth)))
+
+    def instantiate(self, repl: Term, depth: int) -> Node:
+        """Open a binder: the bound variable at `depth` becomes `repl`. `BVar`
+        reads the index; the binders raise `depth`."""
+        return cast(Node, map_children(self, lambda c: c.instantiate(repl, depth)))
+
 
 # ---------------------------------------------------------------------------
 # Terms
 # ---------------------------------------------------------------------------
 
 
-class Term:
+class Term(Node):
     __slots__ = ()
+
+    def subst(self, var: str, repl: Term) -> Term:  # substituting in a term yields a term
+        return cast(Term, super().subst(var, repl))
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +107,15 @@ class Var(Term):
 
     def __repr__(self) -> str:
         return f"{self.name}:{self.sort}" if self.sort else self.name
+
+    def free_vars(self) -> frozenset:
+        return frozenset({self.name})
+
+    def subst(self, var: str, repl: Term) -> Term:
+        return repl if self.name == var else self
+
+    def abstract(self, name: str, depth: int) -> Term:
+        return BVar(depth) if self.name == name else self
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +151,10 @@ class BVar(Term):
     def __repr__(self) -> str:
         return f"#{self.index}"
 
-
+    def instantiate(self, repl: Term, depth: int) -> Term:
+        if self.index == depth:
+            return repl
+        return BVar(self.index - 1) if self.index > depth else self
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +162,11 @@ class BVar(Term):
 # ---------------------------------------------------------------------------
 
 
-class Formula:
+class Formula(Node):
     __slots__ = ()
+
+    def subst(self, var: str, repl: Term) -> Formula:  # substituting in a formula yields a formula
+        return cast(Formula, super().subst(var, repl))
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +205,11 @@ def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
     return Implies(a, Bottom())
 
 
+# `Forall`/`Exists` override only `abstract`/`instantiate` to raise the scope depth
+# under the binder; `free_vars`/`subst` use the generic `Node` versions (correct,
+# since a quantifier's only child node is `body` -- the `sort` is a str).
+
+
 @dataclass(frozen=True, slots=True)
 class Forall(Formula):
     """Universal quantifier (locally nameless). `body` refers to the bound
@@ -127,6 +224,12 @@ class Forall(Formula):
     def __repr__(self) -> str:
         return f"(forall :{self.sort}. {self.body!r})" if self.sort else f"(forall. {self.body!r})"
 
+    def abstract(self, name: str, depth: int) -> Formula:
+        return Forall(self.sort, cast(Formula, self.body.abstract(name, depth + 1)))
+
+    def instantiate(self, repl: Term, depth: int) -> Formula:
+        return Forall(self.sort, cast(Formula, self.body.instantiate(repl, depth + 1)))
+
 
 @dataclass(frozen=True, slots=True)
 class Exists(Formula):
@@ -140,162 +243,43 @@ class Exists(Formula):
     def __repr__(self) -> str:
         return f"(exists :{self.sort}. {self.body!r})" if self.sort else f"(exists. {self.body!r})"
 
+    def abstract(self, name: str, depth: int) -> Formula:
+        return Exists(self.sort, cast(Formula, self.body.abstract(name, depth + 1)))
 
-# --- binding operations (locally nameless) --------------------------------
-# `abstract` turns a free variable into a bound one (close a binder); `instantiate`
-# replaces the outermost bound variable with a term (open a binder). Smart
-# constructors `forall`/`exists` let us still WRITE named binders at the surface.
-
-
-def _abstract_term(name: str, t: Term, depth: int) -> Term:
-    if isinstance(t, Var):
-        return BVar(depth) if t.name == name else t
-    if isinstance(t, BVar):
-        return t
-    if isinstance(t, Fun):
-        return Fun(t.name, tuple(_abstract_term(name, a, depth) for a in t.args))
-    raise TypeError(f"not a term: {t!r}")
+    def instantiate(self, repl: Term, depth: int) -> Formula:
+        return Exists(self.sort, cast(Formula, self.body.instantiate(repl, depth + 1)))
 
 
-def _abstract(name: str, f: Formula, depth: int) -> Formula:
-    if isinstance(f, Eq):
-        return Eq(_abstract_term(name, f.lhs, depth), _abstract_term(name, f.rhs, depth))
-    if isinstance(f, Implies):
-        return Implies(_abstract(name, f.ant, depth), _abstract(name, f.con, depth))
-    if isinstance(f, Bottom):
-        return f
-    if isinstance(f, (Forall, Exists)):
-        return type(f)(f.sort, _abstract(name, f.body, depth + 1))
-    raise TypeError(f"not a formula: {f!r}")
-
-
-def _instantiate_term(t: Term, repl: Term, depth: int) -> Term:
-    if isinstance(t, BVar):
-        if t.index == depth:
-            return repl
-        return BVar(t.index - 1) if t.index > depth else t
-    if isinstance(t, Var):
-        return t
-    if isinstance(t, Fun):
-        return Fun(t.name, tuple(_instantiate_term(a, repl, depth) for a in t.args))
-    raise TypeError(f"not a term: {t!r}")
-
-
-def _instantiate(f: Formula, repl: Term, depth: int) -> Formula:
-    if isinstance(f, Eq):
-        return Eq(_instantiate_term(f.lhs, repl, depth), _instantiate_term(f.rhs, repl, depth))
-    if isinstance(f, Implies):
-        return Implies(_instantiate(f.ant, repl, depth), _instantiate(f.con, repl, depth))
-    if isinstance(f, Bottom):
-        return f
-    if isinstance(f, (Forall, Exists)):
-        return type(f)(f.sort, _instantiate(f.body, repl, depth + 1))
-    raise TypeError(f"not a formula: {f!r}")
+# --- binder smart constructors --------------------------------------------
+# `forall`/`exists` let us WRITE named binders at the surface; they `abstract` the
+# named variable to a de Bruijn index. `instantiate` opens a binder with a term.
 
 
 def forall(name: str, sort: str, body: Formula) -> Formula:  # noqa: N802 -- connective
-    return Forall(sort, _abstract(name, body, 0))
+    return Forall(sort, cast(Formula, body.abstract(name, 0)))
 
 
 def exists(name: str, sort: str, body: Formula) -> Formula:  # noqa: N802 -- connective
-    return Exists(sort, _abstract(name, body, 0))
+    return Exists(sort, cast(Formula, body.abstract(name, 0)))
 
 
 def instantiate(binder: Formula, repl: Term) -> Formula:
     """Open the outermost binder of `binder` (a Forall/Exists) with `repl`."""
     if not isinstance(binder, (Forall, Exists)):
         raise TypeError(f"not a quantifier: {binder!r}")
-    return _instantiate(binder.body, repl, 0)
-
-
-# ---------------------------------------------------------------------------
-# Generic traversal  (one fold; the hand-rolled walkers are derived from it)
-# ---------------------------------------------------------------------------
-# A node is a frozen dataclass; its CHILDREN are the dataclass-valued fields (and
-# dataclass elements of tuple fields). Because bound variables are nameless
-# (locally nameless), no binder is special to free-vars/substitution, so a
-# single uniform fold suffices -- no per-node walker, no binding-scope tracking.
-
-
-def is_a(node: object, kind) -> bool:
-    """Exact concrete-node test (the trust-correct choice; subclasses do not
-    match). `kind` may be a class or a tuple of classes. Use plain `isinstance`
-    only for the abstract bases Term/Formula/Pf, where subclass membership is the
-    point."""
-    return type(node) is kind if isinstance(kind, type) else type(node) in kind
-
-
-def _is_node(v: object) -> bool:
-    return is_dataclass(v) and not isinstance(v, type)
-
-
-def children(node: object) -> list:
-    """Immediate sub-nodes of `node`, in field order (tuple fields flattened)."""
-    if not is_dataclass(node) or isinstance(node, type):
-        raise TypeError(f"not a node: {type(node).__name__}")
-    out: list = []
-    for f in fields(node):
-        v = getattr(node, f.name)
-        if _is_node(v):
-            out.append(v)
-        elif isinstance(v, tuple):
-            out.extend(x for x in v if _is_node(x))
-    return out
-
-
-def map_children(node, fn):
-    """Rebuild `node`, replacing each immediate sub-node with `fn(sub-node)`."""
-    if not is_dataclass(node) or isinstance(node, type):
-        raise TypeError(f"not a node: {type(node).__name__}")
-    new = {}
-    for f in fields(node):
-        v = getattr(node, f.name)
-        if is_dataclass(v) and not isinstance(v, type):
-            new[f.name] = fn(v)
-        elif isinstance(v, tuple):
-            new[f.name] = tuple(
-                fn(x) if (is_dataclass(x) and not isinstance(x, type)) else x for x in v
-            )
-        else:
-            new[f.name] = v
-    return type(node)(**new)
-
-
-def free_vars(node: object) -> frozenset:
-    """Free variable names in a term or formula -- a uniform fold over children.
-    Var contributes its name; BVar (nameless) contributes nothing."""
-    if type(node) is Var:  # exact + narrows for the .name access
-        return frozenset({node.name})
-    acc: frozenset = frozenset()
-    for c in children(node):
-        acc |= free_vars(c)
-    return acc
-
-
-@overload
-def subst(node: Formula, var: str, repl: Term) -> Formula: ...
-@overload
-def subst(node: Term, var: str, repl: Term) -> Term: ...
-def subst(node, var: str, repl: Term) -> object:
-    """Substitute the free variable `var` with `repl` in a term or formula -- a
-    uniform map over children. Only Var is special; nameless binders, being
-    indices, need no capture-avoidance."""
-    if type(node) is Var:
-        return repl if node.name == var else node
-    return map_children(node, lambda c: subst(c, var, repl))
-
-
+    return cast(Formula, binder.body.instantiate(repl, 0))
 
 
 # ---------------------------------------------------------------------------
 # Well-formedness validation  (the trust boundary's first gate)
 # ---------------------------------------------------------------------------
-# The checker compares terms and formulas with Python `==`. That is only sound
-# if every value is a genuine canonical node: a hostile Term/str subclass can
-# override __eq__ to return True for unequal things and derive `1 = 0` from
-# reflexivity alone. So before trusting `==`, we verify EXACT types (not
-# isinstance -- subclasses are exactly the attack) all the way down, including
-# the str fields, which also feed equality.
+# The checker compares terms and formulas with Python `==`. That is only sound if
+# every value is a genuine canonical node: a hostile Term/str subclass can override
+# __eq__ to return True for unequal things and derive `1 = 0` from reflexivity
+# alone. So before trusting `==`, we verify EXACT types all the way down. This is
+# the one place we do NOT dispatch polymorphically: a method could be overridden by
+# exactly the subclass we must reject, so we dispatch on `type(node)` through a dict
+# keyed by the concrete class, with a reject-default.
 
 
 def _check_str(s: object, what: str) -> None:
@@ -303,48 +287,75 @@ def _check_str(s: object, what: str) -> None:
         raise TypeError(f"{what} must be a genuine str, got {type(s).__name__}")
 
 
+def _v_var(node, depth: int) -> None:
+    _check_str(node.name, "Var.name")
+    _check_str(node.sort, "Var.sort")
+
+
+def _v_bvar(node, depth: int) -> None:
+    if type(node.index) is not int or not (0 <= node.index < depth):
+        raise TypeError(f"dangling bound variable {node.index!r} at binder depth {depth}")
+
+
+def _v_fun(node, depth: int) -> None:
+    _check_str(node.name, "Fun.name")
+    if type(node.args) is not tuple:
+        raise TypeError("Fun.args must be a tuple")
+    for a in node.args:
+        validate(a, depth)
+
+
+def _v_eq(node, depth: int) -> None:
+    validate(node.lhs, depth)
+    validate(node.rhs, depth)
+
+
+def _v_implies(node, depth: int) -> None:
+    validate(node.ant, depth)
+    validate(node.con, depth)
+
+
+def _v_bottom(node, depth: int) -> None:
+    pass
+
+
+def _v_quantifier(node, depth: int) -> None:
+    _check_str(node.sort, "quantifier sort")
+    validate(node.body, depth + 1)
+
+
+_VALIDATORS = {
+    Var: _v_var,
+    BVar: _v_bvar,
+    Fun: _v_fun,
+    Eq: _v_eq,
+    Implies: _v_implies,
+    Bottom: _v_bottom,
+    Forall: _v_quantifier,
+    Exists: _v_quantifier,
+}
+
+
 def validate(node: object, depth: int = 0) -> None:
-    """Exact-type well-formedness for any term or formula. This is the trust
-    gate, so it is deliberately NOT reflection-based: a hostile __eq__-overriding
-    subclass must be rejected by EXACT type, not accepted as "some dataclass".
-    `depth` counts enclosing binders; a BVar is well-formed only if its index is
-    below it (local closure: no dangling bound variable)."""
-    if type(node) is Var:
-        _check_str(node.name, "Var.name")
-        _check_str(node.sort, "Var.sort")
-    elif type(node) is BVar:
-        if type(node.index) is not int or not (0 <= node.index < depth):
-            raise TypeError(f"dangling bound variable {node.index!r} at binder depth {depth}")
-    elif type(node) is Fun:
-        _check_str(node.name, "Fun.name")
-        if type(node.args) is not tuple:
-            raise TypeError("Fun.args must be a tuple")
-        for a in node.args:
-            validate(a, depth)
-    elif type(node) is Eq:
-        validate(node.lhs, depth)
-        validate(node.rhs, depth)
-    elif type(node) is Implies:
-        validate(node.ant, depth)
-        validate(node.con, depth)
-    elif type(node) is Bottom:
-        pass
-    elif type(node) is Forall or type(node) is Exists:
-        _check_str(node.sort, "quantifier sort")
-        validate(node.body, depth + 1)
-    else:
+    """Exact-type well-formedness for any term or formula. The trust gate: a
+    hostile __eq__-overriding subclass is rejected because its exact type is not a
+    key in `_VALIDATORS`. `depth` counts enclosing binders; a BVar is well-formed
+    only if its index is below it (local closure: no dangling bound variable)."""
+    handler = _VALIDATORS.get(type(node))
+    if handler is None:
         raise TypeError(f"non-canonical node: {type(node).__name__}")
+    handler(node, depth)
 
 
 # ---------------------------------------------------------------------------
 # Serialization  (generic, by reflection over the frozen-dataclass fields)
 # ---------------------------------------------------------------------------
 # Every node is a frozen dataclass whose fields are strings, tuples, or other
-# nodes -- so we serialize generically rather than hand-coding a branch per
-# node: tag each node with its class name, recurse on fields, and reconstruct
-# from a class registry. Adding a node needs no serialization code. Deserialized
-# data is untrusted, but the checker re-validates every term/formula, so the
-# parser need only refuse unknown kinds and mismatched field sets.
+# nodes -- so we serialize generically rather than hand-coding a branch per node:
+# tag each node with its class name, recurse on fields, reconstruct from a class
+# registry. Adding a node needs no serialization code. Deserialized data is
+# untrusted, but the checker re-validates every term/formula. `proof.py` reuses
+# `encode_node`/`decode_node` with its own registry.
 
 
 def encode_node(node: object) -> dict:

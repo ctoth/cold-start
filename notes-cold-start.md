@@ -3,6 +3,42 @@
 Project lives in this git repo. Full design notes in `NOTES.md`; this file is
 the running scratch log. (Moved into the repo at Q's request; was at the parent.)
 
+## AUTONOMOUS REBUILD IN PROGRESS (2026-06-15) — plan: ~/.claude/plans/sprightly-watching-fiddle.md
+Goal (/goal): fully execute the plan, rebuild cold_start beautiful & principled.
+Polymorphic redesign: one Node root, operations as methods (not elif type-switch),
+scope carries bound-var SORTS through binders so sorts+quantifiers coexist; trust
+gate (validate/validate_proof) stays exact-type dict dispatch (can't be a method
+the attacker overrides). Recover-from-green, commit EVERY green step, quote every
+run. Robinson/Skolem experiment is the stretch finale (Phase 4).
+- Phase 0 DONE: recovered cold_start from e23ad18, 125 passed, committed 9e64ff8.
+  Removed stray VISITOR.md; gitignored papers/ pdfs+pngs. (Robinson 1949 paper read
+  + saved at papers/Robinson_1949_DefinabilityArithmetic/.)
+- Phase 1 DONE: CLAUDE.md + ARCHITECTURE.md written, committed b61d6af.
+- Phase 2 IN PROGRESS (task #13, syntax.py):
+  * syntax.py REWRITTEN to Node design: one Node root (Term/Formula under it);
+    free_vars/subst/abstract/instantiate are METHODS (Var overrides free_vars/
+    subst/abstract; BVar overrides instantiate; Forall/Exists override abstract/
+    instantiate with depth+1, methods duplicated on each to keep Formula.__subclasses__
+    = [Eq,Implies,Bottom,Forall,Exists] for the coverage test). validate = exact-type
+    dict dispatch _VALIDATORS (the trust gate, NOT a method). Kept children/
+    map_children/encode_node/decode_node/SYNTAX_REGISTRY/term&formula_to/from_dict.
+    Dropped is_a (dead) + the 4 _abstract/_instantiate functions.
+  * CALL SITES being migrated (free_vars/subst now methods): checker.py import
+    dropped free_vars/subst; free_vars(h)->h.free_vars() done (4x); free_vars(phi)
+    ->phi.free_vars() done. STILL TODO: 3 subst() in checker.py (lines ~392,409,410)
+    -> .subst(); notation.py free_vars(formula.body)->.free_vars(); tests
+    (test_properties free_vars/subst, test_quantifiers free_vars/subst, test_model
+    subst). Then run full suite + ruff + pyright, fix, COMMIT syntax phase.
+- Defaults locked (no forks): see plan. notation parser = recover working logic
+  from git, only refactor the formatter; revert-and-log if a module won't go green.
+- evaluate (tests/semantics.py) left as test-helper for now (clean fold, test infra).
+- SYNTAX PHASE PROGRESS: checker.py + notation.py call sites migrated to methods;
+  Term/Formula got covariant subst narrowing; tests sed-migrated to method form
+  (incl nested f.subst(x,t).free_vars()); test_quantifiers import cleaned. TODO:
+  drop subst from test_model import + free_vars/subst from test_properties import;
+  then pytest+ruff+pyright, fix, COMMIT syntax phase. (validators have benign
+  unused-arg hints from the uniform (node,depth) signature.)
+
 ## HOUSEKEEPING DONE (repo restructure)
 - All 9 test files moved root -> tests/ (git mv). tests/conftest.py registers
   Hypothesis profiles default/fast (HYPOTHESIS_PROFILE env). pyproject:
