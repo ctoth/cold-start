@@ -67,6 +67,36 @@ def map_children(node, fn):
     return type(node)(**new)
 
 
+def _rebuild(root, start_depth: int, *, on_var=None, on_bvar=None):
+    """Rebuild the tree rooted at `root`, ITERATIVELY (post-order via a heap agenda,
+    no recursion). `on_var(node, depth)` / `on_bvar(node, depth)` transform those
+    leaves (identity if None); every other node is reassembled from its already-
+    rebuilt children. `depth` rises by one under each binder, so a leaf hook sees the
+    de Bruijn depth at its position -- the scope, threaded without the call stack.
+
+    Keyed by `(id, depth)`, so the same node occurring at two depths rebuilds
+    correctly. Powers `subst`/`abstract`/`instantiate`; a term or formula nested
+    thousands deep is rebuilt without recursion."""
+    order: list = []
+    stack: list = [(root, start_depth)]
+    while stack:
+        n, d = stack.pop()
+        order.append((n, d))
+        cd = d + 1 if isinstance(n, (Forall, Exists)) else d
+        for c in children(n):
+            stack.append((c, cd))
+    done: dict = {}
+    for n, d in reversed(order):
+        if type(n) is Var and on_var is not None:
+            done[(id(n), d)] = on_var(n, d)
+        elif type(n) is BVar and on_bvar is not None:
+            done[(id(n), d)] = on_bvar(n, d)
+        else:
+            cd = d + 1 if isinstance(n, (Forall, Exists)) else d
+            done[(id(n), d)] = map_children(n, lambda c, _cd=cd: done[(id(c), _cd)])
+    return done[(id(root), start_depth)]
+
+
 class Node:
     """Base of every syntax node. Operations are methods here, dispatched by class.
     The generic versions recurse over a node's children; only `Var` and the binders
@@ -84,18 +114,24 @@ class Node:
 
     def subst(self, var: str, repl: Term) -> Node:
         """Replace the free variable `var` with `repl`. Locally nameless, so no
-        capture-avoidance; only `Var` is special (override)."""
-        return cast(Node, map_children(self, lambda c: c.subst(var, repl)))
+        capture-avoidance: every `Var` named `var` in the tree is free."""
+        return cast(Node, _rebuild(self, 0, on_var=lambda n, d: repl if n.name == var else n))
 
     def abstract(self, name: str, depth: int) -> Node:
-        """Close a binder: replace the free variable `name` with the bound index
-        `depth`. `Var` makes the index; the binders raise `depth`."""
-        return cast(Node, map_children(self, lambda c: c.abstract(name, depth)))
+        """Close a binder: replace the free variable `name` with the bound index for
+        its position (`depth` rises under each binder; `Var` becomes `BVar(d)`)."""
+        def to_index(n, d):
+            return BVar(d) if n.name == name else n
+        return cast(Node, _rebuild(self, depth, on_var=to_index))
 
     def instantiate(self, repl: Term, depth: int) -> Node:
-        """Open a binder: the bound variable at `depth` becomes `repl`. `BVar`
-        reads the index; the binders raise `depth`."""
-        return cast(Node, map_children(self, lambda c: c.instantiate(repl, depth)))
+        """Open a binder: the bound variable at the binder's depth becomes `repl`;
+        deeper indices shift down by one. `depth` rises under each binder."""
+        def open_bvar(n, d):
+            if n.index == d:
+                return repl
+            return BVar(n.index - 1) if n.index > d else n
+        return cast(Node, _rebuild(self, depth, on_bvar=open_bvar))
 
     def free_var_sorts(self) -> frozenset:
         """Free `(name, sort)` pairs -- like `free_vars` but keeping each variable's
@@ -146,12 +182,6 @@ class Var(Term):
 
     def __repr__(self) -> str:
         return f"{self.name}:{self.sort}" if self.sort else self.name
-
-    def subst(self, var: str, repl: Term) -> Term:
-        return repl if self.name == var else self
-
-    def abstract(self, name: str, depth: int) -> Term:
-        return BVar(depth) if self.name == name else self
 
     def sort_of(self, sig, scope: tuple = ()) -> str:
         if self.sort not in sig.sorts:
@@ -234,11 +264,6 @@ class BVar(Term):
 
     def __repr__(self) -> str:
         return f"#{self.index}"
-
-    def instantiate(self, repl: Term, depth: int) -> Term:
-        if self.index == depth:
-            return repl
-        return BVar(self.index - 1) if self.index > depth else self
 
     def sort_of(self, sig, scope: tuple = ()) -> str:
         if not (0 <= self.index < len(scope)):
@@ -345,10 +370,11 @@ def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
     return Implies(a, Bottom())
 
 
-# `Forall`/`Exists` override the binder-aware operations -- `abstract`/`instantiate`
-# (raise the de Bruijn depth) and `sort_check` (push the bound sort onto the scope).
-# `free_vars`/`subst`/`free_var_sorts` use the generic `Node` versions (correct,
-# since a quantifier's only child node is `body` -- the `sort` is a str).
+# `Forall`/`Exists` override the scope-threaded operations that need the bound sort
+# -- `sort_check` (push the sort onto the scope) and `_validate` (raise the binder
+# depth). `abstract`/`instantiate` need no override: `_rebuild` raises the depth at
+# every binder generically. `free_vars`/`subst`/`free_var_sorts` are the generic
+# `Node` versions (a quantifier's only child node is `body`; the `sort` is a str).
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,12 +390,6 @@ class Forall(Formula):
 
     def __repr__(self) -> str:
         return f"(forall :{self.sort}. {self.body!r})" if self.sort else f"(forall. {self.body!r})"
-
-    def abstract(self, name: str, depth: int) -> Formula:
-        return Forall(self.sort, cast(Formula, self.body.abstract(name, depth + 1)))
-
-    def instantiate(self, repl: Term, depth: int) -> Formula:
-        return Forall(self.sort, cast(Formula, self.body.instantiate(repl, depth + 1)))
 
     def sort_check(self, sig, scope: tuple = ()) -> None:
         self.body.sort_check(sig, (self.sort, *scope))
@@ -393,12 +413,6 @@ class Exists(Formula):
 
     def __repr__(self) -> str:
         return f"(exists :{self.sort}. {self.body!r})" if self.sort else f"(exists. {self.body!r})"
-
-    def abstract(self, name: str, depth: int) -> Formula:
-        return Exists(self.sort, cast(Formula, self.body.abstract(name, depth + 1)))
-
-    def instantiate(self, repl: Term, depth: int) -> Formula:
-        return Exists(self.sort, cast(Formula, self.body.instantiate(repl, depth + 1)))
 
     def sort_check(self, sig, scope: tuple = ()) -> None:
         self.body.sort_check(sig, (self.sort, *scope))

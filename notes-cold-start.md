@@ -113,6 +113,13 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## leaf hooks Var/BVar, map_children reassembly, depth+1 under binders) -- removes Var/BVar/
 ## Forall/Exists rebuild overrides. STEP 5 = sort_of (term fold) + sort_check (formula scope
 ## stack) iterative. THEN delete guard in check(), add deep-proof + deep-subst totality tests.
+## ===
+## STEP 4 IN PROGRESS: subst/abstract/instantiate iterative via _rebuild((id,depth)-keyed,
+## on_var/on_bvar leaf hooks, map_children reassembly, depth+1 under binders). Node.subst/
+## abstract/instantiate rewritten to call _rebuild. REMOVED overrides: Var.subst, Var.abstract,
+## BVar.instantiate, Forall/Exists.abstract+instantiate. Kept Term.subst/Formula.subst covariant
+## casts. NEXT: run tests (subst/alpha/roundtrip property tests are the net). Then STEP 5 sort_of/
+## sort_check iterative, then drop guard.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
