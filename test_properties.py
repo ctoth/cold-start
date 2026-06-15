@@ -260,6 +260,19 @@ def test_alpha_equivalence_is_structural_equality(body):
     assert fa == fb
 
 
+# --- generic traversal: one fold replaces the hand-rolled walkers ----------
+
+
+@given(st.one_of(terms(), formulas()))
+def test_generic_free_vars_agrees_with_hand_rolled(node):
+    # A single fold-derived `free_vars` must agree with both hand-rolled walkers,
+    # over terms and formulas alike -- the precondition for deleting them.
+    from cold_start.syntax import free_vars
+
+    hand = term_free_vars(node) if isinstance(node, Term) else formula_free_vars(node)
+    assert free_vars(node) == hand
+
+
 # --- the sound generator: the checker must agree with arithmetic ----------
 
 

@@ -220,6 +220,70 @@ def instantiate(binder: Formula, repl: Term) -> Formula:
     return _instantiate(binder.body, repl, 0)
 
 
+# ---------------------------------------------------------------------------
+# Generic traversal  (one fold; the hand-rolled walkers are derived from it)
+# ---------------------------------------------------------------------------
+# A node is a frozen dataclass; its CHILDREN are the dataclass-valued fields (and
+# dataclass elements of tuple fields). Because bound variables are nameless
+# (locally nameless), no binder is special to free-vars/substitution, so a
+# single uniform fold suffices -- no per-node walker, no binding-scope tracking.
+
+
+def is_a(node: object, kind) -> bool:
+    """Exact concrete-node test (the trust-correct choice; subclasses do not
+    match). `kind` may be a class or a tuple of classes. Use plain `isinstance`
+    only for the abstract bases Term/Formula/Pf, where subclass membership is the
+    point."""
+    return type(node) is kind if isinstance(kind, type) else type(node) in kind
+
+
+def _is_node(v: object) -> bool:
+    return is_dataclass(v) and not isinstance(v, type)
+
+
+def children(node: object) -> list:
+    """Immediate sub-nodes of `node`, in field order (tuple fields flattened)."""
+    if not is_dataclass(node) or isinstance(node, type):
+        raise TypeError(f"not a node: {type(node).__name__}")
+    out: list = []
+    for f in fields(node):
+        v = getattr(node, f.name)
+        if _is_node(v):
+            out.append(v)
+        elif isinstance(v, tuple):
+            out.extend(x for x in v if _is_node(x))
+    return out
+
+
+def map_children(node, fn):
+    """Rebuild `node`, replacing each immediate sub-node with `fn(sub-node)`."""
+    if not is_dataclass(node) or isinstance(node, type):
+        raise TypeError(f"not a node: {type(node).__name__}")
+    new = {}
+    for f in fields(node):
+        v = getattr(node, f.name)
+        if is_dataclass(v) and not isinstance(v, type):
+            new[f.name] = fn(v)
+        elif isinstance(v, tuple):
+            new[f.name] = tuple(
+                fn(x) if (is_dataclass(x) and not isinstance(x, type)) else x for x in v
+            )
+        else:
+            new[f.name] = v
+    return type(node)(**new)
+
+
+def free_vars(node: object) -> frozenset:
+    """Free variable names in a term or formula -- a uniform fold over children.
+    Var contributes its name; BVar (nameless) contributes nothing."""
+    if type(node) is Var:  # exact + narrows for the .name access
+        return frozenset({node.name})
+    acc: frozenset = frozenset()
+    for c in children(node):
+        acc |= free_vars(c)
+    return acc
+
+
 def formula_free_vars(f: Formula) -> frozenset:
     if isinstance(f, Eq):
         return term_free_vars(f.lhs) | term_free_vars(f.rhs)
