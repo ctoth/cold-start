@@ -3,6 +3,14 @@
 Project lives in this git repo. Full design notes in `NOTES.md`; this file is
 the running scratch log. (Moved into the repo at Q's request; was at the parent.)
 
+## REBUILD COMPLETE (2026-06-15). 310 passed · ruff clean · pyright 0 · verify CLI ok.
+Commits: 9e64ff8 baseline · b61d6af CLAUDE+ARCH · 49b0439 syntax (Node + methods +
+exact-type validate) · 4108fe9 checker (validate_proof + _derive_rule dispatch
+tables) · e46a52e notation (formatter table) · df5f132 sorts×quantifiers coexist ·
+f4d80a9 check total on deep input · 61ac4ad Robinson (1,S,·) experiment. proof/
+presburger/peano/algebra/proofs/verify recovered clean (no type-switch). Every core
+op is a polymorphic method or an exact-type table; trust stays in checker.py.
+
 ## AUTONOMOUS REBUILD IN PROGRESS (2026-06-15) — plan: ~/.claude/plans/sprightly-watching-fiddle.md
 Goal (/goal): fully execute the plan, rebuild cold_start beautiful & principled.
 Polymorphic redesign: one Node root, operations as methods (not elif type-switch),
