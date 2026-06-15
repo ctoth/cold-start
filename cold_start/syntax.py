@@ -102,6 +102,15 @@ class Node:
         Only ever called after the gate confirms `type(self)` is canonical."""
         raise TypeError(f"non-canonical node: {type(self).__name__}")
 
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        """Render this node to surface text, parenthesizing when this node's
+        structural precedence is below `parent_prec`. `ctx` is a notation-side
+        printer carrying the *lexical* concerns the core syntax must not own --
+        name quoting, the infix-symbol table, the constant set, fresh-name choice,
+        and the bound-name stack. Each concrete node overrides; the operator's
+        precedence is intrinsic to the node, the spelling comes from `ctx`."""
+        raise NotImplementedError(f"cannot format {type(self).__name__}")
+
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -151,6 +160,12 @@ class Var(Term):
         _check_str(self.name, "Var.name")
         _check_str(self.sort, "Var.sort")
 
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        # a bound variable's sort is implied by its binder, so suppress it there
+        sort = "" if ctx.bound.get(self.name) == self.sort else self.sort
+        name = ctx.name(self.name)
+        return f"{name}:{ctx.name(sort)}" if sort else name
+
 
 @dataclass(frozen=True, slots=True)
 class Fun(Term):
@@ -190,6 +205,19 @@ class Fun(Term):
         for a in self.args:
             validate(a, depth)
 
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        prec = ctx.infix.get(self.name)
+        if prec is not None and len(self.args) == 2:  # binary infix: a + b
+            left = self.args[0].format(ctx, prec)
+            right = self.args[1].format(ctx, prec + 1)  # left-assoc: right side binds tighter
+            text = f"{left} {self.name} {right}"
+            return f"({text})" if prec < parent_prec else text
+        name = ctx.name(self.name)
+        if not self.args and (self.name in ctx.constants or self.name.isdecimal()):
+            return name  # a bare constant or numeral
+        args = ", ".join(a.format(ctx) for a in self.args)
+        return f"{name}({args})"
+
 
 @dataclass(frozen=True, slots=True)
 class BVar(Term):
@@ -218,6 +246,9 @@ class BVar(Term):
     def _validate(self, depth: int) -> None:
         if type(self.index) is not int or not (0 <= self.index < depth):
             raise TypeError(f"dangling bound variable {self.index!r} at binder depth {depth}")
+
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        raise ValueError("cannot format a dangling bound variable outside a binder")
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +288,10 @@ class Eq(Formula):
         validate(self.lhs, depth)
         validate(self.rhs, depth)
 
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        text = f"{self.lhs.format(ctx)} {self.symbol} {self.rhs.format(ctx)}"
+        return f"({text})" if 40 < parent_prec else text
+
 
 @dataclass(frozen=True, slots=True)
 class Implies(Formula):
@@ -276,6 +311,15 @@ class Implies(Formula):
         validate(self.ant, depth)
         validate(self.con, depth)
 
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        if type(self.con) is Bottom:  # Not(A) == Implies(A, Bottom): render as ¬A
+            text = "¬" + self.ant.format(ctx, 35)
+            return f"({text})" if 35 < parent_prec else text
+        left = self.ant.format(ctx, 11)  # right-assoc: antecedent binds tighter
+        right = self.con.format(ctx, 10)
+        text = f"{left} {self.symbol} {right}"
+        return f"({text})" if 10 < parent_prec else text
+
 
 @dataclass(frozen=True, slots=True)
 class Bottom(Formula):
@@ -291,6 +335,9 @@ class Bottom(Formula):
 
     def _validate(self, depth: int) -> None:
         pass  # no fields to check
+
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        return self.symbol  # an atom (prec 50): never parenthesized
 
 
 def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
@@ -330,6 +377,9 @@ class Forall(Formula):
         _check_str(self.sort, "quantifier sort")
         validate(self.body, depth + 1)
 
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        return _format_binder(self, ctx, parent_prec)
+
 
 @dataclass(frozen=True, slots=True)
 class Exists(Formula):
@@ -355,6 +405,25 @@ class Exists(Formula):
     def _validate(self, depth: int) -> None:
         _check_str(self.sort, "quantifier sort")
         validate(self.body, depth + 1)
+
+    def format(self, ctx, parent_prec: int = 0) -> str:
+        return _format_binder(self, ctx, parent_prec)
+
+
+def _format_binder(binder: Forall | Exists, ctx, parent_prec: int) -> str:
+    """Shared rendering for Forall/Exists (identical but for the symbol): pick a
+    fresh surface name, open the binder onto it, render the body, then restore the
+    naming context. The quantifier's structural precedence is 5."""
+    name = ctx.fresh(binder.body.free_vars() | ctx.used)
+    ctx.bound[name] = binder.sort
+    ctx.used.add(name)
+    opened = instantiate(binder, Var(name, binder.sort))
+    body = opened.format(ctx, 0)
+    ctx.used.remove(name)
+    del ctx.bound[name]
+    sort = f":{ctx.name(binder.sort)}" if binder.sort else ""
+    text = f"{binder.symbol}{ctx.name(name)}{sort}. {body}"  # binder.symbol: ∀ or ∃
+    return f"({text})" if 5 < parent_prec else text
 
 
 # --- binder smart constructors --------------------------------------------

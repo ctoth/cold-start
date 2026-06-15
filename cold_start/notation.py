@@ -7,15 +7,12 @@ or proved.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import NoReturn
+from dataclasses import dataclass, field
+from typing import ClassVar, NoReturn
 
 from .syntax import (
     Bottom,
-    BVar,
     Eq,
-    Exists,
-    Forall,
     Formula,
     Fun,
     Implies,
@@ -24,7 +21,6 @@ from .syntax import (
     Var,
     exists,
     forall,
-    instantiate,
 )
 
 
@@ -70,12 +66,12 @@ def parse_formula(text: str, *, constants: frozenset[str] = _DEFAULT_CONSTANTS) 
 
 def format_term(term: Term, *, constants: frozenset[str] = _DEFAULT_CONSTANTS) -> str:
     """Render a term in notation accepted by :func:`parse_term`."""
-    return _format_term(term, constants=constants, bound={})
+    return term.format(_Printer(constants))
 
 
 def format_formula(formula: Formula, *, constants: frozenset[str] = _DEFAULT_CONSTANTS) -> str:
     """Render a formula in notation accepted by :func:`parse_formula`."""
-    return _format_formula(formula, constants=constants, bound={}, used=set(), parent_prec=0)
+    return formula.format(_Printer(constants))
 
 
 def _tokenize(text: str) -> list[_Token]:
@@ -316,106 +312,32 @@ class _Parser:
         return sorts[-1]
 
 
-# Pretty-printing dispatches on the node's exact type to a per-kind handler that
-# returns (text, precedence); the wrapper parenthesizes when precedence demands.
-# This stays in the notation (surface) layer -- it is presentation logic, like the
-# parser, and depends on notation data (the infix table, name quoting) that the
-# core syntax must not know about, so it is a dispatch table here, not a method.
+# Pretty-printing is a polymorphic `node.format(ctx, parent_prec)` method on each
+# syntax node: structural precedence is intrinsic to the operator, so it belongs on
+# the node. The notation-specific *lexical* concerns the core syntax must not own --
+# name quoting, the infix-symbol table, the constant set, fresh-name choice, the
+# bound-name stack -- are carried here, in this printer context threaded as `ctx`.
 
 
-def _ff_bottom(f, *, constants, bound, used) -> tuple[str, int]:
-    return Bottom.symbol, 50
+@dataclass(slots=True)
+class _Printer:
+    """The lexical side of formatting, handed to each node's `format` method.
 
+    `constants` are the symbols printed bare (e.g. ``0``, ``e``); `bound` maps an
+    open binder's surface name to its sort (so a bound variable hides its sort);
+    `used` tracks names in play so a binder can choose a fresh one. `infix` and the
+    name-quoting / fresh-name helpers are the rest of the surface notation."""
 
-def _ff_eq(f, *, constants, bound, used) -> tuple[str, int]:
-    lhs = _format_term(f.lhs, constants=constants, bound=bound)
-    rhs = _format_term(f.rhs, constants=constants, bound=bound)
-    return f"{lhs} {Eq.symbol} {rhs}", 40
+    constants: frozenset[str]
+    bound: dict[str, str] = field(default_factory=dict)
+    used: set[str] = field(default_factory=set)
+    infix: ClassVar[dict[str, int]] = _INFIX_PRECEDENCE
 
+    def name(self, s: str) -> str:
+        return _format_name(s)
 
-def _ff_implies(f, *, constants, bound, used) -> tuple[str, int]:
-    if type(f.con) is Bottom:  # Not(A) == Implies(A, Bottom): render as ¬A
-        inner = _format_formula(f.ant, constants=constants, bound=bound, used=used, parent_prec=35)
-        return "¬" + inner, 35
-    left = _format_formula(f.ant, constants=constants, bound=bound, used=used, parent_prec=11)
-    right = _format_formula(f.con, constants=constants, bound=bound, used=used, parent_prec=10)
-    return f"{left} {Implies.symbol} {right}", 10
-
-
-def _ff_quantifier(f, *, constants, bound, used) -> tuple[str, int]:
-    name = _fresh_name(f.body.free_vars() | used)
-    bound[name] = f.sort
-    used.add(name)
-    opened = instantiate(f, Var(name, f.sort))
-    body = _format_formula(opened, constants=constants, bound=bound, used=used, parent_prec=0)
-    used.remove(name)
-    del bound[name]
-    sort = f":{_format_name(f.sort)}" if f.sort else ""
-    return f"{f.symbol}{_format_name(name)}{sort}. {body}", 5  # f.symbol: ∀ or ∃
-
-
-_FORMAT_FORMULA = {
-    Bottom: _ff_bottom,
-    Eq: _ff_eq,
-    Implies: _ff_implies,
-    Forall: _ff_quantifier,
-    Exists: _ff_quantifier,
-}
-
-
-def _format_formula(
-    formula: Formula,
-    *,
-    constants: frozenset[str],
-    bound: dict[str, str],
-    used: set[str],
-    parent_prec: int,
-) -> str:
-    handler = _FORMAT_FORMULA.get(type(formula))
-    if handler is None:
-        raise TypeError(f"not a formula: {formula!r}")
-    text, prec = handler(formula, constants=constants, bound=bound, used=used)
-    return f"({text})" if prec < parent_prec else text
-
-
-def _ft_var(t, *, constants, bound, parent_prec: int) -> str:
-    sort = "" if bound.get(t.name) == t.sort else t.sort
-    name = _format_name(t.name)
-    return f"{name}:{_format_name(sort)}" if sort else name
-
-
-def _ft_bvar(t, *, constants, bound, parent_prec: int) -> str:
-    raise ValueError("cannot format a dangling bound variable outside a binder")
-
-
-def _ft_fun(t, *, constants, bound, parent_prec: int) -> str:
-    if t.name in _INFIX_PRECEDENCE and len(t.args) == 2:
-        prec = _INFIX_PRECEDENCE[t.name]
-        left = _format_term(t.args[0], constants=constants, bound=bound, parent_prec=prec)
-        right = _format_term(t.args[1], constants=constants, bound=bound, parent_prec=prec + 1)
-        text = f"{left} {t.name} {right}"
-        return f"({text})" if prec < parent_prec else text
-    name = _format_name(t.name)
-    if not t.args and (t.name in constants or t.name.isdecimal()):
-        return name
-    args = ", ".join(_format_term(a, constants=constants, bound=bound) for a in t.args)
-    return f"{name}({args})"
-
-
-_FORMAT_TERM = {Var: _ft_var, BVar: _ft_bvar, Fun: _ft_fun}
-
-
-def _format_term(
-    term: Term,
-    *,
-    constants: frozenset[str],
-    bound: dict[str, str],
-    parent_prec: int = 0,
-) -> str:
-    handler = _FORMAT_TERM.get(type(term))
-    if handler is None:
-        raise TypeError(f"not a term: {term!r}")
-    return handler(term, constants=constants, bound=bound, parent_prec=parent_prec)
+    def fresh(self, avoid: set[str] | frozenset[str]) -> str:
+        return _fresh_name(avoid)
 
 
 def _fresh_name(avoid: set[str] | frozenset[str]) -> str:

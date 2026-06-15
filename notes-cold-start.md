@@ -40,6 +40,21 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## format() methods (plan: "Refactor the formatter to polymorphic format() methods").
 ## Each its own green+commit. validate gate+method preserves security (gate rejects hostile
 ## subclass BEFORE method). PENDING after: iterative check (Q rejects RecursionError guard).
+## COMMIT C DONE = 0b71867. syntax.py validate -> exact-type gate (_CANONICAL) + node._validate
+## (depth) methods on Node base + 8 nodes. 310 pass, ruff clean, pyright 0.
+## REMAINING SHIM PILE: notation.py _ff_*/_ft_* formatter + _FORMAT_FORMULA/_FORMAT_TERM dicts.
+## -> polymorphic format() methods. NOTE coupling: formatter needs constants/bound/precedence
+## context -> format(self, ctx) method on nodes (presentation on syntax nodes; plan sanctions
+## "polymorphic format() methods"). Parser STAYS (local conditionals OK per CLAUDE.md). Then
+## update CLAUDE.md (gate+method pattern, trust spans modules). Then iterative check.
+## IN PROGRESS: formatter -> format(self, ctx, parent_prec) methods on nodes. ctx (notation
+## side) carries LEXICAL concerns (name quoting, infix table, constants, fresh names, bound
+## stack); nodes own STRUCTURAL precedence (40 Eq, 10/35 Implies, 5 quant, 50 Bottom). Added
+## format to Node base + Var/Fun/BVar/Eq/Implies/Bottom/Forall. Forall/Exists share
+## _format_binder(self,ctx,pp) module helper (TODO: define it + Exists.format). THEN rewrite
+## notation.py: delete _ff_*/_ft_*/_FORMAT_* dicts/_format_formula/_format_term; add _Printer
+## ctx (constants/bound/used + .name/.fresh/.infix); format_term/format_formula call node.format.
+## Round-trip tests are the safety net.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
