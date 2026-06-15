@@ -284,6 +284,15 @@ def free_vars(node: object) -> frozenset:
     return acc
 
 
+def subst(node, var: str, repl: Term):
+    """Substitute the free variable `var` with `repl` in a term or formula -- a
+    uniform map over children. Only Var is special; nameless binders, being
+    indices, need no capture-avoidance."""
+    if type(node) is Var:
+        return repl if node.name == var else node
+    return map_children(node, lambda c: subst(c, var, repl))
+
+
 def formula_free_vars(f: Formula) -> frozenset:
     if isinstance(f, Eq):
         return term_free_vars(f.lhs) | term_free_vars(f.rhs)

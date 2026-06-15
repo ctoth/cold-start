@@ -273,6 +273,14 @@ def test_generic_free_vars_agrees_with_hand_rolled(node):
     assert free_vars(node) == hand
 
 
+@given(st.one_of(terms(), formulas()), VAR_NAMES, terms())
+def test_generic_subst_agrees_with_hand_rolled(node, x, t):
+    from cold_start.syntax import subst
+
+    hand = term_subst(node, x, t) if isinstance(node, Term) else formula_subst(node, x, t)
+    assert subst(node, x, t) == hand
+
+
 # --- the sound generator: the checker must agree with arithmetic ----------
 
 
