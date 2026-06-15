@@ -141,6 +141,22 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## soundness-critical; a bug -> unsound checker. Tests (alpha-equiv, hostile-subclass, soundness)
 ## are the net but this touches the crux. PAUSED to confirm with Q before reimplementing ==/hash.
 ## Guard NOT removed. State: 310 pass, ruff clean, pyright 0, 8 ops iterative, committed.
+## ===
+## STEP 6 DONE = 2405417: Node.__eq__/__hash__ iterative (eq=False on 8 node dataclasses;
+## reflective over node_fields() helper). Deep ==/hash/set-membership work at 8000 deep. 310
+## pass, ruff clean, pyright 0. Alpha/hostile-subclass/soundness tests confirm semantics.
+## NOW STEP 7 (final): remove the RecursionError guard in check() (checker.py ~line 102-106),
+## rewrite the check() docstring (no more "convert RecursionError"), add deep-proof totality
+## tests (deep Trans over deep terms = the == case; deep proof chain; deep subst) to
+## tests/test_properties.py. Then full verify (pytest+ruff+pyright+verify CLI) and commit. ALL
+## check-reachable recursion now iterative: validate, validate_proof, derive, free_vars,
+## free_var_sorts, subst/abstract/instantiate, sort_of, sort_check, ==, hash.
+## ===
+## STEP 7 DONE: removed RecursionError guard from check() (now just validate_proof + derive,
+## docstring rewritten). Added test_check_handles_arbitrarily_deep_proofs_without_recursion
+## (Sym^6000, Cong^6000, Trans deep== distinct objects, Inst deep subst). 311 pass, ruff clean,
+## pyright 0, verify CLI VERIFIES 2+3=5. ITERATIVE WORK COMPLETE. The whole iterative chain is
+## genuinely iterative end-to-end; the guard is gone. Commits e350525..(this).
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/

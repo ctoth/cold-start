@@ -92,18 +92,16 @@ def check(pf: object, theory: object) -> Sequent:
     them, it does not trust the caller's annotations.
 
     `check` is TOTAL: it returns a `Sequent` or raises `TypeError`/`ValueError`,
-    nothing else. The recursion is structural, so input deep enough to exhaust
-    Python's call stack would raise `RecursionError`; we convert that to a
-    `ValueError` here so totality holds for any input. (A pathologically deep
-    proof is rejected, not crashed on -- real proofs are nowhere near the limit.)
+    nothing else. Every step it takes is iterative -- validation, derivation,
+    substitution, sort-checking, and even `==`/`hash` on the syntax nodes walk a
+    heap agenda, not the call stack -- so an arbitrarily deep proof or term is
+    checked (or cleanly rejected) without a `RecursionError`. The only bound is
+    memory, which already held the input.
     """
     if type(theory) is not Theory:
         raise TypeError(f"not a theory: {theory!r}")
-    try:
-        validate_proof(pf)  # exact-type gate; after this pf is a genuine Pf tree
-        return cast(Pf, pf).derive(theory)
-    except RecursionError:
-        raise ValueError("proof or term too deeply nested to check") from None
+    validate_proof(pf)  # exact-type gate; after this pf is a genuine Pf tree
+    return cast(Pf, pf).derive(theory)
 
 
 __all__ = ["Sequent", "Signature", "Theory", "check", "sort_check_formula", "validate_proof"]

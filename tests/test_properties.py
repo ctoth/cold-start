@@ -220,6 +220,36 @@ def test_check_is_total_on_pathologically_deep_input():
     assert isinstance(result, Sequent)
 
 
+def test_check_handles_arbitrarily_deep_proofs_without_recursion():
+    # check() is iterative end to end: validation, derivation, substitution,
+    # sort-checking, and even ==/hash on the nodes walk a heap agenda, not the call
+    # stack. Each construction below is ~6000 deep -- far past Python's recursion
+    # limit -- and each previously raised RecursionError. They must now succeed.
+    n = 6000
+    x = Var("x")
+
+    # (1) a deep PROOF chain: Sym^n over a reflexive equality.
+    sym = P.Refl(x)
+    for _ in range(n):
+        sym = P.Sym(sym)
+    assert isinstance(check(sym, PEANO), Sequent)
+
+    # (2) a deep TERM built by the derivation: Cong^n over S, concl = Eq(Sⁿx, Sⁿx).
+    cong = P.Refl(x)
+    for _ in range(n):
+        cong = P.Cong("S", (cong,))
+    assert isinstance(check(cong, PEANO), Sequent)
+
+    # (3) deep `==`: Trans must compare the two deep middle terms (distinct objects,
+    # so it is a real structural compare, not an identity short-circuit).
+    trans = P.Trans(P.Refl(numeral(n)), P.Refl(numeral(n)))
+    seq = check(trans, PEANO)
+    assert seq.concl == Eq(numeral(n), numeral(n))
+
+    # (4) deep substitution: Inst rewriting a free variable across the deep concl.
+    assert isinstance(check(P.Inst(cong, "y", x), PEANO), Sequent)
+
+
 # --- validation never false-rejects a genuinely canonical value -----------
 
 
