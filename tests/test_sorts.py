@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
+from semantics import evaluate
 
 import cold_start.proof as P
 from cold_start.algebra import (
@@ -24,7 +25,7 @@ from cold_start.algebra import (
     mul,
 )
 from cold_start.checker import check, sort_check_formula, sort_of
-from cold_start.syntax import Eq, Fun, Implies, Term, Var
+from cold_start.syntax import Eq, Fun, Implies, Var
 
 M_VARS = [Var("m", "M"), Var("n", "M"), Var("p", "M")]
 X_VARS = [Var("x", "X"), Var("y", "X")]
@@ -54,22 +55,6 @@ ACT_MODEL = SortedModel(
 )
 
 
-def interp_term(t: Term, model: SortedModel, env: dict):
-    if type(t) is Var:
-        return env[t.name]
-    if type(t) is Fun:
-        return model.interp[t.name](*[interp_term(a, model, env) for a in t.args])
-    raise TypeError(repr(t))
-
-
-def interp_formula(f, model: SortedModel, env: dict) -> bool:
-    if type(f) is Eq:
-        return interp_term(f.lhs, model, env) == interp_term(f.rhs, model, env)
-    if type(f) is Implies:
-        return (not interp_formula(f.ant, model, env)) or interp_formula(f.con, model, env)
-    raise TypeError(repr(f))
-
-
 def _vars_with_sorts(obj, out: set) -> None:
     if type(obj) is Var:
         out.add((obj.name, obj.sort))
@@ -95,7 +80,7 @@ def env_for(concl, model: SortedModel, data) -> dict:
 def test_model_satisfies_action_axioms(data):
     for ax in MONOID_ACTION.axioms:
         env = env_for(ax, ACT_MODEL, data)
-        assert interp_formula(ax, ACT_MODEL, env), f"model fails {ax!r}"
+        assert evaluate(ax, ACT_MODEL, env), f"model fails {ax!r}"
 
 
 # --- a worked sorted proof ------------------------------------------------
@@ -277,4 +262,4 @@ def test_proofs_sound_in_sorted_model(pf, data):
     seq = check(pf, MONOID_ACTION)
     assume(not seq.hyps)
     env = env_for(seq.concl, ACT_MODEL, data)
-    assert interp_formula(seq.concl, ACT_MODEL, env), f"UNSOUND: {seq!r} at {env}"
+    assert evaluate(seq.concl, ACT_MODEL, env), f"UNSOUND: {seq!r} at {env}"

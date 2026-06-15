@@ -13,6 +13,7 @@ from itertools import product
 
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
+from semantics import evaluate
 
 import cold_start.proof as P
 from cold_start.algebra import (
@@ -29,7 +30,7 @@ from cold_start.algebra import (
     neg,
 )
 from cold_start.checker import check
-from cold_start.syntax import Eq, Fun, Implies, Term, Var
+from cold_start.syntax import Eq, Fun, Var
 
 VAR_POOL = ["x", "y", "z", "u", "v"]
 
@@ -42,22 +43,6 @@ class Model:
     name: str
     carrier: object  # Hypothesis strategy
     interp: dict
-
-
-def interp_term(t: Term, model: Model, env: dict):
-    if type(t) is Var:
-        return env[t.name]
-    if type(t) is Fun:
-        return model.interp[t.name](*[interp_term(a, model, env) for a in t.args])
-    raise TypeError(repr(t))
-
-
-def interp_formula(f, model: Model, env: dict) -> bool:
-    if type(f) is Eq:
-        return interp_term(f.lhs, model, env) == interp_term(f.rhs, model, env)
-    if type(f) is Implies:
-        return (not interp_formula(f.ant, model, env)) or interp_formula(f.con, model, env)
-    raise TypeError(repr(f))
 
 
 # Z and Z/6: commutative rings.
@@ -112,10 +97,10 @@ def test_models_satisfy_their_theories(data):
     for ax in RING_AXIOMS:
         for model in RING_MODELS:
             env = env_of(model, data)
-            assert interp_formula(ax, model, env), f"{model.name} fails {ax!r}"
+            assert evaluate(ax, model, env), f"{model.name} fails {ax!r}"
     for model in COMM_MODELS:  # the commutative ones also satisfy COMM
         env = env_of(model, data)
-        assert interp_formula(COMM, model, env)
+        assert evaluate(COMM, model, env)
 
 
 # --- worked ring theorems -------------------------------------------------
@@ -203,7 +188,7 @@ def test_ring_proofs_sound_in_all_models(pf, data):
     assume(not seq.hyps)
     for model in RING_MODELS:
         env = env_of(model, data)
-        assert interp_formula(seq.concl, model, env), f"UNSOUND in {model.name}: {seq!r}"
+        assert evaluate(seq.concl, model, env), f"UNSOUND in {model.name}: {seq!r}"
 
 
 # --- multiplicative commutativity is independent of the ring axioms -------
@@ -216,10 +201,10 @@ def test_mul_commutativity_is_not_a_ring_theorem(data):
     comm = Eq(mul(Var("x"), Var("y")), mul(Var("y"), Var("x")))
     env = env_of(MAT2, data)
     for ax in RING_AXIOMS:
-        assert interp_formula(ax, MAT2, env), f"M_2(F_2) not a ring: {ax!r}"
+        assert evaluate(ax, MAT2, env), f"M_2(F_2) not a ring: {ax!r}"
     # explicit non-commuting witness: E12 * E21 != E21 * E12
     e12, e21 = (0, 1, 0, 0), (0, 0, 1, 0)
-    assert not interp_formula(comm, MAT2, {"x": e12, "y": e21})
+    assert not evaluate(comm, MAT2, {"x": e12, "y": e21})
 
 
 def test_commutativity_requires_the_axiom():

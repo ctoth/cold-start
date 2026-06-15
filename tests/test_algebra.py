@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
+from semantics import evaluate
 
 import cold_start.proof as P
 from cold_start.algebra import (
@@ -27,7 +28,7 @@ from cold_start.algebra import (
 )
 from cold_start.checker import check
 from cold_start.proof import Pf
-from cold_start.syntax import Eq, Fun, Implies, Term, Var
+from cold_start.syntax import Eq, Var
 
 VAR_POOL = ["x", "y", "z", "u", "v"]
 
@@ -35,34 +36,11 @@ VAR_POOL = ["x", "y", "z", "u", "v"]
 # --- models ---------------------------------------------------------------
 
 
-class Uninterpretable(Exception):
-    """A symbol the model does not interpret."""
-
-
 @dataclass
 class Model:
     name: str
     carrier: object  # a Hypothesis strategy sampling carrier elements
     interp: dict  # function symbol name -> python callable
-
-
-def interp_term(t: Term, model: Model, env: dict):
-    if type(t) is Var:
-        return env[t.name]
-    if type(t) is Fun:
-        fn = model.interp.get(t.name)
-        if fn is None:
-            raise Uninterpretable(t.name)
-        return fn(*[interp_term(a, model, env) for a in t.args])
-    raise Uninterpretable(repr(t))
-
-
-def interp_formula(f, model: Model, env: dict) -> bool:
-    if type(f) is Eq:
-        return interp_term(f.lhs, model, env) == interp_term(f.rhs, model, env)
-    if type(f) is Implies:
-        return (not interp_formula(f.ant, model, env)) or interp_formula(f.con, model, env)
-    raise Uninterpretable(repr(f))
 
 
 def _compose(g, f):
@@ -102,7 +80,7 @@ def test_models_satisfy_their_theories(data):
         for model in models:
             env = env_of(model, data)
             for ax in theory.axioms:
-                assert interp_formula(ax, model, env), f"{model.name} fails {ax!r}"
+                assert evaluate(ax, model, env), f"{model.name} fails {ax!r}"
 
 
 # --- a worked abstract proof checks ---------------------------------------
@@ -173,7 +151,7 @@ def test_monoid_proofs_sound_in_all_models(pf, data):
     assume(not seq.hyps)
     for model in MONOID_MODELS:
         env = env_of(model, data)
-        assert interp_formula(seq.concl, model, env), f"UNSOUND in {model.name}: {seq!r}"
+        assert evaluate(seq.concl, model, env), f"UNSOUND in {model.name}: {seq!r}"
 
 
 # --- commutativity is independent of the monoid axioms --------------------
@@ -188,9 +166,9 @@ def test_commutativity_is_not_a_monoid_theorem(data):
     for model in NONCOMMUTATIVE:
         env = env_of(model, data)
         for ax in MONOID.axioms:
-            assert interp_formula(ax, model, env), f"{model.name} not a monoid"
+            assert evaluate(ax, model, env), f"{model.name} not a monoid"
     # explicit witness in strings: "a"++"b" != "b"++"a"
-    assert not interp_formula(comm, STRINGS, {"x": "a", "y": "b"})
+    assert not evaluate(comm, STRINGS, {"x": "a", "y": "b"})
 
 
 def test_commutativity_requires_the_comm_axiom():

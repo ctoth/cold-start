@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from test_model import eval_formula
+from semantics import evaluate
+from test_model import N
 
 import cold_start.proof as P
 from cold_start.checker import check
@@ -82,8 +83,8 @@ def test_two_is_not_one():
 @given(ENV)
 @settings(max_examples=200)
 def test_negation_axioms_true_in_N(env):
-    assert eval_formula(SUCC_NEQ_ZERO, env)  # x+1 != 0 for all x in N
-    assert eval_formula(SUCC_INJ, env)  # x+1 = y+1 -> x = y
+    assert evaluate(SUCC_NEQ_ZERO, N, env)  # x+1 != 0 for all x in N
+    assert evaluate(SUCC_INJ, N, env)  # x+1 = y+1 -> x = y
 
 
 def test_proved_disequalities_hold_in_N():
@@ -93,4 +94,4 @@ def test_proved_disequalities_hold_in_N():
     ):
         seq = check(pf, PEANO)
         assert seq.concl == claim
-        assert eval_formula(seq.concl, {})  # the disequality is true in N
+        assert evaluate(seq.concl, N, {})  # the disequality is true in N

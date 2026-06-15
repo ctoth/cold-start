@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
+from semantics import Model, evaluate
 
 import cold_start.proof as P
 from cold_start.checker import Theory, check
@@ -24,10 +25,8 @@ from cold_start.proofs import add_proof
 from cold_start.syntax import (
     Bottom,
     Eq,
-    Formula,
     Fun,
     Implies,
-    Term,
     Var,
     subst,
 )
@@ -41,40 +40,19 @@ ENV = st.fixed_dictionaries({name: st.integers(0, 8) for name in VAR_POOL})
 # --- the standard model N -------------------------------------------------
 
 
-class Uninterpretable(Exception):
-    """A term/formula outside the arithmetic signature {0, S, +, =, ->}."""
-
-
-def eval_term(t: Term, env: dict) -> int:
-    if isinstance(t, Var):
-        return env[t.name]
-    if isinstance(t, Fun):
-        if t.name == "0" and len(t.args) == 0:
-            return 0
-        if t.name == "S" and len(t.args) == 1:
-            return eval_term(t.args[0], env) + 1
-        if t.name == "+" and len(t.args) == 2:
-            return eval_term(t.args[0], env) + eval_term(t.args[1], env)
-    raise Uninterpretable(repr(t))
-
-
-def eval_formula(f: Formula, env: dict) -> bool:
-    if isinstance(f, Eq):
-        return eval_term(f.lhs, env) == eval_term(f.rhs, env)
-    if isinstance(f, Implies):
-        return (not eval_formula(f.ant, env)) or eval_formula(f.con, env)
-    if isinstance(f, Bottom):
-        return False
-    raise Uninterpretable(repr(f))
+N = Model(
+    "N",
+    interp={"0": lambda: 0, "S": lambda x: x + 1, "+": lambda a, b: a + b},
+)
 
 
 def test_evaluator_sanity():
     # The interpreter itself must agree with arithmetic, or the probes are moot.
-    assert eval_term(numeral(3), {}) == 3
-    assert eval_term(add(numeral(2), numeral(2)), {}) == 4
-    assert eval_formula(Eq(add(numeral(2), numeral(2)), numeral(4)), {})
-    assert not eval_formula(Eq(numeral(1), ZERO), {})
-    assert eval_formula(Eq(add(ZERO, Var("n")), Var("n")), {"n": 5})  # 0+n=n
+    assert evaluate(numeral(3), N, {}) == 3
+    assert evaluate(add(numeral(2), numeral(2)), N, {}) == 4
+    assert evaluate(Eq(add(numeral(2), numeral(2)), numeral(4)), N, {})
+    assert not evaluate(Eq(numeral(1), ZERO), N, {})
+    assert evaluate(Eq(add(ZERO, Var("n")), Var("n")), N, {"n": 5})  # 0+n=n
 
 
 # --- arithmetic-signature strategies --------------------------------------
@@ -175,7 +153,7 @@ def test_arbitrary_proofs_are_model_sound(pf, env):
     except (TypeError, ValueError):
         return
     assume(not seq.hyps)  # only closed theorems carry unconditional truth
-    assert eval_formula(seq.concl, env), f"UNSOUND: derived {seq!r}, false at {env}"
+    assert evaluate(seq.concl, N, env), f"UNSOUND: derived {seq!r}, false at {env}"
 
 
 @given(checked_proofs(), ENV)
@@ -183,13 +161,13 @@ def test_arbitrary_proofs_are_model_sound(pf, env):
 def test_forward_proofs_are_model_sound(pf, env):
     seq = check(pf, PEANO)  # accepted by construction
     assume(not seq.hyps)
-    assert eval_formula(seq.concl, env), f"UNSOUND: derived {seq!r}, false at {env}"
+    assert evaluate(seq.concl, N, env), f"UNSOUND: derived {seq!r}, false at {env}"
 
 
 @given(ENV)
 def test_declared_axioms_are_true_in_N(env):
     for ax in PEANO.axioms:
-        assert eval_formula(ax, env), f"false axiom in the trusted base: {ax!r}"
+        assert evaluate(ax, N, env), f"false axiom in the trusted base: {ax!r}"
 
 
 @given(nat_formulas(), VAR_NAMES, ENV)
@@ -205,7 +183,7 @@ def test_no_accepted_formula_is_false(pred, x, env):
     )
     for f in (schema, pred):
         if PEANO.accepts(f):
-            assert eval_formula(f, env), f"accepted-but-FALSE axiom: {f!r} at {env}"
+            assert evaluate(f, N, env), f"accepted-but-FALSE axiom: {f!r} at {env}"
 
 
 def test_induction_schema_formula_is_false_in_N():
@@ -218,7 +196,7 @@ def test_induction_schema_formula_is_false_in_N():
         subst(pred, "x", ZERO),
         Implies(Implies(pred, subst(pred, "x", S(x))), pred),
     )
-    assert not eval_formula(schema, {"x": 1})  # 0=0 -> ((1=0->2=0) -> 1=0) is False
+    assert not evaluate(schema, N, {"x": 1})  # 0=0 -> ((1=0->2=0) -> 1=0) is False
     assert not PEANO.accepts(schema)  # and the rule-based checker won't take it
 
 
@@ -233,7 +211,7 @@ def test_model_probe_is_not_vacuous():
         Implies(Implies(pred, subst(pred, "x", S(x))), pred),
     )
     bad = Theory(axioms=frozenset({schema}), zero=ZERO, succ="S")
-    assert bad.accepts(schema) and not eval_formula(schema, {"x": 1})
+    assert bad.accepts(schema) and not evaluate(schema, N, {"x": 1})
 
 
 def test_model_net_catches_end_to_end_unsoundness():
@@ -252,7 +230,7 @@ def test_model_net_catches_end_to_end_unsoundness():
     exploit = P.MP(P.MP(inst, P.Refl(ZERO)), step)
     seq = check(exploit, bad)  # the BAD theory accepts it
     assert seq.hyps == frozenset()
-    assert not eval_formula(seq.concl, {}), "evaluator failed to flag |- 1=0"
+    assert not evaluate(seq.concl, N, {}), "evaluator failed to flag |- 1=0"
 
 
 @given(st.integers(0, 40), st.integers(0, 40))
@@ -263,7 +241,7 @@ def test_addition_proofs_are_true_in_N(a, b):
     c != a+b would be caught here."""
     seq = check(add_proof(a, b), PEANO)
     assert isinstance(seq.concl, Eq)
-    lhs, rhs = eval_term(seq.concl.lhs, {}), eval_term(seq.concl.rhs, {})
+    lhs, rhs = evaluate(seq.concl.lhs, N, {}), evaluate(seq.concl.rhs, N, {})
     assert lhs == rhs == a + b
 
 
@@ -275,9 +253,9 @@ def test_addition_proofs_are_true_in_N(a, b):
 
 
 def model_valid(seq, env) -> bool:
-    if any(not eval_formula(h, env) for h in seq.hyps):
+    if any(not evaluate(h, N, env) for h in seq.hyps):
         return True  # vacuously valid: some hypothesis is false here
-    return eval_formula(seq.concl, env)
+    return evaluate(seq.concl, N, env)
 
 
 def eq_proofs():
@@ -343,8 +321,8 @@ def test_substitution_lemma(phi, x, t, env):
     """The semantic core of Inst: evaluating after substitution equals
     evaluating in the shifted environment. A subst/eval mismatch breaks this."""
     shifted = dict(env)
-    shifted[x] = eval_term(t, env)
-    assert eval_formula(subst(phi, x, t), env) == eval_formula(phi, shifted)
+    shifted[x] = evaluate(t, N, env)
+    assert evaluate(subst(phi, x, t), N, env) == evaluate(phi, N, shifted)
 
 
 @given(nat_formulas(), VAR_NAMES, st.integers(1, 6), ENV)
@@ -352,18 +330,18 @@ def test_substitution_lemma(phi, x, t, env):
 def test_induction_principle_holds_in_N(pred, x, bound, env):
     """The semantic justification of the Induct rule: in N, base + step up to a
     bound forces the predicate up to that bound."""
-    base_ok = eval_formula(subst(pred, x, ZERO), env)
+    base_ok = evaluate(subst(pred, x, ZERO), N, env)
     step_ok = all(
-        eval_formula(
+        evaluate(
             Implies(
                 subst(pred, x, numeral(k)),
                 subst(pred, x, numeral(k + 1)),
-            ),
+            ), N,
             env,
         )
         for k in range(bound)
     )
     assume(base_ok and step_ok)
     assert all(
-        eval_formula(subst(pred, x, numeral(k)), env) for k in range(bound + 1)
+        evaluate(subst(pred, x, numeral(k)), N, env) for k in range(bound + 1)
     )

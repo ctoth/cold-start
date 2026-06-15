@@ -15,6 +15,54 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 - NEXT: safe worktree mutation run; then resume walker consolidation (validate
   fold, eval fold, stack-safe iterative traversal -> also fixes RecursionError).
 
+## WALKER CONSOLIDATION STATUS (commits)
+- cf31c9c: children/map_children/is_a + free_vars fold.
+- 2f6d080: subst fold (overloaded Formula->Formula/Term->Term).
+- 3ef28e0: DELETED term/formula_free_vars + term/formula_subst.
+- 2513257: validate consolidation -> ONE validate(node, depth). Trust gate, so
+  EXACT-type (NOT reflection) -- merges validate_term+validate_formula. All
+  callers migrated; property test_validate_accepts_canonical_nodes.
+- Walker count: 20 -> deleted 6 (free_vars x2, subst x2, validate x2 -> 1 each).
+  Remaining ~14: checker sort walkers (sort_of, _sort_structure,
+  _collect_consistent, _sorts_of_var = 4) + model evaluators (eval/interp/ev x ~5
+  files = 10).
+- IN PROGRESS NOW: model EVAL fold. Created tests/semantics.py = ONE evaluate(
+  node, model, env, denv) + Model dataclass + ModelLike Protocol(interp:dict) +
+  _carrier (getattr carriers[sort] else .carrier; only hit by quantifier models).
+  tests/test_semantics.py GREEN, pyright 0/0. Migrating the 5 evaluator files:
+    * test_algebra.py: deleted Uninterpretable+interp_term/formula defs; sed call
+      sites interp_*->evaluate DONE. STILL NEED: `from semantics import evaluate`.
+    * test_rings/test_sorts: sed interp_*->evaluate DONE but def blocks NOT yet
+      deleted (now self-reference `evaluate` -> recursion!) + need import.
+    * test_quant_soundness: sed ev_*->evaluate DONE, same -- del defs + import.
+    * test_rings/test_sorts/test_quant: def blocks DELETED + semantics import
+      added (DONE). ruff will prune now-unused syntax imports.
+    * test_model.py: DONE -- deleted eval_term/eval_formula/Uninterpretable;
+      added N=Model("N",interp{0/S/+}); rewrote ALL 22 call sites to
+      evaluate(node,N,env) via tools/_migrate_eval.py (paren+string-aware
+      rewriter; handles multiline). NO SHIM.
+    * test_logic.py: import fixed (`from semantics import evaluate` +
+      `from test_model import N`); STILL NEED to run _migrate_eval.py on it
+      (3 call sites: lines ~86,87,97 still say eval_formula).
+  REMAINING STEPS: run tools/_migrate_eval.py tests/test_logic.py; then
+  `ruff check --fix` (prune unused imports in rings/sorts/quant/model:
+  Term/Fun/Bottom/BVar/Forall/Exists/Implies as applicable); pyright; full
+  pytest; DELETE tools/_migrate_eval.py (throwaway); commit. **NO SHIM rule.**
+  HARD RULE (Q, emphatic): NEVER write a shim/wrapper/facade. Update everywhere.
+  Use Rope/ast/LibCST or exhaustive edits for wide refactors. Session-ending rule.
+  Finish: del defs, migrate ALL call sites, ruff --fix, pyright, full pytest, commit.
+- THEN (next brick, agreed order): split PRESBURGER out of "PEANO". Current
+  cold_start/peano.py is the ADDITION-ONLY fragment = Presburger (complete+
+  decidable). True Peano = + multiplication (`*` with x*0=0, x*S(y)=x*y+x) -> then
+  incomplete. Encode as theory EXTENSION (data), NOT class inheritance (Theory is
+  a frozen dataclass; checker never dispatches on Python type). Plan: rename ->
+  cold_start/presburger.py PRESBURGER; peano.py builds PEANO = PRESBURGER + mul
+  axioms. Red tests: Presburger proves 0+n=n; Peano proves a `*` fact.
+- THEN: stack-safe iterative traversal (kills RecursionError; red test = very
+  deep proof checks cleanly / raises only TypeError|ValueError).
+- Trust audit done: pytest-cov (checker 91%), gaps closed (5971e06). Mutation
+  harness tools/mutate.py exists; run it in a git WORKTREE (never live file).
+
 ## State: DONE & GREEN
 - pytest: **23 passed**  ·  ruff: clean  ·  pyright (repo-rooted CLI): 0/0
 - Editor's inline Pyright is rooted at parent `code\` and ignores our
