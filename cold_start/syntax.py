@@ -168,10 +168,28 @@ class Term(Node):
         return cast(Term, super().subst(var, repl))
 
     def sort_of(self, sig, scope: tuple = ()) -> str:
-        """The sort of this term under signature `sig`. `scope` is the stack of
-        enclosing binders' sorts (a `BVar(i)` reads `scope[i]`). Each concrete term
-        overrides; sorts and quantifiers coexist because descending under a binder
-        pushes its sort onto `scope`."""
+        """The sort of this term under signature `sig`, or raise if ill-sorted.
+        `scope` is the stack of enclosing binders' sorts (a `BVar(i)` reads
+        `scope[i]`); a term has no binders of its own, so `scope` is constant
+        through it -- sorts and quantifiers coexist because a quantifier pushes its
+        sort onto `scope` before reaching here.
+
+        Iterative: each subterm's sort is computed bottom-up into an `id -> sort`
+        map, so a term nested thousands deep is sorted without recursion."""
+        order: list = []
+        stack: list = [self]
+        while stack:
+            t = stack.pop()
+            order.append(t)
+            stack.extend(children(t))
+        sorts: dict = {}
+        for t in reversed(order):
+            sorts[id(t)] = t._sort_step(sig, scope, sorts)
+        return sorts[id(self)]
+
+    def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
+        """This term's sort given its subterms' already-computed `sorts` (by id).
+        Each concrete term overrides."""
         raise TypeError(f"not a term: {self!r}")
 
 
@@ -183,7 +201,7 @@ class Var(Term):
     def __repr__(self) -> str:
         return f"{self.name}:{self.sort}" if self.sort else self.name
 
-    def sort_of(self, sig, scope: tuple = ()) -> str:
+    def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         if self.sort not in sig.sorts:
             raise ValueError(f"variable {self!r} has undeclared sort {self.sort!r}")
         return self.sort
@@ -218,7 +236,7 @@ class Fun(Term):
             return self.name
         return f"{self.name}({', '.join(map(repr, self.args))})"
 
-    def sort_of(self, sig, scope: tuple = ()) -> str:
+    def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         rank = sig.rank(self.name)
         if rank is None:
             raise ValueError(f"undeclared function symbol {self.name!r}")
@@ -226,7 +244,7 @@ class Fun(Term):
         if len(self.args) != len(arg_sorts):
             raise ValueError(f"{self.name!r} expects {len(arg_sorts)} args, got {len(self.args)}")
         for a, expected in zip(self.args, arg_sorts, strict=True):
-            actual = a.sort_of(sig, scope)
+            actual = sorts[id(a)]
             if actual != expected:
                 raise ValueError(f"{self.name!r} arg has sort {actual!r}, expected {expected!r}")
         return result
@@ -265,7 +283,7 @@ class BVar(Term):
     def __repr__(self) -> str:
         return f"#{self.index}"
 
-    def sort_of(self, sig, scope: tuple = ()) -> str:
+    def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         if not (0 <= self.index < len(scope)):
             raise ValueError(f"dangling bound variable {self.index!r} (scope depth {len(scope)})")
         return scope[self.index]
@@ -293,7 +311,20 @@ class Formula(Node):
     def sort_check(self, sig, scope: tuple = ()) -> None:
         """Structural well-sortedness under `sig`: each equality relates same-sort
         terms; a binder pushes its bound sort onto `scope`, so a quantified sorted
-        formula checks (sorts and quantifiers coexist). Each formula overrides."""
+        formula checks (sorts and quantifiers coexist).
+
+        Iterative: the agenda of `(subformula, scope)` still to check is a heap list,
+        so a formula nested thousands deep is checked without recursion. Each
+        formula's `_sort_check_step` checks its own equalities and returns the
+        sub-formula agenda (with the scope its binders extend)."""
+        stack: list = [(self, scope)]
+        while stack:
+            f, sc = stack.pop()
+            stack.extend(f._sort_check_step(sig, sc))
+
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
+        """Check this formula's own equalities; return the `(subformula, scope)`
+        agenda. Each concrete formula overrides."""
         raise TypeError(f"not a formula: {self!r}")
 
 
@@ -307,10 +338,11 @@ class Eq(Formula):
     def __repr__(self) -> str:
         return f"{self.lhs!r} = {self.rhs!r}"
 
-    def sort_check(self, sig, scope: tuple = ()) -> None:
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
         ls, rs = self.lhs.sort_of(sig, scope), self.rhs.sort_of(sig, scope)
         if ls != rs:
             raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {self!r}")
+        return ()
 
     def _validate(self, depth: int) -> tuple:
         return ((self.lhs, depth), (self.rhs, depth))
@@ -330,9 +362,8 @@ class Implies(Formula):
     def __repr__(self) -> str:
         return f"({self.ant!r} -> {self.con!r})"
 
-    def sort_check(self, sig, scope: tuple = ()) -> None:
-        self.ant.sort_check(sig, scope)
-        self.con.sort_check(sig, scope)
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
+        return ((self.ant, scope), (self.con, scope))
 
     def _validate(self, depth: int) -> tuple:
         return ((self.ant, depth), (self.con, depth))
@@ -356,8 +387,8 @@ class Bottom(Formula):
     def __repr__(self) -> str:
         return self.symbol
 
-    def sort_check(self, sig, scope: tuple = ()) -> None:
-        pass  # the formula constant carries no sort
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
+        return ()  # the formula constant carries no sort and no children
 
     def _validate(self, depth: int) -> tuple:
         return ()  # no fields, no children
@@ -391,8 +422,8 @@ class Forall(Formula):
     def __repr__(self) -> str:
         return f"(forall :{self.sort}. {self.body!r})" if self.sort else f"(forall. {self.body!r})"
 
-    def sort_check(self, sig, scope: tuple = ()) -> None:
-        self.body.sort_check(sig, (self.sort, *scope))
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
+        return ((self.body, (self.sort, *scope)),)
 
     def _validate(self, depth: int) -> tuple:
         _check_str(self.sort, "quantifier sort")
@@ -414,8 +445,8 @@ class Exists(Formula):
     def __repr__(self) -> str:
         return f"(exists :{self.sort}. {self.body!r})" if self.sort else f"(exists. {self.body!r})"
 
-    def sort_check(self, sig, scope: tuple = ()) -> None:
-        self.body.sort_check(sig, (self.sort, *scope))
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
+        return ((self.body, (self.sort, *scope)),)
 
     def _validate(self, depth: int) -> tuple:
         _check_str(self.sort, "quantifier sort")

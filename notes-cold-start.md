@@ -120,6 +120,15 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## BVar.instantiate, Forall/Exists.abstract+instantiate. Kept Term.subst/Formula.subst covariant
 ## casts. NEXT: run tests (subst/alpha/roundtrip property tests are the net). Then STEP 5 sort_of/
 ## sort_check iterative, then drop guard.
+## ===
+## STEP 4 DONE = 7046d2d (rebuilds iterative). STEP 5 IN PROGRESS: sort_of/sort_check iterative.
+## sort_of = post-order driver on Term + _sort_step(sig,scope,sorts) per Var/Fun/BVar (Fun reads
+## sorts[id(arg)]). sort_check = agenda driver on Formula + _sort_check_step(sig,scope) per
+## Eq/Implies/Bottom/Forall/Exists (returns (subformula,scope) agenda; Eq does sort_of checks).
+## DONE: Term.sort_of driver + Var/Fun/BVar _sort_step; Formula.sort_check driver. TODO: Eq/
+## Implies/Bottom/Forall/Exists _sort_check_step (replace their sort_check overrides). Then test
+## (test_sorts is the net). Then STEP 6: delete check() guard, add deep-proof+deep-subst totality
+## tests, prove green. NOTE check() still has RecursionError guard until all iterative confirmed.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
