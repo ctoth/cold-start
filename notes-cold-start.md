@@ -129,6 +129,18 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## Implies/Bottom/Forall/Exists _sort_check_step (replace their sort_check overrides). Then test
 ## (test_sorts is the net). Then STEP 6: delete check() guard, add deep-proof+deep-subst totality
 ## tests, prove green. NOTE check() still has RecursionError guard until all iterative confirmed.
+## ===
+## STEP 5 DONE = 732311d. ALL 8 explicit tree-walks now iterative (validate, validate_proof,
+## derive, free_vars, free_var_sorts, subst/abstract/instantiate, sort_of, sort_check). BUT
+## found the FLOOR: Python's dataclass-generated __eq__ AND __hash__ RECURSE on deep nested
+## terms (numeral(6000) == numeral(6000) -> RecursionError). Used in derive (Trans rhs!=lhs,
+## MP, Induct concl==, ExistsIntro) and frozenset/dict (hyps, theory.accepts via hash). So the
+## guard STILL needed for ==/hash depth -- can't drop it honestly yet.
+## OPTION to finish: custom iterative Node.__eq__ + __hash__ (reflective over fields(), one impl
+## for all nodes, @dataclass(eq=False)). Removes last recursion. RISK: == IS alpha-equivalence /
+## soundness-critical; a bug -> unsound checker. Tests (alpha-equiv, hostile-subclass, soundness)
+## are the net but this touches the crux. PAUSED to confirm with Q before reimplementing ==/hash.
+## Guard NOT removed. State: 310 pass, ruff clean, pyright 0, 8 ops iterative, committed.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
