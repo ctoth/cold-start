@@ -2,9 +2,10 @@
 checking logic, carried as polymorphic methods on those terms.
 
 A proof term is a tree of rule applications. As *data* it asserts nothing: you
-can build any nonsense `Pf` you like, and it is serializable to JSON so a proof
-can be written to disk and re-checked by a separate process. Authority comes only
-from `check()` (in checker.py) driving `derive()` and getting a `Sequent` back.
+can build any nonsense `Pf` you like, and it serializes to bytes (via hamblin) so
+a proof can be written to disk and re-checked by a separate process. Authority
+comes only from `check()` (in checker.py) driving `derive()` and getting a
+`Sequent` back.
 
 Why the checking lives here as methods (`_validate`, `_derive_rule`/`derive`)
 rather than a type-switch in the checker: a rule's logic is an operation over the
@@ -18,9 +19,10 @@ piece (a method could be overridden by exactly the subclass it must reject).
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import cast
+
+import hamblin
 
 from .sequent import Sequent
 from .syntax import (
@@ -36,8 +38,6 @@ from .syntax import (
     Term,
     Var,
     children,
-    decode_node,
-    encode_node,
     forall,
     instantiate,
     validate,
@@ -478,32 +478,26 @@ def validate_proof(pf: object) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Serialization
+# Serialization  (delegated to hamblin -- a recursion-free postfix codec)
 # ---------------------------------------------------------------------------
 
 
-# Reflection-based, like the syntax layer: the registry is every node class, so
-# a new proof rule needs no serialization code -- only its dataclass definition.
+# The registry is every node class (syntax + proof), so a new proof rule needs no
+# serialization code -- only its dataclass definition. Decoded bytes are untrusted;
+# `check` re-runs `validate_proof` over whatever this rebuilds, so a hostile blob
+# constructs only known shapes and is then re-derived or rejected.
 _PROOF_REGISTRY = {
     **SYNTAX_REGISTRY,
     **{c.__name__: c for c in _PROOF_TYPES},
 }
 
 
-def to_dict(p: Pf) -> dict:
-    return encode_node(p)
+def to_bytes(p: Pf) -> bytes:
+    return hamblin.encode(p)
 
 
-def from_dict(d: object) -> Pf:
-    node = decode_node(d, _PROOF_REGISTRY)
+def from_bytes(data: bytes) -> Pf:
+    node = hamblin.decode(data, _PROOF_REGISTRY)
     if not isinstance(node, Pf):
         raise ValueError(f"expected a proof term, got {type(node).__name__}")
     return node
-
-
-def to_json(p: Pf, *, indent: int | None = None) -> str:
-    return json.dumps(to_dict(p), indent=indent)
-
-
-def from_json(s: str) -> Pf:
-    return from_dict(json.loads(s))

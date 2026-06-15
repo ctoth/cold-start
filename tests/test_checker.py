@@ -5,7 +5,6 @@ loudly. Run under pytest, or standalone: ``python test_checker.py``.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -20,7 +19,7 @@ from cold_start.presburger import (
     S,
     add,
 )
-from cold_start.proof import from_json, to_json
+from cold_start.proof import from_bytes, to_bytes
 from cold_start.proofs import left_identity_proof
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 
@@ -326,8 +325,8 @@ def test_induction_rejects_var_free_in_hypothesis():
 
 def test_serialization_roundtrips():
     pf = left_identity_proof()
-    again = from_json(to_json(pf))
-    assert again == pf  # structural equality survives JSON
+    again = from_bytes(to_bytes(pf))
+    assert again == pf  # structural equality survives serialization
     assert check(again, PEANO).concl == check(pf, PEANO).concl
 
 
@@ -335,37 +334,33 @@ def test_validate_proof_runs_on_wellformed():
     validate_proof(left_identity_proof())  # must not raise
 
 
-def _run_verify(stdin_text: str):
+def _run_verify(stdin_bytes: bytes):
     return subprocess.run(
         [sys.executable, "-m", "cold_start.verify"],
-        input=stdin_text,
+        input=stdin_bytes,
         capture_output=True,
-        text=True,
         cwd=REPO_ROOT,
     )
 
 
 def test_cross_process_verifies_valid_proof():
     """The De Bruijn payoff: a fresh process trusting only checker.py + the
-    theory re-derives the proof from inert JSON."""
-    proof_json = to_json(left_identity_proof())
-    result = _run_verify(proof_json)
+    theory re-derives the proof from inert bytes."""
+    proof_bytes = to_bytes(left_identity_proof())
+    result = _run_verify(proof_bytes)
     assert result.returncode == 0, result.stderr
-    assert "VERIFIED" in result.stdout
-    assert "+(0, n) = n" in result.stdout
+    out = result.stdout.decode()
+    assert "VERIFIED" in out
+    assert "+(0, n) = n" in out
 
 
 def test_cross_process_rejects_forged_axiom():
-    forged = json.dumps(
-        {"k": "Axiom", "formula": {
-            "k": "Eq",
-            "lhs": {"k": "Fun", "name": "0", "args": []},
-            "rhs": {"k": "Fun", "name": "S", "args": [{"k": "Fun", "name": "0", "args": []}]},
-        }}
-    )  # claims |- 0 = 1
+    # An adversary emits a well-formed proof term that simply claims a false axiom
+    # (0 = S(0), i.e. 0 = 1). The checker re-derives and rejects: not an axiom.
+    forged = to_bytes(P.Axiom(Eq(Fun("0", ()), Fun("S", (Fun("0", ()),)))))
     result = _run_verify(forged)
     assert result.returncode == 1
-    assert "REJECTED" in result.stderr
+    assert "REJECTED" in result.stderr.decode()
 
 
 # --- standalone runner ----------------------------------------------------

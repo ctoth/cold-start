@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, fields, is_dataclass
 from typing import ClassVar, cast
 
+import hamblin
+
 
 def _is_node(v: object) -> bool:
     return is_dataclass(v) and not isinstance(v, type)
@@ -599,71 +601,38 @@ def validate(node: object, depth: int = 0) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Serialization  (generic, by reflection over the frozen-dataclass fields)
+# Serialization  (delegated to hamblin -- a recursion-free postfix codec)
 # ---------------------------------------------------------------------------
-# Every node is a frozen dataclass whose fields are strings, tuples, or other
-# nodes -- so we serialize generically rather than hand-coding a branch per node:
-# tag each node with its class name, recurse on fields, reconstruct from a class
-# registry. Adding a node needs no serialization code. Deserialized data is
-# untrusted, but the checker re-validates every term/formula. `proof.py` reuses
-# `encode_node`/`decode_node` with its own registry.
-
-
-def encode_node(node: object) -> dict:
-    """Encode a node (a frozen dataclass) to a tagged dict, recursing on fields."""
-    if not is_dataclass(node) or isinstance(node, type):
-        raise TypeError(f"cannot serialize {type(node).__name__}")
-    body = {f.name: _encode_value(getattr(node, f.name)) for f in fields(node)}
-    return {"k": type(node).__name__, **body}
-
-
-def _encode_value(v: object) -> object:
-    if isinstance(v, str) or (isinstance(v, int) and not isinstance(v, bool)):
-        return v  # str labels, or int de Bruijn indices
-    if isinstance(v, (tuple, list)):
-        return [_encode_value(x) for x in v]
-    if is_dataclass(v) and not isinstance(v, type):
-        return encode_node(v)
-    raise TypeError(f"cannot serialize value of type {type(v).__name__}")
-
-
-def decode_node(raw: object, registry: dict) -> object:
-    if isinstance(raw, str) or (isinstance(raw, int) and not isinstance(raw, bool)):
-        return raw
-    if isinstance(raw, list):
-        return tuple(decode_node(x, registry) for x in raw)
-    if isinstance(raw, dict):
-        cls = registry.get(raw.get("k"))
-        if cls is None:
-            raise ValueError(f"unknown node kind: {raw.get('k')!r}")
-        names = [f.name for f in fields(cls)]
-        got = sorted(set(raw) - {"k"})
-        if got != sorted(names):
-            raise ValueError(f"{cls.__name__}: bad fields {got} (want {names})")
-        return cls(*(decode_node(raw[n], registry) for n in names))
-    raise ValueError(f"not a serializable node: {raw!r}")
+# Every node is a frozen dataclass, which is exactly what hamblin serializes: a
+# postfix opcode stream read back by a stack machine, so a term or formula nested
+# arbitrarily deep encodes and decodes WITHOUT recursion -- there is no
+# `json.loads` at the trust boundary to blow the call stack on a deep (or hostile)
+# input. The wire form is bytes, not JSON. Deserialized data is untrusted, but the
+# checker re-validates every term/formula, so the codec need only refuse unknown
+# kinds and mismatched field sets -- which hamblin reports as `HamblinError` (a
+# `ValueError`). `proof.py` reuses the same codec with its own registry.
 
 
 SYNTAX_REGISTRY = {c.__name__: c for c in (Var, BVar, Fun, Eq, Implies, Bottom, Forall, Exists)}
 
 
-def term_to_dict(t: Term) -> dict:
-    return encode_node(t)
+def term_to_bytes(t: Term) -> bytes:
+    return hamblin.encode(t)
 
 
-def term_from_dict(d: object) -> Term:
-    node = decode_node(d, SYNTAX_REGISTRY)
+def term_from_bytes(data: bytes) -> Term:
+    node = hamblin.decode(data, SYNTAX_REGISTRY)
     if not isinstance(node, Term):
         raise ValueError(f"expected a term, got {type(node).__name__}")
     return node
 
 
-def formula_to_dict(f: Formula) -> dict:
-    return encode_node(f)
+def formula_to_bytes(f: Formula) -> bytes:
+    return hamblin.encode(f)
 
 
-def formula_from_dict(d: object) -> Formula:
-    node = decode_node(d, SYNTAX_REGISTRY)
+def formula_from_bytes(data: bytes) -> Formula:
+    node = hamblin.decode(data, SYNTAX_REGISTRY)
     if not isinstance(node, Formula):
         raise ValueError(f"expected a formula, got {type(node).__name__}")
     return node

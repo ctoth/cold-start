@@ -20,7 +20,7 @@ from cold_start.presburger import (
     induction,
     numeral,
 )
-from cold_start.proof import from_json, to_dict, to_json
+from cold_start.proof import from_bytes, to_bytes
 from cold_start.proofs import add_proof as prove_add
 from cold_start.syntax import (
     Bottom,
@@ -35,10 +35,10 @@ from cold_start.syntax import (
     Var,
     exists,
     forall,
-    formula_from_dict,
-    formula_to_dict,
-    term_from_dict,
-    term_to_dict,
+    formula_from_bytes,
+    formula_to_bytes,
+    term_from_bytes,
+    term_to_bytes,
     validate,
 )
 
@@ -102,13 +102,13 @@ BASE_TERM = Var("x")
 BASE_FORMULA = Eq(BASE_TERM, BASE_TERM)
 BASE_PROOF = P.Assume(BASE_FORMULA)
 
-TERM_JSON_EXAMPLES = {
+TERM_EXAMPLES = {
     Var: BASE_TERM,
     BVar: BVar(0),
     Fun: Fun("f", (BASE_TERM,)),
 }
 
-FORMULA_JSON_EXAMPLES = {
+FORMULA_EXAMPLES = {
     Eq: BASE_FORMULA,
     Implies: Implies(BASE_FORMULA, BASE_FORMULA),
     Bottom: Bottom(),
@@ -116,7 +116,7 @@ FORMULA_JSON_EXAMPLES = {
     Exists: exists("x", "", BASE_FORMULA),
 }
 
-PROOF_JSON_EXAMPLES = {
+PROOF_EXAMPLES = {
     P.Axiom: P.Axiom(BASE_FORMULA),
     P.Assume: BASE_PROOF,
     P.Refl: P.Refl(BASE_TERM),
@@ -143,57 +143,77 @@ def class_names(classes):
 # --- serialization round-trips --------------------------------------------
 
 
-def test_json_examples_cover_every_concrete_node_class():
-    assert class_names(TERM_JSON_EXAMPLES) == class_names(Term.__subclasses__())
-    assert class_names(FORMULA_JSON_EXAMPLES) == class_names(Formula.__subclasses__())
-    assert class_names(PROOF_JSON_EXAMPLES) == class_names(P.Pf.__subclasses__())
+def test_examples_cover_every_concrete_node_class():
+    assert class_names(TERM_EXAMPLES) == class_names(Term.__subclasses__())
+    assert class_names(FORMULA_EXAMPLES) == class_names(Formula.__subclasses__())
+    assert class_names(PROOF_EXAMPLES) == class_names(P.Pf.__subclasses__())
 
 
-@given(st.sampled_from(list(TERM_JSON_EXAMPLES.items())))
-def test_every_term_json_kind_has_a_term_and_vice_versa(item):
+@given(st.sampled_from(list(TERM_EXAMPLES.items())))
+def test_every_term_kind_round_trips(item):
     cls, term = item
-    encoded = term_to_dict(term)
-    assert encoded["k"] == cls.__name__
-    decoded = term_from_dict(encoded)
+    decoded = term_from_bytes(term_to_bytes(term))
     assert type(decoded) is cls
     assert decoded == term
 
 
-@given(st.sampled_from(list(FORMULA_JSON_EXAMPLES.items())))
-def test_every_formula_json_kind_has_a_formula_and_vice_versa(item):
+@given(st.sampled_from(list(FORMULA_EXAMPLES.items())))
+def test_every_formula_kind_round_trips(item):
     cls, formula = item
-    encoded = formula_to_dict(formula)
-    assert encoded["k"] == cls.__name__
-    decoded = formula_from_dict(encoded)
+    decoded = formula_from_bytes(formula_to_bytes(formula))
     assert type(decoded) is cls
     assert decoded == formula
 
 
-@given(st.sampled_from(list(PROOF_JSON_EXAMPLES.items())))
-def test_every_proof_json_kind_has_a_proof_and_vice_versa(item):
+@given(st.sampled_from(list(PROOF_EXAMPLES.items())))
+def test_every_proof_kind_round_trips(item):
     cls, proof = item
-    encoded = to_dict(proof)
-    assert encoded["k"] == cls.__name__
-    decoded = P.from_dict(encoded)
+    decoded = from_bytes(to_bytes(proof))
     assert type(decoded) is cls
     assert decoded == proof
 
 
 @given(terms())
 def test_term_roundtrips(t):
-    assert term_from_dict(term_to_dict(t)) == t
+    assert term_from_bytes(term_to_bytes(t)) == t
 
 
 @given(formulas())
 def test_formula_roundtrips(f):
-    assert formula_from_dict(formula_to_dict(f)) == f
+    assert formula_from_bytes(formula_to_bytes(f)) == f
 
 
 @given(proofs())
 def test_proof_roundtrips(pf):
-    assert from_json(to_json(pf)) == pf
-    assert from_json(to_json(pf)) == from_json(to_json(pf))
-    assert to_dict(pf) == to_dict(pf)
+    assert from_bytes(to_bytes(pf)) == pf
+    assert from_bytes(to_bytes(pf)) == from_bytes(to_bytes(pf))
+    assert to_bytes(pf) == to_bytes(pf)  # encoding is deterministic
+
+
+def test_deep_proof_survives_serialization_without_recursion():
+    """The verifier's front door + trust path: a proof whose term is nested far
+    deeper than the recursion limit serializes to bytes and is decoded + re-checked
+    with NO RecursionError. The old JSON path died exactly here (json.loads, and the
+    recursive dict decoder, both blow the call stack). hamblin's postfix codec does
+    not, so the only bound is memory. (The human-readable repr of a result this deep
+    still recurses -- that is the output path, not the trust path; tracked separately.)"""
+    import sys as _sys
+
+    from cold_start.checker import Theory
+
+    t = Var("x")
+    for _ in range(50_000):
+        t = Fun("s", (t,))
+    pf = P.Refl(t)
+    theory = Theory(axioms=frozenset())
+
+    old = _sys.getrecursionlimit()
+    _sys.setrecursionlimit(300)  # < 1% of the term depth
+    try:
+        seq = check(from_bytes(to_bytes(pf)), theory)
+    finally:
+        _sys.setrecursionlimit(old)
+    assert seq.concl == Eq(t, t)
 
 
 # --- checker is total: only Sequent or a declared failure -----------------
@@ -310,7 +330,7 @@ def test_checker_agrees_with_addition(a, b):
 @settings(deadline=None)
 def test_serialization_preserves_checked_sequent(a, b):
     pf = prove_add(a, b)
-    assert check(pf, PEANO) == check(from_json(to_json(pf)), PEANO)
+    assert check(pf, PEANO) == check(from_bytes(to_bytes(pf)), PEANO)
 
 
 @given(st.integers(0, 20), st.integers(0, 20))
@@ -337,7 +357,7 @@ def _left_identity_induction():
 def test_induction_proof_checks_and_serializes():
     pred, pf = _left_identity_induction()
     assert check(pf, PEANO).concl == pred
-    assert check(from_json(to_json(pf)), PEANO) == check(pf, PEANO)
+    assert check(from_bytes(to_bytes(pf)), PEANO) == check(pf, PEANO)
 
 
 @given(VAR_NAMES)

@@ -3,9 +3,13 @@ name = "cold-start"
 version = "0.1.0"
 description = "Number theory from scratch: a De Bruijn-style proof checker in Python."
 requires-python = ">=3.11"
+dependencies = ["hamblin"]
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+hamblin = { git = "https://github.com/ctoth/hamblin" }
 
 [tool.pytest.ini_options]
 addopts = "-q"

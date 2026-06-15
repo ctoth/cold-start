@@ -1,15 +1,21 @@
 """Independent proof verifier.
 
-Reads a JSON proof term (from a file argument or stdin), checks it against a
+Reads a binary proof term (from a file argument or stdin), checks it against a
 named theory, and prints the resulting sequent. Exit code 0 on a valid proof,
 1 on rejection. This is the De Bruijn criterion made concrete: a proof produced
 anywhere -- by a buggy prover, an adversary, another machine -- is trusted only
 to the extent this small program re-derives it.
 
+The wire form is hamblin's recursion-free postfix bytes, not JSON: a proof nested
+arbitrarily deep (or a hostile, deeply nested blob) decodes -- or is cleanly
+REJECTED -- without a `RecursionError` at the front door. hamblin reports a
+malformed stream as `HamblinError`, a `ValueError`, so the existing rejection path
+already covers it.
+
 Usage:
-    python verify.py proof.json
-    cat proof.json | python verify.py
-    python verify.py proof.json --theory peano
+    python verify.py proof.hmb
+    cat proof.hmb | python verify.py
+    python verify.py proof.hmb --theory peano
 """
 
 from __future__ import annotations
@@ -17,7 +23,7 @@ from __future__ import annotations
 import sys
 
 from .checker import check
-from .proof import from_json
+from .proof import from_bytes
 
 THEORIES = {}
 
@@ -46,10 +52,10 @@ def main(argv: list[str]) -> int:
         print(f"unknown theory: {theory_name!r} (have: {', '.join(THEORIES)})", file=sys.stderr)
         return 2
 
-    text = open(path, encoding="utf-8").read() if path else sys.stdin.read()
+    data = open(path, "rb").read() if path else sys.stdin.buffer.read()
 
     try:
-        pf = from_json(text)
+        pf = from_bytes(data)
         sequent = check(pf, theory)
     except (ValueError, TypeError) as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)
