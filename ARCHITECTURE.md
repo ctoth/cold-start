@@ -52,30 +52,36 @@ Because the bound *sort* rides in the scope, **sorts and quantifiers coexist**:
 `∀x:M. φ` sort-checks `φ` with `x:M` in scope. (Earlier versions rejected quantified
 sorted formulas; this unifies them.)
 
-### The trust gate
-`validate` (terms/formulas) and `validate_proof` (proofs) are the one deliberately
-non-polymorphic part. Their job is to reject hostile *subclasses* — a `Var` subtype
-with a lying `__eq__`, a `str` subtype, a forged `Fun` with mutable args — before any
-`==` is trusted. A polymorphic method would be overridden by exactly such a subclass,
-so the gate dispatches on **exact type** (a `dict` keyed by the concrete class, with
-a reject-default) and reads fields explicitly. It runs first; downstream code then
-operates only on canonical nodes.
+### The trust gate guards the methods
+`validate` (terms/formulas) and `validate_proof` (proofs) reject hostile
+*subclasses* — a `Var` subtype with a lying `__eq__`, a `str` subtype, a forged `Fun`
+with mutable args — before any `==` is trusted. A polymorphic method *could* be
+overridden by exactly such a subclass, so each gate is a one-line **exact-type
+check** (`type(x) in _CANONICAL` / `_PROOF_TYPES`, reject-default) placed *in front
+of* the node's own `_validate` method. The per-type field checks stay polymorphic
+methods; the gate only confirms the exact type is canonical before any method runs,
+and each method recurses through the same gate. It runs first; downstream code then
+operates only on canonical nodes. This is the security property without a pile of
+per-type handler functions.
 
 ## The checker (`checker.py`)
-`check = validate_proof` then `_derive`. The per-rule derivation is dispatched on
-the proof's **exact type** through a table (`_DERIVE`), with one handler per rule —
-deliberately *not* methods on the `Pf` classes. That is the trust boundary at work:
-proof terms stay inert data in the untrusted `proof.py`, and all derivation logic
-lives here in the trusted checker (a method on a proof class would put trusted logic
-in the untrusted layer, and a hostile subclass could override it — `validate_proof`,
-likewise a table, runs first to reject any non-exact type). Side conditions are
-enforced where they live:
+`check` runs the gate (`validate_proof`) then calls `pf.derive(theory)`. Each proof
+term checks **itself**: derivation is a polymorphic `derive` method on the `Pf`
+class (`_derive_rule` for the rule, with a `derive` wrapper that re-sort-checks the
+produced sequent), living in `proof.py` beside the term. "Inert data" means a `Pf`
+carries no pre-made theorem — you can build nonsense, and the checker rejects it —
+*not* that the class has no methods: the methods are trusted code, and the
+exact-type gate runs first so a hostile subclass's override never executes. (This
+replaced an earlier `_DERIVE` dispatch table of free functions; the table was a pile
+of shims, and a rule's logic is an operation over the proof tree, so it belongs on
+the node.) `Sequent` lives in `sequent.py` so `proof.py` can return and recurse on
+it without an import cycle. Side conditions are enforced in each rule's method:
 induction's eigenvariable (not free in undischarged hypotheses — the side condition
 that blocks the `1 = 0` exploit), `Inst`'s cross-sort guard, `ForallIntro`/
-`ExistsElim` eigenvariables. `sort_of` is a memoized function delegating to a
-polymorphic term method; sequents are re-sort-checked when the theory has a
-signature. `check` is **total**: it returns a `Sequent` or raises `TypeError` /
-`ValueError`, nothing else.
+`ExistsElim` eigenvariables. `sort_of`/`sort_check` are polymorphic node methods;
+sequents are re-sort-checked (`Sequent.sort_check`) when the theory has a signature.
+`check` is **total**: it returns a `Sequent` or raises `TypeError` / `ValueError`,
+nothing else.
 
 ## The theories
 - `presburger.py` — the addition fragment `(0, S, +)` with induction: **Presburger

@@ -55,6 +55,15 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## notation.py: delete _ff_*/_ft_*/_FORMAT_* dicts/_format_formula/_format_term; add _Printer
 ## ctx (constants/bound/used + .name/.fresh/.infix); format_term/format_formula call node.format.
 ## Round-trip tests are the safety net.
+## ALL FOUR PILES NOW METHODS. Commits: 5c437ea sort walkers; a4fc4dc proof derive/validate;
+## 0b71867 syntax validate gate+method; 18f5256 formatter format(). Each 310 pass/ruff/pyright0.
+## Updated cold_start/CLAUDE.md (gate-guards-methods, derive/format are methods, trust spans
+## modules). TODO: update ARCHITECTURE.md to match. THEN the LAST pending item Q rejected:
+## make check() truly ITERATIVE (explicit stacks), not the RecursionError->ValueError guard.
+## test_check_is_total_on_pathologically_deep_input (numeral 5000) is the spec. Recursion is
+## in: validate (depth recursion), derive (sub.derive), sort_of/sort_check, free_vars/subst/
+## free_var_sorts/abstract/instantiate (Node child-recursion), format. Deep term = numeral(5000)
+## = Fun nests. The guard currently catches RecursionError at check() top. Q wants iterative.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/

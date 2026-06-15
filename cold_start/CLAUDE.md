@@ -2,9 +2,11 @@
 
 A number-theory proof checker built from scratch on the **De Bruijn criterion**:
 proof terms are inert, serializable data that claim nothing; one small *trusted*
-`check(proof, theory)` re-derives the sequent. Trust lives only in `checker.py` +
-each theory's axioms. `verify.py` re-checks proofs from JSON in a fresh process,
-trusting nothing but the checker and the theory.
+`check(proof, theory)` re-derives the sequent. Trust is the checking code -- the
+exact-type gates plus the `_validate`/`derive`/`sort_check` methods they guard
+(in `syntax.py`, `proof.py`, `sequent.py`) driven by `checker.py` -- plus each
+theory's axioms. `verify.py` re-checks proofs from JSON in a fresh process,
+trusting nothing but that checking code and the theory.
 
 ## Design rules
 - **Polymorphism over type-switches.** Operations over the syntax/proof tree are
@@ -20,12 +22,23 @@ trusting nothing but the checker and the theory.
   term (`instantiate`), a **sort** (sort-checking) — but it is one structure. This is
   how sorts and quantifiers coexist: sort-checking threads bound-variable sorts
   through `Forall`/`Exists`.
-- **The trust gate is the one non-polymorphic exception.** `validate` /
+- **The trust gate guards the methods; it is not a dispatch table.** `validate` /
   `validate_proof` must reject hostile *subclasses* (a `Var` with a lying `__eq__`, a
   `str` subclass, a forged mutable-args `Fun`). A method can be overridden by exactly
-  the subclass it must reject, so the gate dispatches on **exact type** via a dict +
-  reject-default, reading fields explicitly (never the reflective child-walk). It
-  runs first; everything downstream then sees only canonical nodes.
+  the subclass it must reject -- so the gate is a one-line **exact-type check**
+  (`type(x) in _CANONICAL` / `_PROOF_TYPES`, reject-default) placed *in front of* the
+  node's own `_validate` method. The per-type field checks stay polymorphic methods
+  (`node._validate(depth)`, `pf._validate()`); the gate just confirms the exact type
+  is canonical before any method runs, then each method recurses through the same
+  gate. It runs first; everything downstream then sees only canonical nodes. This
+  keeps the security property (no hostile method runs) without a pile of per-type
+  handler functions -- those were shims; the logic belongs on the node.
+- **Derivation and printing are methods too.** A proof term checks *itself*:
+  `pf.derive(theory)` re-derives its sequent (after the gate), and `node.format(ctx)`
+  prints it. "Inert data" means a `Pf` carries no pre-made theorem -- you can build
+  nonsense -- not that the class has no methods; the methods are trusted code an
+  adversary cannot override past the gate. `Sequent` lives in `sequent.py` so the
+  proof methods can return/recurse on it without an import cycle.
 
 ## Process rules
 - **Commit after every green step.** Never leave verified work uncommitted — a
