@@ -62,9 +62,14 @@ a reject-default) and reads fields explicitly. It runs first; downstream code th
 operates only on canonical nodes.
 
 ## The checker (`checker.py`)
-`check = validate_proof` then `proof.derive(theory)`. Each proof rule
-(`Axiom … ExistsElim`) is a class with a polymorphic `derive` returning a `Sequent`,
-recursing into its sub-proofs. Side conditions are enforced where they live:
+`check = validate_proof` then `_derive`. The per-rule derivation is dispatched on
+the proof's **exact type** through a table (`_DERIVE`), with one handler per rule —
+deliberately *not* methods on the `Pf` classes. That is the trust boundary at work:
+proof terms stay inert data in the untrusted `proof.py`, and all derivation logic
+lives here in the trusted checker (a method on a proof class would put trusted logic
+in the untrusted layer, and a hostile subclass could override it — `validate_proof`,
+likewise a table, runs first to reject any non-exact type). Side conditions are
+enforced where they live:
 induction's eigenvariable (not free in undischarged hypotheses — the side condition
 that blocks the `1 = 0` exploit), `Inst`'s cross-sort guard, `ForallIntro`/
 `ExistsElim` eigenvariables. `sort_of` is a memoized function delegating to a

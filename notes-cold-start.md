@@ -32,6 +32,18 @@ run. Robinson/Skolem experiment is the stretch finale (Phase 4).
 - Defaults locked (no forks): see plan. notation parser = recover working logic
   from git, only refactor the formatter; revert-and-log if a module won't go green.
 - evaluate (tests/semantics.py) left as test-helper for now (clean fold, test infra).
+- COMMITS so far: 9e64ff8 baseline, b61d6af CLAUDE+ARCH, 49b0439 syntax.py
+  polymorphic. proof.py (#14) already clean (inert Pf data + generic serialize) -
+  NO derive methods on it (would spread trust to untrusted layer); DECISION:
+  derivation stays in checker as exact-type dict dispatch.
+- checker.py (#15): validate_proof elif -> exact-type dict _VALIDATE_PROOF;
+  _derive_rule if-chain -> exact-type dict _DERIVE (16 typed handlers _d_*).
+  Behavior-identical: 125 passed, ruff clean, pyright 0. Sort walkers (sort_of/
+  _sort_structure/_collect_consistent/_sorts_of_var) LEFT AS-IS - they get the
+  sorts x quantifiers capability in Phase 3 (#21, red-first: sort_of handles BVar
+  via a scope of bound sorts; the walkers recurse into Forall/Exists threading
+  binder sort). TODO: update ARCHITECTURE.md (derive is dict dispatch, not methods
+  on Pf - trust boundary), then COMMIT checker phase.
 - SYNTAX PHASE PROGRESS: checker.py + notation.py call sites migrated to methods;
   Term/Formula got covariant subst narrowing; tests sed-migrated to method form
   (incl nested f.subst(x,t).free_vars()); test_quantifiers import cleaned. TODO:
