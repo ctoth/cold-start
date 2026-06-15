@@ -365,11 +365,20 @@ def check(pf: object, theory: object) -> Sequent:
     malformed proof and ValueError for an invalid derivation step. Inputs are
     typed `object`: the trusted checker validates them, it does not trust the
     caller's annotations.
+
+    `check` is TOTAL: it returns a `Sequent` or raises `TypeError`/`ValueError`,
+    nothing else. The recursion is structural, so input deep enough to exhaust
+    Python's call stack would raise `RecursionError`; we convert that to a
+    `ValueError` here so totality holds for any input. (A pathologically deep
+    proof is rejected, not crashed on -- real proofs are nowhere near the limit.)
     """
     if type(theory) is not Theory:
         raise TypeError(f"not a theory: {theory!r}")
-    validate_proof(pf)
-    return _derive(pf, theory)
+    try:
+        validate_proof(pf)
+        return _derive(pf, theory)
+    except RecursionError:
+        raise ValueError("proof or term too deeply nested to check") from None
 
 
 def _derive(pf: object, theory: Theory) -> Sequent:

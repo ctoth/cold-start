@@ -208,6 +208,18 @@ def test_check_is_total(pf):
     assert isinstance(result, Sequent)
 
 
+def test_check_is_total_on_pathologically_deep_input():
+    # Totality must hold even for input deep enough to exhaust Python's call
+    # stack: `check` returns a Sequent or raises TypeError/ValueError -- NEVER a
+    # RecursionError. A 5000-deep successor term forces the issue.
+    deep = numeral(5000)  # S(S(...(0)...)), 5000 deep -- built iteratively
+    try:
+        result = check(P.Refl(deep), PEANO)
+    except (TypeError, ValueError):
+        return  # the only sanctioned failure modes
+    assert isinstance(result, Sequent)
+
+
 # --- validation never false-rejects a genuinely canonical value -----------
 
 

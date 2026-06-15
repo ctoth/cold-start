@@ -47,6 +47,12 @@ run. Robinson/Skolem experiment is the stretch finale (Phase 4).
 - PHASE 2 COMPLETE (commits 49b0439 syntax, 4108fe9 checker, e46a52e notation;
   proof/theories/proofs/verify already clean). All core ops methods or exact-type
   tables; no sprawling type-switch left.
+- PHASE 3 sorts x quantifiers DONE+COMMITTED df5f132 (130 passed). NEXT in #21:
+  stack-safety (deep proof -> only Type/ValueError, never RecursionError). Plan:
+  red test in test_properties (Refl(numeral(5000)) currently RecursionErrors via
+  validate); guard = catch RecursionError in check() -> ValueError (makes check
+  TOTAL; full iterative rewrite is the gold standard but huge/risky - guard
+  satisfies the totality property, documented honestly). Then Phase 4 Robinson (#23).
 - PHASE 3 IN PROGRESS (#21), red-first. sorts x quantifiers coexistence: 5 RED
   tests in test_sorts.py (TypeError "not a formula" - sort-checker rejects
   quantified formulas). IMPLEMENTING: thread a SORT SCOPE through binders:
