@@ -35,13 +35,11 @@ from cold_start.syntax import (
     Var,
     exists,
     forall,
-    formula_free_vars,
     formula_from_dict,
-    formula_subst,
     formula_to_dict,
-    term_free_vars,
+    free_vars,
+    subst,
     term_from_dict,
-    term_subst,
     term_to_dict,
     validate_formula,
     validate_term,
@@ -231,22 +229,22 @@ def test_validate_accepts_canonical_formulas(f):
 
 @given(formulas(), VAR_NAMES, terms())
 def test_subst_of_nonfree_var_is_identity(f, x, t):
-    assume(x not in formula_free_vars(f))
-    assert formula_subst(f, x, t) == f
+    assume(x not in free_vars(f))
+    assert subst(f, x, t) == f
 
 
 @given(formulas(), VAR_NAMES, terms())
 def test_free_vars_after_subst(f, x, t):
-    ff = formula_free_vars(f)
-    expected = (ff - {x}) | (term_free_vars(t) if x in ff else frozenset())
-    assert formula_free_vars(formula_subst(f, x, t)) == expected
+    ff = free_vars(f)
+    expected = (ff - {x}) | (free_vars(t) if x in ff else frozenset())
+    assert free_vars(subst(f, x, t)) == expected
 
 
 @given(terms(), VAR_NAMES, terms())
 def test_subst_idempotent_when_var_absent_from_replacement(t, x, repl):
-    assume(x not in term_free_vars(repl))
-    once = term_subst(t, x, repl)
-    assert term_subst(once, x, repl) == once  # no x left to replace
+    assume(x not in free_vars(repl))
+    once = subst(t, x, repl)
+    assert subst(once, x, repl) == once  # no x left to replace
 
 
 @given(formulas())
@@ -255,30 +253,11 @@ def test_alpha_equivalence_is_structural_equality(body):
     # different (fresh) names yields identical locally-nameless data, so
     # alpha-equivalence is literal `==`. ("Q1"/"Q2" are not in VAR_NAMES, so they
     # cannot already occur free in `body`.)
-    fa = forall("Q1", "", formula_subst(body, "x", Var("Q1")))
-    fb = forall("Q2", "", formula_subst(body, "x", Var("Q2")))
+    fa = forall("Q1", "", subst(body, "x", Var("Q1")))
+    fb = forall("Q2", "", subst(body, "x", Var("Q2")))
     assert fa == fb
 
 
-# --- generic traversal: one fold replaces the hand-rolled walkers ----------
-
-
-@given(st.one_of(terms(), formulas()))
-def test_generic_free_vars_agrees_with_hand_rolled(node):
-    # A single fold-derived `free_vars` must agree with both hand-rolled walkers,
-    # over terms and formulas alike -- the precondition for deleting them.
-    from cold_start.syntax import free_vars
-
-    hand = term_free_vars(node) if isinstance(node, Term) else formula_free_vars(node)
-    assert free_vars(node) == hand
-
-
-@given(st.one_of(terms(), formulas()), VAR_NAMES, terms())
-def test_generic_subst_agrees_with_hand_rolled(node, x, t):
-    from cold_start.syntax import subst
-
-    hand = term_subst(node, x, t) if isinstance(node, Term) else formula_subst(node, x, t)
-    assert subst(node, x, t) == hand
 
 
 # --- the sound generator: the checker must agree with arithmetic ----------

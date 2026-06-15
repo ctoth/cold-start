@@ -29,7 +29,7 @@ from cold_start.syntax import (
     Implies,
     Term,
     Var,
-    formula_subst,
+    subst,
 )
 
 VAR_POOL = ["x", "y", "z", "n", "m", "a", "b"]
@@ -200,8 +200,8 @@ def test_no_accepted_formula_is_false(pred, x, env):
     building induction-schema-shaped formulas -- exactly what the old recognizer
     wrongly accepted as axioms."""
     schema = Implies(
-        formula_subst(pred, x, ZERO),
-        Implies(Implies(pred, formula_subst(pred, x, S(Var(x)))), pred),
+        subst(pred, x, ZERO),
+        Implies(Implies(pred, subst(pred, x, S(Var(x)))), pred),
     )
     for f in (schema, pred):
         if PEANO.accepts(f):
@@ -215,8 +215,8 @@ def test_induction_schema_formula_is_false_in_N():
     x = Var("x")
     pred = Eq(x, ZERO)
     schema = Implies(
-        formula_subst(pred, "x", ZERO),
-        Implies(Implies(pred, formula_subst(pred, "x", S(x))), pred),
+        subst(pred, "x", ZERO),
+        Implies(Implies(pred, subst(pred, "x", S(x))), pred),
     )
     assert not eval_formula(schema, {"x": 1})  # 0=0 -> ((1=0->2=0) -> 1=0) is False
     assert not PEANO.accepts(schema)  # and the rule-based checker won't take it
@@ -229,8 +229,8 @@ def test_model_probe_is_not_vacuous():
     x = Var("x")
     pred = Eq(x, ZERO)
     schema = Implies(
-        formula_subst(pred, "x", ZERO),
-        Implies(Implies(pred, formula_subst(pred, "x", S(x))), pred),
+        subst(pred, "x", ZERO),
+        Implies(Implies(pred, subst(pred, "x", S(x))), pred),
     )
     bad = Theory(axioms=frozenset({schema}), zero=ZERO, succ="S")
     assert bad.accepts(schema) and not eval_formula(schema, {"x": 1})
@@ -344,7 +344,7 @@ def test_substitution_lemma(phi, x, t, env):
     evaluating in the shifted environment. A subst/eval mismatch breaks this."""
     shifted = dict(env)
     shifted[x] = eval_term(t, env)
-    assert eval_formula(formula_subst(phi, x, t), env) == eval_formula(phi, shifted)
+    assert eval_formula(subst(phi, x, t), env) == eval_formula(phi, shifted)
 
 
 @given(nat_formulas(), VAR_NAMES, st.integers(1, 6), ENV)
@@ -352,12 +352,12 @@ def test_substitution_lemma(phi, x, t, env):
 def test_induction_principle_holds_in_N(pred, x, bound, env):
     """The semantic justification of the Induct rule: in N, base + step up to a
     bound forces the predicate up to that bound."""
-    base_ok = eval_formula(formula_subst(pred, x, ZERO), env)
+    base_ok = eval_formula(subst(pred, x, ZERO), env)
     step_ok = all(
         eval_formula(
             Implies(
-                formula_subst(pred, x, numeral(k)),
-                formula_subst(pred, x, numeral(k + 1)),
+                subst(pred, x, numeral(k)),
+                subst(pred, x, numeral(k + 1)),
             ),
             env,
         )
@@ -365,5 +365,5 @@ def test_induction_principle_holds_in_N(pred, x, bound, env):
     )
     assume(base_ok and step_ok)
     assert all(
-        eval_formula(formula_subst(pred, x, numeral(k)), env) for k in range(bound + 1)
+        eval_formula(subst(pred, x, numeral(k)), env) for k in range(bound + 1)
     )

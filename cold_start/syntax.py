@@ -12,6 +12,7 @@ implicitly universally quantified. Exactly enough to bootstrap arithmetic.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
+from typing import overload
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -65,29 +66,6 @@ class BVar(Term):
         return f"#{self.index}"
 
 
-def term_free_vars(t: Term) -> frozenset:
-    if isinstance(t, Var):
-        return frozenset({t.name})
-    if isinstance(t, BVar):
-        return frozenset()  # bound variables are nameless, never free
-    if isinstance(t, Fun):
-        out: frozenset = frozenset()
-        for a in t.args:
-            out |= term_free_vars(a)
-        return out
-    raise TypeError(f"not a term: {t!r}")
-
-
-def term_subst(t: Term, var: str, repl: Term) -> Term:
-    """Replace the free variable Var(var) with repl. Capture is impossible: free
-    variables are named, binders are nameless (de Bruijn), so nothing captures."""
-    if isinstance(t, Var):
-        return repl if t.name == var else t
-    if isinstance(t, BVar):
-        return t
-    if isinstance(t, Fun):
-        return Fun(t.name, tuple(term_subst(a, var, repl) for a in t.args))
-    raise TypeError(f"not a term: {t!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +262,11 @@ def free_vars(node: object) -> frozenset:
     return acc
 
 
-def subst(node, var: str, repl: Term):
+@overload
+def subst(node: Formula, var: str, repl: Term) -> Formula: ...
+@overload
+def subst(node: Term, var: str, repl: Term) -> Term: ...
+def subst(node, var: str, repl: Term) -> object:
     """Substitute the free variable `var` with `repl` in a term or formula -- a
     uniform map over children. Only Var is special; nameless binders, being
     indices, need no capture-avoidance."""
@@ -293,31 +275,6 @@ def subst(node, var: str, repl: Term):
     return map_children(node, lambda c: subst(c, var, repl))
 
 
-def formula_free_vars(f: Formula) -> frozenset:
-    if isinstance(f, Eq):
-        return term_free_vars(f.lhs) | term_free_vars(f.rhs)
-    if isinstance(f, Implies):
-        return formula_free_vars(f.ant) | formula_free_vars(f.con)
-    if isinstance(f, Bottom):
-        return frozenset()
-    if isinstance(f, (Forall, Exists)):
-        return formula_free_vars(f.body)  # bound vars are nameless; all names are free
-    raise TypeError(f"not a formula: {f!r}")
-
-
-def formula_subst(f: Formula, var: str, repl: Term) -> Formula:
-    """Substitute a free variable. No capture-avoidance needed: free variables
-    are named and binders are nameless, so a substituted free variable can never
-    be captured by a binder."""
-    if isinstance(f, Eq):
-        return Eq(term_subst(f.lhs, var, repl), term_subst(f.rhs, var, repl))
-    if isinstance(f, Implies):
-        return Implies(formula_subst(f.ant, var, repl), formula_subst(f.con, var, repl))
-    if isinstance(f, Bottom):
-        return f
-    if isinstance(f, (Forall, Exists)):
-        return type(f)(f.sort, formula_subst(f.body, var, repl))
-    raise TypeError(f"not a formula: {f!r}")
 
 
 # ---------------------------------------------------------------------------

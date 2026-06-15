@@ -13,8 +13,8 @@ from cold_start.syntax import (
     Var,
     exists,
     forall,
-    formula_free_vars,
-    formula_subst,
+    free_vars,
+    subst,
 )
 
 
@@ -32,8 +32,8 @@ def test_subst_into_forall_avoids_capture():
     # the classic capture trap; locally-nameless makes it impossible -- the bound
     # variable is an index, so the substituted `y` stays FREE by construction.
     f = forall("y", "", Eq(Var("x"), Var("y")))
-    result = formula_subst(f, "x", Var("y"))
-    assert "y" in formula_free_vars(result), f"captured: {result!r}"
+    result = subst(f, "x", Var("y"))
+    assert "y" in free_vars(result), f"captured: {result!r}"
 
 
 def test_forall_elim_instantiates():
@@ -66,8 +66,8 @@ def test_forall_intro_rejects_free_eigenvariable():
 
 def test_subst_into_exists_avoids_capture():
     f = exists("y", "", Eq(Var("x"), Var("y")))
-    result = formula_subst(f, "x", Var("y"))
-    assert "y" in formula_free_vars(result), f"captured: {result!r}"
+    result = subst(f, "x", Var("y"))
+    assert "y" in free_vars(result), f"captured: {result!r}"
 
 
 def test_exists_intro_from_witness():
