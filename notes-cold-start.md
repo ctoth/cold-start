@@ -13,9 +13,24 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## Circular-import note: derive methods need Sequent -> move Sequent into proof.py
 ## (it's about formulas); Theory stays a duck-typed param; sort-check -> Sequent method.
 ## syntax `validate` (_v_*) likewise -> exact-type gate + node._check() method.
-## STATUS: sort migration done in syntax.py + checker.py call-sites fixed; removed
-## lru_cache+BVar imports. NEXT: update test_sorts.py (drop sort_of import, fix
-## test_sort_of_is_memoized -> correctness test since memoization dropped), run suite.
+## STATUS: COMMIT A DONE = 5c437ea sort-checking polymorphic, no elif type. 310
+## passed, ruff clean, pyright 0. test_sort_of_is_memoized -> test_repeated_subterms.
+## NOW COMMIT B: convert _vp_* (16 validators) + _d_* (derive handlers) + _VALIDATE_PROOF
+## + _DERIVE dicts -> METHODS on Pf classes. Design:
+##   - proof.py: each Pf gets `derive(self, theory) -> Sequent` (the _d_* logic) and
+##     `_validate(self)` (the _vp_* logic). Sequent MOVES to proof.py (about formulas).
+##     Sequent gets `sort_check(sig)` method (the _sort_check_sequent body).
+##   - validate_proof stays a GATE: `if type(pf) not in _PROOF_TYPES: raise; pf._validate()`
+##     -- exact-type gate BEFORE method (hostile subclass rejected pre-method). Lives in
+##     proof.py so Pf._validate can recurse via it (no circular w/ checker).
+##   - derive: gate runs first (validate_proof), so derive can be a plain method;
+##     recursion sub.derive(theory) then seq.sort_check(theory.signature). The
+##     _derive wrapper (derive+sortcheck) -> a method too, or derive does both.
+##   - checker.py keeps: Theory, Signature, check() (orchestration: type(theory) check,
+##     validate_proof, top derive, RecursionError guard), sort_check_formula (public).
+##     Imports Sequent + validate_proof from proof.
+## RISK: trusted-core reshuffle. Keep behaviour byte-identical, run full suite. If a
+## module won't go green, revert + log. Theory is duck-typed param to derive (no import).
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
