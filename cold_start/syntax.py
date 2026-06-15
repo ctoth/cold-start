@@ -87,6 +87,14 @@ class Node:
         reads the index; the binders raise `depth`."""
         return cast(Node, map_children(self, lambda c: c.instantiate(repl, depth)))
 
+    def free_var_sorts(self) -> frozenset:
+        """Free `(name, sort)` pairs -- like `free_vars` but keeping each variable's
+        declared sort, so the checker can enforce one sort per name. Var overrides."""
+        out: frozenset = frozenset()
+        for c in children(self):
+            out |= c.free_var_sorts()
+        return out
+
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -98,6 +106,13 @@ class Term(Node):
 
     def subst(self, var: str, repl: Term) -> Term:  # substituting in a term yields a term
         return cast(Term, super().subst(var, repl))
+
+    def sort_of(self, sig, scope: tuple = ()) -> str:
+        """The sort of this term under signature `sig`. `scope` is the stack of
+        enclosing binders' sorts (a `BVar(i)` reads `scope[i]`). Each concrete term
+        overrides; sorts and quantifiers coexist because descending under a binder
+        pushes its sort onto `scope`."""
+        raise TypeError(f"not a term: {self!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,11 +126,19 @@ class Var(Term):
     def free_vars(self) -> frozenset:
         return frozenset({self.name})
 
+    def free_var_sorts(self) -> frozenset:
+        return frozenset({(self.name, self.sort)})
+
     def subst(self, var: str, repl: Term) -> Term:
         return repl if self.name == var else self
 
     def abstract(self, name: str, depth: int) -> Term:
         return BVar(depth) if self.name == name else self
+
+    def sort_of(self, sig, scope: tuple = ()) -> str:
+        if self.sort not in sig.sorts:
+            raise ValueError(f"variable {self!r} has undeclared sort {self.sort!r}")
+        return self.sort
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +158,19 @@ class Fun(Term):
         if not self.args:
             return self.name
         return f"{self.name}({', '.join(map(repr, self.args))})"
+
+    def sort_of(self, sig, scope: tuple = ()) -> str:
+        rank = sig.rank(self.name)
+        if rank is None:
+            raise ValueError(f"undeclared function symbol {self.name!r}")
+        arg_sorts, result = rank
+        if len(self.args) != len(arg_sorts):
+            raise ValueError(f"{self.name!r} expects {len(arg_sorts)} args, got {len(self.args)}")
+        for a, expected in zip(self.args, arg_sorts, strict=True):
+            actual = a.sort_of(sig, scope)
+            if actual != expected:
+                raise ValueError(f"{self.name!r} arg has sort {actual!r}, expected {expected!r}")
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +192,11 @@ class BVar(Term):
             return repl
         return BVar(self.index - 1) if self.index > depth else self
 
+    def sort_of(self, sig, scope: tuple = ()) -> str:
+        if not (0 <= self.index < len(scope)):
+            raise ValueError(f"dangling bound variable {self.index!r} (scope depth {len(scope)})")
+        return scope[self.index]
+
 
 # ---------------------------------------------------------------------------
 # Formulas
@@ -168,6 +209,12 @@ class Formula(Node):
     def subst(self, var: str, repl: Term) -> Formula:  # substituting in a formula yields a formula
         return cast(Formula, super().subst(var, repl))
 
+    def sort_check(self, sig, scope: tuple = ()) -> None:
+        """Structural well-sortedness under `sig`: each equality relates same-sort
+        terms; a binder pushes its bound sort onto `scope`, so a quantified sorted
+        formula checks (sorts and quantifiers coexist). Each formula overrides."""
+        raise TypeError(f"not a formula: {self!r}")
+
 
 @dataclass(frozen=True, slots=True)
 class Eq(Formula):
@@ -178,6 +225,11 @@ class Eq(Formula):
 
     def __repr__(self) -> str:
         return f"{self.lhs!r} = {self.rhs!r}"
+
+    def sort_check(self, sig, scope: tuple = ()) -> None:
+        ls, rs = self.lhs.sort_of(sig, scope), self.rhs.sort_of(sig, scope)
+        if ls != rs:
+            raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {self!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +242,10 @@ class Implies(Formula):
     def __repr__(self) -> str:
         return f"({self.ant!r} -> {self.con!r})"
 
+    def sort_check(self, sig, scope: tuple = ()) -> None:
+        self.ant.sort_check(sig, scope)
+        self.con.sort_check(sig, scope)
+
 
 @dataclass(frozen=True, slots=True)
 class Bottom(Formula):
@@ -200,13 +256,17 @@ class Bottom(Formula):
     def __repr__(self) -> str:
         return self.symbol
 
+    def sort_check(self, sig, scope: tuple = ()) -> None:
+        pass  # the formula constant carries no sort
+
 
 def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
     return Implies(a, Bottom())
 
 
-# `Forall`/`Exists` override only `abstract`/`instantiate` to raise the scope depth
-# under the binder; `free_vars`/`subst` use the generic `Node` versions (correct,
+# `Forall`/`Exists` override the binder-aware operations -- `abstract`/`instantiate`
+# (raise the de Bruijn depth) and `sort_check` (push the bound sort onto the scope).
+# `free_vars`/`subst`/`free_var_sorts` use the generic `Node` versions (correct,
 # since a quantifier's only child node is `body` -- the `sort` is a str).
 
 
@@ -230,6 +290,9 @@ class Forall(Formula):
     def instantiate(self, repl: Term, depth: int) -> Formula:
         return Forall(self.sort, cast(Formula, self.body.instantiate(repl, depth + 1)))
 
+    def sort_check(self, sig, scope: tuple = ()) -> None:
+        self.body.sort_check(sig, (self.sort, *scope))
+
 
 @dataclass(frozen=True, slots=True)
 class Exists(Formula):
@@ -248,6 +311,9 @@ class Exists(Formula):
 
     def instantiate(self, repl: Term, depth: int) -> Formula:
         return Exists(self.sort, cast(Formula, self.body.instantiate(repl, depth + 1)))
+
+    def sort_check(self, sig, scope: tuple = ()) -> None:
+        self.body.sort_check(sig, (self.sort, *scope))
 
 
 # --- binder smart constructors --------------------------------------------

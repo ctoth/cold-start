@@ -17,12 +17,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import lru_cache
 
 from . import proof as P
 from .syntax import (
     Bottom,
-    BVar,
     Eq,
     Exists,
     Forall,
@@ -109,125 +107,39 @@ class Theory:
         return f in self.axioms
 
 
-@lru_cache(maxsize=8192)
-def sort_of(t: object, sig: Signature, scope: tuple = ()) -> str:
-    """The sort of a well-sorted term, or raise ValueError if ill-sorted.
-
-    `scope` is the stack of enclosing binders' sorts (innermost first), so a bound
-    variable `BVar(i)` has sort `scope[i]` -- this is how a quantified sorted
-    formula sort-checks: descending under `Forall(sort, .)`/`Exists(sort, .)` pushes
-    `sort` onto the scope. A closed term has `scope = ()`.
-
-    Memoized: `sort_of` is a pure function of (term, signature, scope) -- all
-    immutable and hashable -- so each term's sort is computed once and reused. This
-    is the SOUND form of "cache well-sortedness": the verifier memoizes its own
-    computation. It never trusts a sort tag carried on an input term, which would be
-    a forgeable token (and would be wrong anyway, since sort is relative to the
-    signature). Exceptions are not cached, so ill-sorted terms still raise.
-    """
-    if type(t) is Var:
-        if t.sort not in sig.sorts:
-            raise ValueError(f"variable {t!r} has undeclared sort {t.sort!r}")
-        return t.sort
-    if type(t) is BVar:
-        if not (0 <= t.index < len(scope)):
-            raise ValueError(f"dangling bound variable {t.index!r} (scope depth {len(scope)})")
-        return scope[t.index]
-    if type(t) is Fun:
-        r = sig.rank(t.name)
-        if r is None:
-            raise ValueError(f"undeclared function symbol {t.name!r}")
-        arg_sorts, result = r
-        if len(t.args) != len(arg_sorts):
-            raise ValueError(f"{t.name!r} expects {len(arg_sorts)} args, got {len(t.args)}")
-        for a, expected in zip(t.args, arg_sorts, strict=True):
-            actual = sort_of(a, sig, scope)
-            if actual != expected:
-                raise ValueError(f"{t.name!r} arg has sort {actual!r}, expected {expected!r}")
-        return result
-    raise TypeError(f"not a term: {t!r}")
+# Sort-checking is structural, so it lives on the nodes as polymorphic methods
+# (`term.sort_of(sig, scope)`, `formula.sort_check(sig, scope)`, `node.free_var_sorts()`
+# in syntax.py) -- the same treatment as `free_vars`/`subst`, and safe because every
+# node here already passed `validate`. The checker only assembles those results.
 
 
-def _sort_structure(f: object, sig: Signature, scope: tuple = ()) -> None:
-    """Structural well-sortedness: each equality is between same-sort terms.
-    `scope` is the stack of enclosing binders' sorts; descending under a quantifier
-    pushes its bound sort, so the body (whose bound variable is `BVar(0)`) is
-    checked with that sort in scope -- sorts and quantifiers coexist."""
-    if type(f) is Eq:
-        ls, rs = sort_of(f.lhs, sig, scope), sort_of(f.rhs, sig, scope)
-        if ls != rs:
-            raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {f!r}")
-    elif type(f) is Implies:
-        _sort_structure(f.ant, sig, scope)
-        _sort_structure(f.con, sig, scope)
-    elif type(f) is Bottom:
-        pass  # the formula constant carries no sort
-    elif type(f) is Forall or type(f) is Exists:
-        _sort_structure(f.body, sig, (f.sort, *scope))
-    else:
-        raise TypeError(f"not a formula: {f!r}")
+def _check_var_sort_consistency(pairs) -> None:
+    """A variable *name* must denote a single sort everywhere it occurs: substitution
+    targets names, so a name at two sorts would let instantiation rewrite positions
+    of the wrong sort. `pairs` is a set of free `(name, sort)` pairs."""
+    seen: dict = {}
+    for name, sort in pairs:
+        prev = seen.get(name)
+        if prev is not None and prev != sort:
+            raise ValueError(f"variable {name!r} used at sorts {prev!r} and {sort!r}")
+        seen[name] = sort
 
 
-def _collect_consistent(obj: object, acc: dict) -> None:
-    """Accumulate variable name -> sort, raising if a name appears at two sorts.
-
-    Because substitution targets variables by name, a name must denote a single
-    sort everywhere it occurs; otherwise instantiating it would rewrite
-    positions of a different sort. This makes name-based substitution sound.
-    """
-    if type(obj) is Var:
-        prev = acc.get(obj.name)
-        if prev is not None and prev != obj.sort:
-            raise ValueError(
-                f"variable {obj.name!r} used at sorts {prev!r} and {obj.sort!r}"
-            )
-        acc[obj.name] = obj.sort
-    elif type(obj) is Fun:
-        for a in obj.args:
-            _collect_consistent(a, acc)
-    elif type(obj) is Eq:
-        _collect_consistent(obj.lhs, acc)
-        _collect_consistent(obj.rhs, acc)
-    elif type(obj) is Implies:
-        _collect_consistent(obj.ant, acc)
-        _collect_consistent(obj.con, acc)
-    elif type(obj) is Forall or type(obj) is Exists:
-        _collect_consistent(obj.body, acc)  # bound vars are nameless BVars; only free Vars collect
-
-
-def sort_check_formula(f: object, sig: Signature) -> None:
+def sort_check_formula(f: Formula, sig: Signature) -> None:
     """A single formula is well-sorted and uses each variable name at one sort."""
-    _sort_structure(f, sig)
-    _collect_consistent(f, {})
+    f.sort_check(sig)
+    _check_var_sort_consistency(f.free_var_sorts())
 
 
 def _sort_check_sequent(seq: Sequent, sig: Signature) -> None:
-    """The rule invariant: every derived sequent is well-sorted, and a variable
-    name has one sort across all of its hypotheses and conclusion together."""
-    acc: dict = {}
-    _sort_structure(seq.concl, sig)
-    _collect_consistent(seq.concl, acc)
+    """The rule invariant: every derived sequent is well-sorted, and a variable name
+    has one sort across all of its hypotheses and conclusion together."""
+    seq.concl.sort_check(sig)
+    pairs = set(seq.concl.free_var_sorts())
     for h in seq.hyps:
-        _sort_structure(h, sig)
-        _collect_consistent(h, acc)
-
-
-def _sorts_of_var(obj: object, name: str, out: set) -> None:
-    """Collect the sorts at which variable `name` occurs in a term/formula."""
-    if type(obj) is Var:
-        if obj.name == name:
-            out.add(obj.sort)
-    elif type(obj) is Fun:
-        for a in obj.args:
-            _sorts_of_var(a, name, out)
-    elif type(obj) is Eq:
-        _sorts_of_var(obj.lhs, name, out)
-        _sorts_of_var(obj.rhs, name, out)
-    elif type(obj) is Implies:
-        _sorts_of_var(obj.ant, name, out)
-        _sorts_of_var(obj.con, name, out)
-    elif type(obj) is Forall or type(obj) is Exists:
-        _sorts_of_var(obj.body, name, out)
+        h.sort_check(sig)
+        pairs |= h.free_var_sorts()
+    _check_var_sort_consistency(pairs)
 
 
 # Per-rule structural validators, keyed by EXACT proof type below. Each checks
@@ -473,10 +385,9 @@ def _d_inst(pf: P.Inst, theory: Theory) -> Sequent:
         # the replacement's sort must match the variable's declared sort --
         # instantiating x:K with a V-term is a sort error even when the resulting
         # formula happens to be well-sorted.
-        var_sorts: set = set()
-        _sorts_of_var(s.concl, pf.var, var_sorts)
+        var_sorts = {sort for (name, sort) in s.concl.free_var_sorts() if name == pf.var}
         if var_sorts:
-            term_sort = sort_of(pf.term, sig, ())
+            term_sort = pf.term.sort_of(sig)
             if term_sort not in var_sorts:
                 raise ValueError(
                     f"cannot instantiate {pf.var!r}:{var_sorts} with a term of sort {term_sort!r}"
@@ -536,7 +447,7 @@ def _d_forallelim(pf: P.ForallElim, theory: Theory) -> Sequent:
         raise ValueError(f"forall-elim needs a universal, got {s.concl!r}")
     sig = theory.signature
     if sig is not None and s.concl.sort:
-        t_sort = sort_of(pf.term, sig, ())
+        t_sort = pf.term.sort_of(sig)
         if t_sort != s.concl.sort:
             raise ValueError(
                 f"cannot instantiate forall :{s.concl.sort!r} with a term of sort {t_sort!r}"
@@ -564,7 +475,7 @@ def _d_existsintro(pf: P.ExistsIntro, theory: Theory) -> Sequent:
         raise ValueError(f"exists-intro: sub-proof must prove {expected!r}, got {s.concl!r}")
     sig = theory.signature
     if sig is not None and pf.claim.sort:
-        t_sort = sort_of(pf.witness, sig, ())
+        t_sort = pf.witness.sort_of(sig)
         if t_sort != pf.claim.sort:
             raise ValueError(
                 f"exists-intro witness has sort {t_sort!r}, expected {pf.claim.sort!r}"

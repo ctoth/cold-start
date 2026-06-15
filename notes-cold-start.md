@@ -3,6 +3,35 @@
 Project lives in this git repo. Full design notes in `NOTES.md`; this file is
 the running scratch log. (Moved into the repo at Q's request; was at the parent.)
 
+## 2026-06-15 pt3: Q ALSO caught the bigger thing -- "shims are fucking everywhere",
+## quoted `_vp_assume(pf): validate(pf.formula)`. The dict-of-tiny-functions
+## (_vp_*/_d_*/_ff_*) IS the shim pile -- I dodged methods-on-Pf with a manual
+## dispatch table. PLAN: after sort migration green+committed, convert _d_* (derive)
+## and the validators to METHODS on the classes. derive runs POST-validate so it can
+## be a method (no subclass attack). validate_proof is the trust GATE -> exact-type
+## gate + per-type method (gate rejects hostile subclass BEFORE its method runs).
+## Circular-import note: derive methods need Sequent -> move Sequent into proof.py
+## (it's about formulas); Theory stays a duck-typed param; sort-check -> Sequent method.
+## syntax `validate` (_v_*) likewise -> exact-type gate + node._check() method.
+## STATUS: sort migration done in syntax.py + checker.py call-sites fixed; removed
+## lru_cache+BVar imports. NEXT: update test_sorts.py (drop sort_of import, fix
+## test_sort_of_is_memoized -> correctness test since memoization dropped), run suite.
+
+## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
+## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
+## _sorts_of_var as type-switches while free_vars/subst became methods. Converting
+## sort-checking to POLYMORPHIC METHODS on nodes (no elif type):
+## - syntax.py DONE: Node.free_var_sorts() + Var override; Term.sort_of base +
+##   Var/Fun/BVar overrides; Formula.sort_check base + Eq/Implies/Bottom/Forall
+##   (+Exists TODO). No lru_cache (B019 forbids method-cache + circular import) ->
+##   dropping sort_of memoization, will update test_sort_of_is_memoized.
+## - TODO: Exists.sort_check; rewrite checker.py (delete sort_of fn + 3 walkers;
+##   add _check_var_sort_consistency; rewrite _sort_check_sequent + sort_check_formula
+##   to use methods; update _d_inst/_d_forallelim/_d_existsintro to term.sort_of(sig);
+##   fix imports); update test_sorts (sort_of import + memoization test -> Fun? no,
+##   dropped -> correctness test). Then pytest+ruff+pyright green, COMMIT.
+## - ALSO PENDING (Q wants): iterative (not the RecursionError guard). After elif fix.
+
 ## REBUILD COMPLETE (2026-06-15). 310 passed · ruff clean · pyright 0 · verify CLI ok.
 Commits: 9e64ff8 baseline · b61d6af CLAUDE+ARCH · 49b0439 syntax (Node + methods +
 exact-type validate) · 4108fe9 checker (validate_proof + _derive_rule dispatch

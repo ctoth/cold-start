@@ -24,7 +24,7 @@ from cold_start.algebra import (
     act,
     mul,
 )
-from cold_start.checker import check, sort_check_formula, sort_of
+from cold_start.checker import check, sort_check_formula
 from cold_start.syntax import Eq, Fun, Implies, Var, exists, forall
 
 M_VARS = [Var("m", "M"), Var("n", "M"), Var("p", "M")]
@@ -86,13 +86,13 @@ def test_model_satisfies_action_axioms(data):
 # --- a worked sorted proof ------------------------------------------------
 
 
-def test_sort_of_is_memoized():
-    # Repeated subterms must hit the sort cache: this is the sound form of
-    # "check well-sortedness once". `e` appears twice in act(e, act(e, x)).
-    sort_of.cache_clear()
+def test_repeated_subterms_sort_check():
+    # Sort-checking is the polymorphic `term.sort_of(sig)` method walking the term.
+    # A term with a repeated subterm (`e` twice in act(e, act(e, x))) must still
+    # sort-check cleanly -- each occurrence is resolved on its own.
     x = Var("x", "X")
-    check(P.Refl(act(E, act(E, x))), MONOID_ACTION)
-    assert sort_of.cache_info().hits > 0
+    seq = check(P.Refl(act(E, act(E, x))), MONOID_ACTION)
+    assert seq.concl == Eq(act(E, act(E, x)), act(E, act(E, x)))
 
 
 def test_sorted_proof_checks():
