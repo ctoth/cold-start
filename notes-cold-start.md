@@ -47,6 +47,15 @@ run. Robinson/Skolem experiment is the stretch finale (Phase 4).
 - PHASE 2 COMPLETE (commits 49b0439 syntax, 4108fe9 checker, e46a52e notation;
   proof/theories/proofs/verify already clean). All core ops methods or exact-type
   tables; no sprawling type-switch left.
+- PHASE 3 DONE: sorts x quantifiers (df5f132), stack-safety (f4d80a9). 131 passed.
+- PHASE 4 (#23) Robinson experiment: cold_start/robinson.py = bridge(a,b,c) [Eq:
+  S(ac)S(bc)=S(c²S(ab))] + (1,S,·) Peano axioms A1,A2,A4'(=bridge(a,1,Sa)),
+  A5'(=bridge(a,b,c)->bridge(a,Sb,Sc)), A6, A7'(=bridge(ab,a,a·Sb)) + ROBINSON_PEANO
+  Theory. tests/test_robinson.py: bridge IS the graph of addition in N (parametrized,
+  2+3=5 true / 2+3=4 false); (1,S,·) axioms true in N over positives; checker
+  re-derives Inst(Axiom(ADD_ONE),"a",2) = bridge(2,1,3). 310 passed, ruff+pyright
+  clean. TODO: write papers/Robinson_1949_.../notes.md (findings), COMMIT, then
+  FINAL green gate (#20: full suite+ruff+pyright, confirm verify CLI).
 - PHASE 3 sorts x quantifiers DONE+COMMITTED df5f132 (130 passed). NEXT in #21:
   stack-safety (deep proof -> only Type/ValueError, never RecursionError). Plan:
   red test in test_properties (Refl(numeral(5000)) currently RecursionErrors via
