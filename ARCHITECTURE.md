@@ -81,7 +81,12 @@ that blocks the `1 = 0` exploit), `Inst`'s cross-sort guard, `ForallIntro`/
 `ExistsElim` eigenvariables. `sort_of`/`sort_check` are polymorphic node methods;
 sequents are re-sort-checked (`Sequent.sort_check`) when the theory has a signature.
 `check` is **total**: it returns a `Sequent` or raises `TypeError` / `ValueError`,
-nothing else.
+nothing else — and it is **iterative end to end**. Every operation it reaches
+(validation, derivation, `subst`/`abstract`/`instantiate`, `sort_of`/`sort_check`,
+`free_vars`, and even `==`/`hash` on the nodes) walks a heap agenda rather than the
+call stack, so a proof or term nested far past Python's recursion limit is checked
+or cleanly rejected without a `RecursionError`. The only bound is memory, which
+already held the input.
 
 ## The theories
 - `presburger.py` — the addition fragment `(0, S, +)` with induction: **Presburger
