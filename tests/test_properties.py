@@ -41,8 +41,7 @@ from cold_start.syntax import (
     subst,
     term_from_dict,
     term_to_dict,
-    validate_formula,
-    validate_term,
+    validate,
 )
 
 # --- strategies -----------------------------------------------------------
@@ -214,14 +213,10 @@ def test_check_is_total(pf):
 # --- validation never false-rejects a genuinely canonical value -----------
 
 
-@given(terms())
-def test_validate_accepts_canonical_terms(t):
-    validate_term(t)  # must not raise
+@given(st.one_of(terms(), formulas()))
+def test_validate_accepts_canonical_nodes(node):
 
-
-@given(formulas())
-def test_validate_accepts_canonical_formulas(f):
-    validate_formula(f)  # must not raise
+    validate(node)  # one validator for terms and formulas alike, must not raise
 
 
 # --- substitution algebra -------------------------------------------------

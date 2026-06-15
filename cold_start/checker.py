@@ -34,8 +34,7 @@ from .syntax import (
     free_vars,
     instantiate,
     subst,
-    validate_formula,
-    validate_term,
+    validate,
 )
 
 
@@ -221,11 +220,11 @@ def validate_proof(pf: object) -> None:
     derivation below can trust Python `==` and stay pure logic.
     """
     if type(pf) is P.Axiom:
-        validate_formula(pf.formula)
+        validate(pf.formula)
     elif type(pf) is P.Assume:
-        validate_formula(pf.formula)
+        validate(pf.formula)
     elif type(pf) is P.Refl:
-        validate_term(pf.term)
+        validate(pf.term)
     elif type(pf) is P.Sym:
         validate_proof(pf.sub)
     elif type(pf) is P.Trans:
@@ -242,35 +241,35 @@ def validate_proof(pf: object) -> None:
         validate_proof(pf.imp)
         validate_proof(pf.ant)
     elif type(pf) is P.ImpIntro:
-        validate_formula(pf.hyp)
+        validate(pf.hyp)
         validate_proof(pf.body)
     elif type(pf) is P.Inst:
         if type(pf.var) is not str:
             raise TypeError("Inst.var must be a genuine str")
-        validate_term(pf.term)
+        validate(pf.term)
         validate_proof(pf.sub)
     elif type(pf) is P.Induct:
         if type(pf.var) is not str:
             raise TypeError("Induct.var must be a genuine str")
-        validate_formula(pf.pred)
+        validate(pf.pred)
         validate_proof(pf.base)
         validate_proof(pf.step)
     elif type(pf) is P.ExFalso:
-        validate_formula(pf.concl)
+        validate(pf.concl)
         validate_proof(pf.sub)
     elif type(pf) is P.RAA:
-        validate_formula(pf.goal)
+        validate(pf.goal)
         validate_proof(pf.sub)
     elif type(pf) is P.ForallElim:
-        validate_term(pf.term)
+        validate(pf.term)
         validate_proof(pf.sub)
     elif type(pf) is P.ForallIntro:
         if type(pf.var) is not str or type(pf.sort) is not str:
             raise TypeError("ForallIntro.var and .sort must be genuine strs")
         validate_proof(pf.sub)
     elif type(pf) is P.ExistsIntro:
-        validate_formula(pf.claim)
-        validate_term(pf.witness)
+        validate(pf.claim)
+        validate(pf.witness)
         validate_proof(pf.sub)
     elif type(pf) is P.ExistsElim:
         if type(pf.eigenvar) is not str:
@@ -406,7 +405,7 @@ def _derive_rule(pf: object, theory: Theory) -> Sequent:
         # 1 = 0. See Theory's docstring.
         if theory.zero is None or type(theory.succ) is not str:
             raise ValueError("theory defines no induction principle (no zero/succ)")
-        validate_term(theory.zero)  # the trusted theory's base term must be canonical
+        validate(theory.zero)  # the trusted theory's base term must be canonical
         base = _derive(pf.base, theory)
         step = _derive(pf.step, theory)
         pred_zero = subst(pf.pred, pf.var, theory.zero)

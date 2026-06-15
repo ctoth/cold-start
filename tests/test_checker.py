@@ -22,7 +22,7 @@ from cold_start.peano import (
 )
 from cold_start.proof import from_json, to_json
 from cold_start.proofs import left_identity_proof
-from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate_term
+from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)  # `cold_start` package lives at the repo root, not in tests/
@@ -166,12 +166,12 @@ def test_lying_str_name_rejected():
     raise AssertionError("lying str name was accepted")
 
 
-def test_validate_term_rejects_foreign_subclass():
+def test_validate_rejects_foreign_subclass():
     try:
-        validate_term(_EvilTerm())
+        validate(_EvilTerm())
     except TypeError:
         return
-    raise AssertionError("validate_term accepted a Term subclass")
+    raise AssertionError("validate accepted a Term subclass")
 
 
 def test_non_proof_is_rejected():

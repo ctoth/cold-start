@@ -293,43 +293,37 @@ def _check_str(s: object, what: str) -> None:
         raise TypeError(f"{what} must be a genuine str, got {type(s).__name__}")
 
 
-def validate_term(t: object, depth: int = 0) -> None:
-    if type(t) is Var:
-        _check_str(t.name, "Var.name")
-        _check_str(t.sort, "Var.sort")
-        return
-    if type(t) is BVar:
-        if type(t.index) is not int or not (0 <= t.index < depth):
-            raise TypeError(f"dangling bound variable {t.index!r} at binder depth {depth}")
-        return
-    if type(t) is Fun:
-        _check_str(t.name, "Fun.name")
-        if type(t.args) is not tuple:
+def validate(node: object, depth: int = 0) -> None:
+    """Exact-type well-formedness for any term or formula. This is the trust
+    gate, so it is deliberately NOT reflection-based: a hostile __eq__-overriding
+    subclass must be rejected by EXACT type, not accepted as "some dataclass".
+    `depth` counts enclosing binders; a BVar is well-formed only if its index is
+    below it (local closure: no dangling bound variable)."""
+    if type(node) is Var:
+        _check_str(node.name, "Var.name")
+        _check_str(node.sort, "Var.sort")
+    elif type(node) is BVar:
+        if type(node.index) is not int or not (0 <= node.index < depth):
+            raise TypeError(f"dangling bound variable {node.index!r} at binder depth {depth}")
+    elif type(node) is Fun:
+        _check_str(node.name, "Fun.name")
+        if type(node.args) is not tuple:
             raise TypeError("Fun.args must be a tuple")
-        for a in t.args:
-            validate_term(a, depth)
-        return
-    raise TypeError(f"non-canonical term: {type(t).__name__}")
-
-
-def validate_formula(f: object, depth: int = 0) -> None:
-    # `depth` counts enclosing binders; a BVar is well-formed only if its index
-    # is below it (local closure: no dangling bound variable).
-    if type(f) is Eq:
-        validate_term(f.lhs, depth)
-        validate_term(f.rhs, depth)
-        return
-    if type(f) is Implies:
-        validate_formula(f.ant, depth)
-        validate_formula(f.con, depth)
-        return
-    if type(f) is Bottom:
-        return
-    if type(f) is Forall or type(f) is Exists:
-        _check_str(f.sort, "quantifier sort")
-        validate_formula(f.body, depth + 1)
-        return
-    raise TypeError(f"non-canonical formula: {type(f).__name__}")
+        for a in node.args:
+            validate(a, depth)
+    elif type(node) is Eq:
+        validate(node.lhs, depth)
+        validate(node.rhs, depth)
+    elif type(node) is Implies:
+        validate(node.ant, depth)
+        validate(node.con, depth)
+    elif type(node) is Bottom:
+        pass
+    elif type(node) is Forall or type(node) is Exists:
+        _check_str(node.sort, "quantifier sort")
+        validate(node.body, depth + 1)
+    else:
+        raise TypeError(f"non-canonical node: {type(node).__name__}")
 
 
 # ---------------------------------------------------------------------------
