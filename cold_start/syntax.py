@@ -95,6 +95,13 @@ class Node:
             out |= c.free_var_sorts()
         return out
 
+    def _validate(self, depth: int) -> None:
+        """Exact-type well-formedness of this node's own fields, recursing through
+        the `validate` gate (which re-checks each child's exact type). Each concrete
+        node overrides; `depth` counts enclosing binders, bounding legal `BVar`s.
+        Only ever called after the gate confirms `type(self)` is canonical."""
+        raise TypeError(f"non-canonical node: {type(self).__name__}")
+
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -140,6 +147,10 @@ class Var(Term):
             raise ValueError(f"variable {self!r} has undeclared sort {self.sort!r}")
         return self.sort
 
+    def _validate(self, depth: int) -> None:
+        _check_str(self.name, "Var.name")
+        _check_str(self.sort, "Var.sort")
+
 
 @dataclass(frozen=True, slots=True)
 class Fun(Term):
@@ -172,6 +183,13 @@ class Fun(Term):
                 raise ValueError(f"{self.name!r} arg has sort {actual!r}, expected {expected!r}")
         return result
 
+    def _validate(self, depth: int) -> None:
+        _check_str(self.name, "Fun.name")
+        if type(self.args) is not tuple:
+            raise TypeError("Fun.args must be a tuple")
+        for a in self.args:
+            validate(a, depth)
+
 
 @dataclass(frozen=True, slots=True)
 class BVar(Term):
@@ -196,6 +214,10 @@ class BVar(Term):
         if not (0 <= self.index < len(scope)):
             raise ValueError(f"dangling bound variable {self.index!r} (scope depth {len(scope)})")
         return scope[self.index]
+
+    def _validate(self, depth: int) -> None:
+        if type(self.index) is not int or not (0 <= self.index < depth):
+            raise TypeError(f"dangling bound variable {self.index!r} at binder depth {depth}")
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +253,10 @@ class Eq(Formula):
         if ls != rs:
             raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {self!r}")
 
+    def _validate(self, depth: int) -> None:
+        validate(self.lhs, depth)
+        validate(self.rhs, depth)
+
 
 @dataclass(frozen=True, slots=True)
 class Implies(Formula):
@@ -246,6 +272,10 @@ class Implies(Formula):
         self.ant.sort_check(sig, scope)
         self.con.sort_check(sig, scope)
 
+    def _validate(self, depth: int) -> None:
+        validate(self.ant, depth)
+        validate(self.con, depth)
+
 
 @dataclass(frozen=True, slots=True)
 class Bottom(Formula):
@@ -258,6 +288,9 @@ class Bottom(Formula):
 
     def sort_check(self, sig, scope: tuple = ()) -> None:
         pass  # the formula constant carries no sort
+
+    def _validate(self, depth: int) -> None:
+        pass  # no fields to check
 
 
 def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
@@ -293,6 +326,10 @@ class Forall(Formula):
     def sort_check(self, sig, scope: tuple = ()) -> None:
         self.body.sort_check(sig, (self.sort, *scope))
 
+    def _validate(self, depth: int) -> None:
+        _check_str(self.sort, "quantifier sort")
+        validate(self.body, depth + 1)
+
 
 @dataclass(frozen=True, slots=True)
 class Exists(Formula):
@@ -314,6 +351,10 @@ class Exists(Formula):
 
     def sort_check(self, sig, scope: tuple = ()) -> None:
         self.body.sort_check(sig, (self.sort, *scope))
+
+    def _validate(self, depth: int) -> None:
+        _check_str(self.sort, "quantifier sort")
+        validate(self.body, depth + 1)
 
 
 # --- binder smart constructors --------------------------------------------
@@ -342,10 +383,12 @@ def instantiate(binder: Formula, repl: Term) -> Formula:
 # The checker compares terms and formulas with Python `==`. That is only sound if
 # every value is a genuine canonical node: a hostile Term/str subclass can override
 # __eq__ to return True for unequal things and derive `1 = 0` from reflexivity
-# alone. So before trusting `==`, we verify EXACT types all the way down. This is
-# the one place we do NOT dispatch polymorphically: a method could be overridden by
-# exactly the subclass we must reject, so we dispatch on `type(node)` through a dict
-# keyed by the concrete class, with a reject-default.
+# alone. So before trusting `==`, we verify EXACT types all the way down. The per-
+# node field checks are the polymorphic `_validate` methods above; this `validate`
+# is the GATE in front of them: it confirms `type(node)` is exactly a canonical
+# class before calling the method. That ordering is the whole security argument -- a
+# hostile subclass could override `_validate`, but it never runs, because its exact
+# type is absent from `_CANONICAL` and the gate rejects it first.
 
 
 def _check_str(s: object, what: str) -> None:
@@ -353,64 +396,18 @@ def _check_str(s: object, what: str) -> None:
         raise TypeError(f"{what} must be a genuine str, got {type(s).__name__}")
 
 
-def _v_var(node, depth: int) -> None:
-    _check_str(node.name, "Var.name")
-    _check_str(node.sort, "Var.sort")
-
-
-def _v_bvar(node, depth: int) -> None:
-    if type(node.index) is not int or not (0 <= node.index < depth):
-        raise TypeError(f"dangling bound variable {node.index!r} at binder depth {depth}")
-
-
-def _v_fun(node, depth: int) -> None:
-    _check_str(node.name, "Fun.name")
-    if type(node.args) is not tuple:
-        raise TypeError("Fun.args must be a tuple")
-    for a in node.args:
-        validate(a, depth)
-
-
-def _v_eq(node, depth: int) -> None:
-    validate(node.lhs, depth)
-    validate(node.rhs, depth)
-
-
-def _v_implies(node, depth: int) -> None:
-    validate(node.ant, depth)
-    validate(node.con, depth)
-
-
-def _v_bottom(node, depth: int) -> None:
-    pass
-
-
-def _v_quantifier(node, depth: int) -> None:
-    _check_str(node.sort, "quantifier sort")
-    validate(node.body, depth + 1)
-
-
-_VALIDATORS = {
-    Var: _v_var,
-    BVar: _v_bvar,
-    Fun: _v_fun,
-    Eq: _v_eq,
-    Implies: _v_implies,
-    Bottom: _v_bottom,
-    Forall: _v_quantifier,
-    Exists: _v_quantifier,
-}
+_CANONICAL: frozenset[type] = frozenset({Var, BVar, Fun, Eq, Implies, Bottom, Forall, Exists})
 
 
 def validate(node: object, depth: int = 0) -> None:
     """Exact-type well-formedness for any term or formula. The trust gate: a
-    hostile __eq__-overriding subclass is rejected because its exact type is not a
-    key in `_VALIDATORS`. `depth` counts enclosing binders; a BVar is well-formed
-    only if its index is below it (local closure: no dangling bound variable)."""
-    handler = _VALIDATORS.get(type(node))
-    if handler is None:
+    hostile __eq__-overriding subclass is rejected because its exact type is not in
+    `_CANONICAL`, so its `_validate` never runs. `depth` counts enclosing binders; a
+    BVar is well-formed only if its index is below it (local closure: no dangling
+    bound variable). Children are re-checked through this same gate."""
+    if type(node) not in _CANONICAL:
         raise TypeError(f"non-canonical node: {type(node).__name__}")
-    handler(node, depth)
+    cast(Node, node)._validate(depth)
 
 
 # ---------------------------------------------------------------------------

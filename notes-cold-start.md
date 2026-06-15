@@ -31,6 +31,15 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ##     Imports Sequent + validate_proof from proof.
 ## RISK: trusted-core reshuffle. Keep behaviour byte-identical, run full suite. If a
 ## module won't go green, revert + log. Theory is duck-typed param to derive (no import).
+## COMMIT B DONE = a4fc4dc. proof.py: _validate/_derive_rule/derive methods on each Pf;
+## validate_proof = exact-type gate + pf._validate(). sequent.py new (Sequent + sort_check
+## method). checker.py thin (Theory/Signature/check/sort_check_formula). 310 pass, ruff
+## clean, pyright 0. NEXT TWO PILES (Q: "shims everywhere"): (1) syntax.py _v_* validators
+## + _VALIDATORS dict -> exact-type gate + node._validate(depth) methods (parallel to
+## validate_proof). (2) notation.py _ff_*/_ft_* formatter + _FORMAT_* dicts -> polymorphic
+## format() methods (plan: "Refactor the formatter to polymorphic format() methods").
+## Each its own green+commit. validate gate+method preserves security (gate rejects hostile
+## subclass BEFORE method). PENDING after: iterative check (Q rejects RecursionError guard).
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/
