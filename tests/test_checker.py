@@ -25,6 +25,7 @@ from cold_start.proofs import left_identity_proof
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate_term
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(HERE)  # `cold_start` package lives at the repo root, not in tests/
 
 
 # --- the headline theorem -------------------------------------------------
@@ -340,7 +341,7 @@ def _run_verify(stdin_text: str):
         input=stdin_text,
         capture_output=True,
         text=True,
-        cwd=HERE,
+        cwd=REPO_ROOT,
     )
 
 

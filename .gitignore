@@ -11,3 +11,7 @@ pyghidra_mcp_projects/
 
 # reviewer/tooling scratch copies (not part of the project)
 temp/
+
+# coverage / tooling output
+.coverage
+htmlcov/

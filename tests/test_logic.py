@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from test_model import eval_formula
 
 import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import PEANO, SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, numeral
 from cold_start.syntax import Bottom, Eq, Implies, Not, Var
-from test_model import eval_formula
 
 ENV = st.fixed_dictionaries({n: st.integers(0, 8) for n in ["x", "y", "z", "n", "m"]})
 

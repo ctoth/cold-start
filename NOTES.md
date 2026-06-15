@@ -7,7 +7,7 @@ trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
 the verifier, not the object.
 
 ## Current state: DONE & GREEN
-- pytest: **23 passed** (+2 for the term-args aliasing attack)
+- pytest: **56 passed**
 - Attack #6 (Q): `Fun("f", list)` aliases a mutable list into a term; mutating
   it later retroactively rewrites a proved term. Fixed two ways: Fun.__post_init__
   snapshots args to a tuple (immutable by construction), AND validate_term's
@@ -26,11 +26,13 @@ the verifier, not the object.
                  Inst) + to_json/from_json. Not trusted.
 - `checker.py` — TRUSTED CORE (~190 lines): Sequent, Theory, validate_proof
                  (one up-front structural pass), check(), pure `_derive`.
-- `peano.py`   — theory: 0/S/+, ADD_ZERO_F, ADD_SUCC_F, is_induction_instance
-                 recognizer, PEANO, induction() builder.
+- `peano.py`   — theory: 0/S/+, ADD_ZERO_F, ADD_SUCC_F, PEANO's zero/succ
+                 induction data, induction() builder.
 - `proofs.py`  — left_identity_proof(): 0 + n = n by induction.
 - `verify.py`  — CLI: checks a JSON proof in a SEPARATE process.
-- `test_checker.py` — 19 tests.
+- `test_checker.py` — 25 example/regression tests.
+- `test_model.py` — 17 model-level tests.
+- `test_properties.py` — 14 Hypothesis property tests.
 - `pyproject.toml` (ruff/pytest), `pyrightconfig.json`.
 
 ## History / decisions
@@ -58,9 +60,9 @@ the verifier, not the object.
    STATUS: not yet committed -- commit next.
 
 ## Soundness model (current)
-Trusted base = checker.py (validate_proof + _derive) + each Theory's axioms and
-schema recognizers. Serialized path immune by construction (from_dict only mints
-Var/Fun). In-process path now immune via exact-type validation.
+Trusted base = checker.py (validate_proof + _derive) + each Theory's concrete
+axioms and induction data. Serialized path immune by construction (from_dict
+only mints Var/Fun). In-process path now immune via exact-type validation.
 
 ## Next step (not started)
 - `n + 0 = 0 + n` -> commutativity of `+`, then associativity. First proof that
