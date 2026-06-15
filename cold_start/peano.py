@@ -1,82 +1,39 @@
-"""Peano arithmetic as a *theory*: a signature, axioms, and induction data.
+"""Peano arithmetic: Presburger extended with multiplication.
 
-The checker is theory-agnostic; this module supplies what makes it arithmetic.
-Everything trusted here is small and on the page: two addition axioms plus the
-zero term and successor symbol used by the checker's first-class `Induct` rule.
-Induction is deliberately not exposed as an axiom formula.
+PEANO adds one function symbol, `*`, and its two recursion axioms to
+`cold_start.presburger.PRESBURGER` -- and nothing else. The induction rule,
+zero, and successor are inherited unchanged. This is the line where number
+theory stops being decidable: the addition fragment is complete (Presburger),
+but once multiplication and induction coexist, Goedel's incompleteness applies.
+
+A `Theory` is data (a frozen dataclass of axioms + induction structure), so
+"Peano extends Presburger" is a value built with `dataclasses.replace`, not a
+subclass -- the checker never dispatches on a theory's Python type.
 """
 
 from __future__ import annotations
 
-from .checker import Theory
-from .proof import Induct, Pf
-from .syntax import (
-    Eq,
-    Formula,
-    Fun,
-    Implies,
-    Not,
-    Term,
-    Var,
-)
+from dataclasses import replace
 
-# --- signature ------------------------------------------------------------
+from .presburger import PRESBURGER, ZERO, S, add
+from .syntax import Eq, Formula, Fun, Term, Var
 
-ZERO = Fun("0", ())
+# --- the extra symbol: multiplication -------------------------------------
 
 
-def S(t: Term) -> Term:
-    return Fun("S", (t,))
+def mul(a: Term, b: Term) -> Term:
+    return Fun("*", (a, b))
 
 
-def add(a: Term, b: Term) -> Term:
-    return Fun("+", (a, b))
+# --- multiplication axioms (recursion on the second argument) -------------
 
-
-def numeral(n: int) -> Term:
-    if n < 0:
-        raise ValueError("naturals only")
-    t: Term = ZERO
-    for _ in range(n):
-        t = S(t)
-    return t
-
-
-# --- axioms (the trusted base) -------------------------------------------
-# Recursive definition of addition. Free vars implicitly universally quantified.
-
-ADD_ZERO_F: Formula = Eq(add(Var("x"), ZERO), Var("x"))  # x + 0 = x
-ADD_SUCC_F: Formula = Eq(add(Var("x"), S(Var("y"))), S(add(Var("x"), Var("y"))))  # x + S y = S(x+y)
-
-# The two Peano axioms that need negation: 0 is not a successor, and successor is
-# injective. Together they make distinct numerals provably unequal -- retiring
-# the model-only witness we used before `Not` existed.
-SUCC_NEQ_ZERO: Formula = Not(Eq(S(Var("x")), ZERO))  # S x != 0
-SUCC_INJ: Formula = Implies(Eq(S(Var("x")), S(Var("y"))), Eq(Var("x"), Var("y")))  # Sx=Sy -> x=y
-
-
-# Induction is a *rule*, not an axiom (encoding the schema as an axiom formula
-# is unsound here -- see checker.Theory). The theory just declares its zero and
-# successor so the checker's Induct rule knows the recursion structure.
-PEANO = Theory(
-    axioms=frozenset({ADD_ZERO_F, ADD_SUCC_F, SUCC_NEQ_ZERO, SUCC_INJ}),
-    zero=ZERO,
-    succ="S",
+MUL_ZERO_F: Formula = Eq(mul(Var("x"), ZERO), ZERO)  # x * 0 = 0
+MUL_SUCC_F: Formula = Eq(  # x * S y = (x * y) + x
+    mul(Var("x"), S(Var("y"))),
+    add(mul(Var("x"), Var("y")), Var("x")),
 )
 
 
-# --- inference: induction ------------------------------------------------
-
-
-def induction(var: str, pred: Formula, base: Pf, step: Pf) -> Pf:
-    """Build an induction proof term.
-
-        base : |- pred[var := 0]
-        step : |- pred -> pred[var := S(var)]
-        ----------------------------------------
-              |- pred
-
-    Just the `Induct` node constructor; the checker enforces base/step shape and
-    the side condition that `var` is not free in their hypotheses.
-    """
-    return Induct(var, pred, base, step)
+# Peano = Presburger + {the two multiplication axioms}. Same zero, successor, and
+# induction rule; the only change is two more axioms and the `*` symbol they use.
+PEANO = replace(PRESBURGER, axioms=PRESBURGER.axioms | {MUL_ZERO_F, MUL_SUCC_F})

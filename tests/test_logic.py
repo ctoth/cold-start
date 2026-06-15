@@ -15,7 +15,8 @@ from test_model import N
 
 import cold_start.proof as P
 from cold_start.checker import check
-from cold_start.peano import PEANO, SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, numeral
+from cold_start.peano import PEANO
+from cold_start.presburger import SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, numeral
 from cold_start.syntax import Bottom, Eq, Implies, Not, Var
 
 ENV = st.fixed_dictionaries({n: st.integers(0, 8) for n in ["x", "y", "z", "n", "m"]})

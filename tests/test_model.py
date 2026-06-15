@@ -20,7 +20,8 @@ from semantics import Model, evaluate
 
 import cold_start.proof as P
 from cold_start.checker import Theory, check
-from cold_start.peano import ADD_SUCC_F, ADD_ZERO_F, PEANO, ZERO, S, add, numeral
+from cold_start.peano import PEANO
+from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, numeral
 from cold_start.proofs import add_proof
 from cold_start.syntax import (
     Bottom,
@@ -42,7 +43,12 @@ ENV = st.fixed_dictionaries({name: st.integers(0, 8) for name in VAR_POOL})
 
 N = Model(
     "N",
-    interp={"0": lambda: 0, "S": lambda x: x + 1, "+": lambda a, b: a + b},
+    interp={
+        "0": lambda: 0,
+        "S": lambda x: x + 1,
+        "+": lambda a, b: a + b,
+        "*": lambda a, b: a * b,
+    },
 )
 
 

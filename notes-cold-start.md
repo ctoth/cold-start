@@ -22,36 +22,47 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 - 2513257: validate consolidation -> ONE validate(node, depth). Trust gate, so
   EXACT-type (NOT reflection) -- merges validate_term+validate_formula. All
   callers migrated; property test_validate_accepts_canonical_nodes.
-- Walker count: 20 -> deleted 6 (free_vars x2, subst x2, validate x2 -> 1 each).
-  Remaining ~14: checker sort walkers (sort_of, _sort_structure,
-  _collect_consistent, _sorts_of_var = 4) + model evaluators (eval/interp/ev x ~5
-  files = 10).
-- IN PROGRESS NOW: model EVAL fold. Created tests/semantics.py = ONE evaluate(
-  node, model, env, denv) + Model dataclass + ModelLike Protocol(interp:dict) +
-  _carrier (getattr carriers[sort] else .carrier; only hit by quantifier models).
-  tests/test_semantics.py GREEN, pyright 0/0. Migrating the 5 evaluator files:
-    * test_algebra.py: deleted Uninterpretable+interp_term/formula defs; sed call
-      sites interp_*->evaluate DONE. STILL NEED: `from semantics import evaluate`.
-    * test_rings/test_sorts: sed interp_*->evaluate DONE but def blocks NOT yet
-      deleted (now self-reference `evaluate` -> recursion!) + need import.
-    * test_quant_soundness: sed ev_*->evaluate DONE, same -- del defs + import.
-    * test_rings/test_sorts/test_quant: def blocks DELETED + semantics import
-      added (DONE). ruff will prune now-unused syntax imports.
-    * test_model.py: DONE -- deleted eval_term/eval_formula/Uninterpretable;
-      added N=Model("N",interp{0/S/+}); rewrote ALL 22 call sites to
-      evaluate(node,N,env) via tools/_migrate_eval.py (paren+string-aware
-      rewriter; handles multiline). NO SHIM.
-    * test_logic.py: import fixed (`from semantics import evaluate` +
-      `from test_model import N`); STILL NEED to run _migrate_eval.py on it
-      (3 call sites: lines ~86,87,97 still say eval_formula).
-  REMAINING STEPS: run tools/_migrate_eval.py tests/test_logic.py; then
-  `ruff check --fix` (prune unused imports in rings/sorts/quant/model:
-  Term/Fun/Bottom/BVar/Forall/Exists/Implies as applicable); pyright; full
-  pytest; DELETE tools/_migrate_eval.py (throwaway); commit. **NO SHIM rule.**
-  HARD RULE (Q, emphatic): NEVER write a shim/wrapper/facade. Update everywhere.
-  Use Rope/ast/LibCST or exhaustive edits for wide refactors. Session-ending rule.
-  Finish: del defs, migrate ALL call sites, ruff --fix, pyright, full pytest, commit.
-- THEN (next brick, agreed order): split PRESBURGER out of "PEANO". Current
+- a24613a: EVAL fold DONE. tests/semantics.py = ONE evaluate(node, model, env,
+  denv) + Model dataclass + ModelLike Protocol(interp:dict) + _carrier (getattr
+  carriers[sort] else .carrier, raises if neither -- no silent vacuous-∀). All 5
+  evaluator files migrated, NO SHIM: deleted eval_/interp_/ev_ + Uninterpretable;
+  test_model has N=Model("N",interp{0/S/+}) and ALL 22 call sites ->evaluate(.,N,.);
+  test_logic uses `from test_model import N` + `from semantics import evaluate`.
+  Multi-line/string call sites rewritten with a paren+string-aware Python pass
+  (throwaway tools/_migrate_eval.py, deleted after). 108 passed, ruff+pyright clean.
+- Walker count: 20 -> 8 deleted (free_vars x2, subst x2, validate 2->1,
+  evaluators 10->1). Remaining: checker SORT walkers (sort_of, _sort_structure,
+  _collect_consistent, _sorts_of_var ~4, TRUSTED core) + test helper walkers
+  (_vars_with_sorts in test_sorts, encode/decode in syntax are reflection already).
+- HARD RULE (Q, emphatic, session-ending): NEVER write a shim/wrapper/facade.
+  Update EVERY call site. Use Rope/ast/LibCST or exhaustive edits. See memory
+  no-shims-rule.md.
+- IN PROGRESS NOW: PRESBURGER/PEANO split (red-first). DONE so far:
+  * tests/test_presburger.py written, confirmed RED (ImportError MUL_SUCC_F).
+    Tests: peano=presburger+mul axioms; presburger proves 0+n=n; 2*0=0 under
+    PEANO; same rejected under PRESBURGER; mul_proof(a,b) computes a*b in PEANO.
+  * cold_start/presburger.py CREATED: ZERO,S,add,numeral, ADD_ZERO_F,ADD_SUCC_F,
+    SUCC_NEQ_ZERO,SUCC_INJ, induction, PRESBURGER theory.
+  * cold_start/peano.py REWRITTEN: imports PRESBURGER,ZERO,S,add from presburger;
+    defines mul, MUL_ZERO_F (x*0=0), MUL_SUCC_F (x*Sy=x*y+x);
+    PEANO=replace(PRESBURGER, axioms=...|{MUL_ZERO_F,MUL_SUCC_F}). NO re-export
+    facade (removed an initial noqa re-export -- shim violation).
+  * cold_start/proofs.py: imports split (ADD_*/ZERO/add/induction/numeral from
+    presburger; MUL_*/mul from peano; +Refl); added mul_proof(a,b) recursing via
+    mul axioms + reusing add_proof; __main__ now checks vs PRESBURGER.
+  IMPORTERS ALL UPDATED (no shim): __init__.py (PEANO,mul from peano;
+  PRESBURGER,ZERO,S,add,induction,numeral from presburger; __all__ has both
+  theories+mul); test_checker/test_properties/test_quantifiers/test_logic/
+  test_model each split `from cold_start.peano import ...` -> PEANO from peano,
+  base pieces from cold_start.presburger. verify.py keeps `from .peano import
+  PEANO` (unchanged, valid).
+  GATE: ruff --fix clean (pruned unused `mul` from proofs.py), pyright 0/0,
+  test_presburger.py 9/9 GREEN. REMAINING: run FULL pytest (verify import split
+  broke nothing); then commit the PRESBURGER/PEANO split. Update DESIGN docs/
+  layout line in this notes file (checker layout mentions peano only).
+  NOTE: theory EXTENSION via dataclasses.replace (Theory is frozen data), NOT
+  subclassing -- checker never dispatches on Python type.
+- DETAILS (agreed order) for reference: split PRESBURGER out of "PEANO". Current
   cold_start/peano.py is the ADDITION-ONLY fragment = Presburger (complete+
   decidable). True Peano = + multiplication (`*` with x*0=0, x*S(y)=x*y+x) -> then
   incomplete. Encode as theory EXTENSION (data), NOT class inheritance (Theory is
@@ -64,7 +75,7 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
   harness tools/mutate.py exists; run it in a git WORKTREE (never live file).
 
 ## State: DONE & GREEN
-- pytest: **23 passed**  ·  ruff: clean  ·  pyright (repo-rooted CLI): 0/0
+- pytest: **108 passed**  ·  ruff: clean  ·  pyright (repo-rooted CLI): 0/0
 - Editor's inline Pyright is rooted at parent `code\` and ignores our
   `cold-start/pyrightconfig.json` → shows bogus import errors. CLI is authoritative.
 

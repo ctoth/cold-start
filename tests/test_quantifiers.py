@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import cold_start.proof as P
 from cold_start.checker import check
-from cold_start.peano import PEANO, SUCC_NEQ_ZERO, ZERO, S
+from cold_start.peano import PEANO
+from cold_start.presburger import SUCC_NEQ_ZERO, ZERO, S
 from cold_start.syntax import (
     Eq,
     Not,

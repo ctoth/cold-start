@@ -11,10 +11,10 @@ from hypothesis import strategies as st
 
 import cold_start.proof as P
 from cold_start.checker import Sequent, check
-from cold_start.peano import (
+from cold_start.peano import PEANO
+from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
-    PEANO,
     ZERO,
     add,
     induction,

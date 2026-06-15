@@ -4,8 +4,9 @@ recipe. It asserts nothing until checker.check() re-derives its sequent.
 
 from __future__ import annotations
 
-from .peano import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction, numeral
-from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Trans
+from .peano import MUL_SUCC_F, MUL_ZERO_F
+from .presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction, numeral
+from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Trans
 from .syntax import Eq, Var
 
 
@@ -49,8 +50,28 @@ def add_proof(a: int, b: int) -> Pf:
     return Trans(succ_step, Cong("S", (add_proof(a, b - 1),)))
 
 
+def mul_proof(a: int, b: int) -> Pf:
+    """Proof term for  numeral(a) * numeral(b) = numeral(a*b).
+
+    Recurses on the second argument via the multiplication axioms, reusing
+    `add_proof` to collapse the trailing addition. A Peano theorem -- it cites
+    the multiplication axioms, so it does not check under Presburger.
+    """
+    big_a = numeral(a)
+    if b == 0:
+        return Inst(Axiom(MUL_ZERO_F), "x", big_a)  # a * 0 = 0
+    b_minus = numeral(b - 1)
+    #  a * S(b-1) = (a * (b-1)) + a
+    succ_step = Inst(Inst(Axiom(MUL_SUCC_F), "x", big_a), "y", b_minus)
+    #  (a * (b-1)) + a = numeral(a*(b-1)) + a        -- by the inductive product
+    fold_product = Cong("+", (mul_proof(a, b - 1), Refl(big_a)))
+    #  numeral(a*(b-1)) + a = numeral(a*(b-1) + a) = numeral(a*b)
+    collapse_sum = add_proof(a * (b - 1), a)
+    return Trans(succ_step, Trans(fold_product, collapse_sum))
+
+
 if __name__ == "__main__":
     from .checker import check
-    from .peano import PEANO
+    from .presburger import PRESBURGER
 
-    print("left identity:", check(left_identity_proof(), PEANO))
+    print("left identity:", check(left_identity_proof(), PRESBURGER))
