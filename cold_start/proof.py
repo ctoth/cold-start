@@ -35,6 +35,7 @@ from .syntax import (
     Not,
     Term,
     Var,
+    children,
     decode_node,
     encode_node,
     forall,
@@ -51,14 +52,33 @@ class Pf:
 
     def derive(self, theory) -> Sequent:
         """Re-derive this proof's sequent under `theory`, enforcing the sort
-        invariant on the result when the theory is many-sorted. Assumes
-        `validate_proof` has already run, so `==` on embedded nodes is honest."""
-        seq = self._derive_rule(theory)
-        if theory.signature is not None:
-            seq.sort_check(theory.signature)
-        return seq
+        invariant on each result when the theory is many-sorted. Assumes
+        `validate_proof` has already run, so `==` on embedded nodes is honest.
 
-    def _derive_rule(self, theory) -> Sequent:  # overridden by every concrete rule
+        Iterative post-order: every sub-proof's sequent is computed bottom-up into
+        a `id -> Sequent` map, so each rule reads its children's sequents by lookup
+        instead of recursing. A proof nested thousands deep is checked without
+        touching the call stack."""
+        order: list = []
+        stack: list = [self]
+        while stack:
+            p = stack.pop()
+            order.append(p)
+            stack.extend(c for c in children(p) if isinstance(c, Pf))
+        sig = theory.signature
+        results: dict = {}
+
+        def derived(child: Pf) -> Sequent:  # a child's already-computed sequent
+            return results[id(child)]
+
+        for p in reversed(order):  # children precede parents, so lookups are ready
+            seq = p._derive_rule(theory, derived)
+            if sig is not None:
+                seq.sort_check(sig)
+            results[id(p)] = seq
+        return results[id(self)]
+
+    def _derive_rule(self, theory, derived) -> Sequent:  # overridden by every concrete rule
         raise TypeError(f"not a derivable proof term: {self!r}")  # unreachable post-validate
 
     def _validate(self) -> tuple:  # overridden by every concrete rule
@@ -75,7 +95,7 @@ class Axiom(Pf):
         validate(self.formula)
         return ()
 
-    def _derive_rule(self, theory) -> Sequent:
+    def _derive_rule(self, theory, derived) -> Sequent:
         if not theory.accepts(self.formula):
             raise ValueError(f"not an axiom of this theory: {self.formula!r}")
         return Sequent(frozenset(), self.formula)
@@ -89,7 +109,7 @@ class Assume(Pf):
         validate(self.formula)
         return ()
 
-    def _derive_rule(self, theory) -> Sequent:
+    def _derive_rule(self, theory, derived) -> Sequent:
         return Sequent(frozenset({self.formula}), self.formula)
 
 
@@ -101,7 +121,7 @@ class Refl(Pf):
         validate(self.term)
         return ()
 
-    def _derive_rule(self, theory) -> Sequent:
+    def _derive_rule(self, theory, derived) -> Sequent:
         return Sequent(frozenset(), Eq(self.term, self.term))
 
 
@@ -112,8 +132,8 @@ class Sym(Pf):
     def _validate(self) -> tuple:
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s = self.sub.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s = derived(self.sub)
         if type(s.concl) is not Eq:
             raise ValueError(f"sym needs an equality, got {s.concl!r}")
         return Sequent(s.hyps, Eq(s.concl.rhs, s.concl.lhs))
@@ -127,9 +147,9 @@ class Trans(Pf):
     def _validate(self) -> tuple:
         return (self.left, self.right)
 
-    def _derive_rule(self, theory) -> Sequent:
-        a = self.left.derive(theory)
-        b = self.right.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        a = derived(self.left)
+        b = derived(self.right)
         if type(a.concl) is not Eq or type(b.concl) is not Eq:
             raise ValueError("trans needs two equalities")
         if a.concl.rhs != b.concl.lhs:
@@ -149,11 +169,11 @@ class Cong(Pf):
             raise TypeError("Cong.args must be a tuple")
         return self.args
 
-    def _derive_rule(self, theory) -> Sequent:
+    def _derive_rule(self, theory, derived) -> Sequent:
         hyps: frozenset = frozenset()
         lhs, rhs = [], []
         for sub in self.args:
-            s = sub.derive(theory)
+            s = derived(sub)
             if type(s.concl) is not Eq:
                 raise ValueError(f"cong needs equalities, got {s.concl!r}")
             hyps |= s.hyps
@@ -170,9 +190,9 @@ class MP(Pf):
     def _validate(self) -> tuple:
         return (self.imp, self.ant)
 
-    def _derive_rule(self, theory) -> Sequent:
-        imp = self.imp.derive(theory)
-        ant = self.ant.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        imp = derived(self.imp)
+        ant = derived(self.ant)
         if type(imp.concl) is not Implies:
             raise ValueError(f"mp needs an implication, got {imp.concl!r}")
         if imp.concl.ant != ant.concl:
@@ -191,8 +211,8 @@ class ImpIntro(Pf):
         validate(self.hyp)
         return (self.body,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        body = self.body.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        body = derived(self.body)
         return Sequent(body.hyps - {self.hyp}, Implies(self.hyp, body.concl))
 
 
@@ -208,8 +228,8 @@ class Inst(Pf):
         validate(self.term)
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s = self.sub.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s = derived(self.sub)
         for h in s.hyps:
             if self.var in h.free_vars():
                 raise ValueError(f"cannot instantiate {self.var!r}: free in hypothesis {h!r}")
@@ -247,15 +267,15 @@ class Induct(Pf):
         validate(self.pred)
         return (self.base, self.step)
 
-    def _derive_rule(self, theory) -> Sequent:
+    def _derive_rule(self, theory, derived) -> Sequent:
         # base : G |- pred[var := 0];  step : D |- pred -> pred[var := S var];
         # var not free in G u D  =>  G u D |- pred. The side condition keeps the
         # step universally quantified over `var`; without it you can derive 1 = 0.
         if theory.zero is None or type(theory.succ) is not str:
             raise ValueError("theory defines no induction principle (no zero/succ)")
         validate(theory.zero)  # the trusted theory's base term must be canonical
-        base = self.base.derive(theory)
-        step = self.step.derive(theory)
+        base = derived(self.base)
+        step = derived(self.step)
         pred_zero = self.pred.subst(self.var, theory.zero)
         pred_succ = self.pred.subst(self.var, Fun(theory.succ, (Var(self.var),)))
         if base.concl != pred_zero:
@@ -282,8 +302,8 @@ class ExFalso(Pf):
         validate(self.concl)
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s = self.sub.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s = derived(self.sub)
         if type(s.concl) is not Bottom:
             raise ValueError(f"ex falso needs a proof of Bottom, got {s.concl!r}")
         return Sequent(s.hyps, self.concl)
@@ -301,8 +321,8 @@ class RAA(Pf):
         validate(self.goal)
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s = self.sub.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s = derived(self.sub)
         if type(s.concl) is not Bottom:
             raise ValueError(f"reductio needs a proof of Bottom, got {s.concl!r}")
         return Sequent(s.hyps - {Not(self.goal)}, self.goal)
@@ -320,8 +340,8 @@ class ForallElim(Pf):
         validate(self.term)
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s = self.sub.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s = derived(self.sub)
         if type(s.concl) is not Forall:
             raise ValueError(f"forall-elim needs a universal, got {s.concl!r}")
         sig = theory.signature
@@ -349,8 +369,8 @@ class ForallIntro(Pf):
             raise TypeError("ForallIntro.var and .sort must be genuine strs")
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s = self.sub.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s = derived(self.sub)
         for h in s.hyps:
             if self.var in h.free_vars():
                 raise ValueError(f"cannot generalize {self.var!r}: free in hypothesis {h!r}")
@@ -371,10 +391,10 @@ class ExistsIntro(Pf):
         validate(self.witness)
         return (self.sub,)
 
-    def _derive_rule(self, theory) -> Sequent:
+    def _derive_rule(self, theory, derived) -> Sequent:
         if type(self.claim) is not Exists:
             raise ValueError(f"exists-intro needs an existential claim, got {self.claim!r}")
-        s = self.sub.derive(theory)
+        s = derived(self.sub)
         expected = instantiate(self.claim, self.witness)
         if s.concl != expected:
             raise ValueError(f"exists-intro: sub-proof must prove {expected!r}, got {s.concl!r}")
@@ -404,12 +424,12 @@ class ExistsElim(Pf):
             raise TypeError("ExistsElim.eigenvar must be a genuine str")
         return (self.sub_ex, self.sub_use)
 
-    def _derive_rule(self, theory) -> Sequent:
-        s_ex = self.sub_ex.derive(theory)
+    def _derive_rule(self, theory, derived) -> Sequent:
+        s_ex = derived(self.sub_ex)
         if type(s_ex.concl) is not Exists:
             raise ValueError(f"exists-elim needs an existential, got {s_ex.concl!r}")
         instance = instantiate(s_ex.concl, Var(self.eigenvar, s_ex.concl.sort))
-        s_use = self.sub_use.derive(theory)
+        s_use = derived(self.sub_use)
         if instance not in s_use.hyps:
             raise ValueError(f"exists-elim: the using proof must assume the instance {instance!r}")
         phi = s_use.concl
