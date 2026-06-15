@@ -64,6 +64,28 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## in: validate (depth recursion), derive (sub.derive), sort_of/sort_check, free_vars/subst/
 ## free_var_sorts/abstract/instantiate (Node child-recursion), format. Deep term = numeral(5000)
 ## = Fun nests. The guard currently catches RecursionError at check() top. Q wants iterative.
+## ===
+## ITERATIVE WORK IN PROGRESS. Q called out: iterative is the clean worklist/generator idiom,
+## not "ugly stacks everywhere" -- I overstated the cost. Approach:
+## - DONE: subnodes(node) generator (iterative preorder, heap stack). free_vars/free_var_sorts
+##   = comprehensions over subnodes (locally-nameless: every Var is free). Removed Var overrides.
+## - IN PROGRESS: validate gate iterative. _validate(self,depth) now RETURNS (child,depth) agenda
+##   instead of recursing; driver = while stack: pop, gate exact-type, extend(n._validate(d)).
+##   Base done; 8 concrete _validate still return None (pyright flags) -> convert each to return
+##   tuple agenda: Var/BVar/Bottom -> (); Fun -> ((a,depth)...); Eq/Implies -> 2 children at depth;
+##   Forall/Exists -> ((body, depth+1),). Then rewrite validate() driver.
+## - TODO after: subst/abstract/instantiate (rebuild -> iterative post-order), sort_of/sort_check
+##   (deep term/formula), derive (deep proof chain). THEN delete RecursionError guard in check().
+## - Verify with test_check_is_total_on_pathologically_deep_input (numeral 5000) sans guard.
+## ===
+## STEP 1 DONE (committing): subnodes generator; free_vars/free_var_sorts comprehensions;
+## validate driver iterative (agenda of (node,depth), each _validate returns child agenda).
+## 310 pass, pyright 0. The deep-term test triggers validate(deep term) -> now iterative.
+## REMAINING recursion reachable from check(): subst/abstract/instantiate (rebuild), sort_of,
+## sort_check, derive (proof chain). Must make iterative too before deleting the guard, else
+## removing it leaves uncaught RecursionError holes for deep proofs/formula-subst (dishonest
+## totality). Plan: rebuilds via iterative post-order; sort_of term-fold; sort_check formula
+## scope-stack; derive proof post-order fold. THEN delete check() guard, prove deep test green.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/

@@ -39,6 +39,18 @@ def children(node: object) -> list:
     return out
 
 
+def subnodes(node):
+    """Yield every node in the tree rooted at `node` (itself first), pre-order and
+    ITERATIVELY -- the agenda is a heap list, not the call stack, so a term or
+    formula nested thousands deep is walked without recursion. The traversal order
+    is unspecified beyond "parent before child", which is all any caller needs."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        yield n
+        stack.extend(children(n))
+
+
 def map_children(node, fn):
     """Rebuild `node`, replacing each immediate sub-node with `fn(sub-node)`."""
     if not is_dataclass(node) or isinstance(node, type):
@@ -65,12 +77,10 @@ class Node:
     __slots__ = ()
 
     def free_vars(self) -> frozenset:
-        """Free variable names. Var contributes its name (override); bound
-        variables are nameless; everything else is the union of its children."""
-        out: frozenset = frozenset()
-        for c in children(self):
-            out |= c.free_vars()
-        return out
+        """Free variable names. Locally nameless, so every `Var` in the tree is free
+        (a bound variable is a nameless `BVar`) -- the free names are just the names
+        of the `Var` subnodes. Iterative, so arbitrarily deep terms are safe."""
+        return frozenset(n.name for n in subnodes(self) if type(n) is Var)
 
     def subst(self, var: str, repl: Term) -> Node:
         """Replace the free variable `var` with `repl`. Locally nameless, so no
@@ -89,17 +99,15 @@ class Node:
 
     def free_var_sorts(self) -> frozenset:
         """Free `(name, sort)` pairs -- like `free_vars` but keeping each variable's
-        declared sort, so the checker can enforce one sort per name. Var overrides."""
-        out: frozenset = frozenset()
-        for c in children(self):
-            out |= c.free_var_sorts()
-        return out
+        declared sort, so the checker can enforce one sort per name. Iterative."""
+        return frozenset((n.name, n.sort) for n in subnodes(self) if type(n) is Var)
 
-    def _validate(self, depth: int) -> None:
-        """Exact-type well-formedness of this node's own fields, recursing through
-        the `validate` gate (which re-checks each child's exact type). Each concrete
-        node overrides; `depth` counts enclosing binders, bounding legal `BVar`s.
-        Only ever called after the gate confirms `type(self)` is canonical."""
+    def _validate(self, depth: int) -> tuple:
+        """Check this node's own fields and return the `(child, depth)` agenda the
+        gate must still validate -- it does NOT recurse, so the `validate` driver can
+        walk arbitrarily deep iteratively. `depth` counts enclosing binders, bounding
+        legal `BVar`s. Each concrete node overrides; only called after the gate
+        confirms `type(self)` is canonical."""
         raise TypeError(f"non-canonical node: {type(self).__name__}")
 
     def format(self, ctx, parent_prec: int = 0) -> str:
@@ -139,12 +147,6 @@ class Var(Term):
     def __repr__(self) -> str:
         return f"{self.name}:{self.sort}" if self.sort else self.name
 
-    def free_vars(self) -> frozenset:
-        return frozenset({self.name})
-
-    def free_var_sorts(self) -> frozenset:
-        return frozenset({(self.name, self.sort)})
-
     def subst(self, var: str, repl: Term) -> Term:
         return repl if self.name == var else self
 
@@ -156,9 +158,10 @@ class Var(Term):
             raise ValueError(f"variable {self!r} has undeclared sort {self.sort!r}")
         return self.sort
 
-    def _validate(self, depth: int) -> None:
+    def _validate(self, depth: int) -> tuple:
         _check_str(self.name, "Var.name")
         _check_str(self.sort, "Var.sort")
+        return ()
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         # a bound variable's sort is implied by its binder, so suppress it there
@@ -198,12 +201,11 @@ class Fun(Term):
                 raise ValueError(f"{self.name!r} arg has sort {actual!r}, expected {expected!r}")
         return result
 
-    def _validate(self, depth: int) -> None:
+    def _validate(self, depth: int) -> tuple:
         _check_str(self.name, "Fun.name")
         if type(self.args) is not tuple:
             raise TypeError("Fun.args must be a tuple")
-        for a in self.args:
-            validate(a, depth)
+        return tuple((a, depth) for a in self.args)
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         prec = ctx.infix.get(self.name)
@@ -243,9 +245,10 @@ class BVar(Term):
             raise ValueError(f"dangling bound variable {self.index!r} (scope depth {len(scope)})")
         return scope[self.index]
 
-    def _validate(self, depth: int) -> None:
+    def _validate(self, depth: int) -> tuple:
         if type(self.index) is not int or not (0 <= self.index < depth):
             raise TypeError(f"dangling bound variable {self.index!r} at binder depth {depth}")
+        return ()
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         raise ValueError("cannot format a dangling bound variable outside a binder")
@@ -284,9 +287,8 @@ class Eq(Formula):
         if ls != rs:
             raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {self!r}")
 
-    def _validate(self, depth: int) -> None:
-        validate(self.lhs, depth)
-        validate(self.rhs, depth)
+    def _validate(self, depth: int) -> tuple:
+        return ((self.lhs, depth), (self.rhs, depth))
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         text = f"{self.lhs.format(ctx)} {self.symbol} {self.rhs.format(ctx)}"
@@ -307,9 +309,8 @@ class Implies(Formula):
         self.ant.sort_check(sig, scope)
         self.con.sort_check(sig, scope)
 
-    def _validate(self, depth: int) -> None:
-        validate(self.ant, depth)
-        validate(self.con, depth)
+    def _validate(self, depth: int) -> tuple:
+        return ((self.ant, depth), (self.con, depth))
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         if type(self.con) is Bottom:  # Not(A) == Implies(A, Bottom): render as ¬A
@@ -333,8 +334,8 @@ class Bottom(Formula):
     def sort_check(self, sig, scope: tuple = ()) -> None:
         pass  # the formula constant carries no sort
 
-    def _validate(self, depth: int) -> None:
-        pass  # no fields to check
+    def _validate(self, depth: int) -> tuple:
+        return ()  # no fields, no children
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         return self.symbol  # an atom (prec 50): never parenthesized
@@ -373,9 +374,9 @@ class Forall(Formula):
     def sort_check(self, sig, scope: tuple = ()) -> None:
         self.body.sort_check(sig, (self.sort, *scope))
 
-    def _validate(self, depth: int) -> None:
+    def _validate(self, depth: int) -> tuple:
         _check_str(self.sort, "quantifier sort")
-        validate(self.body, depth + 1)
+        return ((self.body, depth + 1),)
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         return _format_binder(self, ctx, parent_prec)
@@ -402,9 +403,9 @@ class Exists(Formula):
     def sort_check(self, sig, scope: tuple = ()) -> None:
         self.body.sort_check(sig, (self.sort, *scope))
 
-    def _validate(self, depth: int) -> None:
+    def _validate(self, depth: int) -> tuple:
         _check_str(self.sort, "quantifier sort")
-        validate(self.body, depth + 1)
+        return ((self.body, depth + 1),)
 
     def format(self, ctx, parent_prec: int = 0) -> str:
         return _format_binder(self, ctx, parent_prec)
@@ -473,10 +474,18 @@ def validate(node: object, depth: int = 0) -> None:
     hostile __eq__-overriding subclass is rejected because its exact type is not in
     `_CANONICAL`, so its `_validate` never runs. `depth` counts enclosing binders; a
     BVar is well-formed only if its index is below it (local closure: no dangling
-    bound variable). Children are re-checked through this same gate."""
-    if type(node) not in _CANONICAL:
-        raise TypeError(f"non-canonical node: {type(node).__name__}")
-    cast(Node, node)._validate(depth)
+    bound variable).
+
+    Iterative: the agenda of `(node, depth)` still to check is a heap list, so a
+    term or formula nested thousands deep is validated without recursion. Each
+    node's `_validate` checks its own fields and returns its children's agenda; the
+    gate re-confirms every node's exact type as it is popped, before trusting it."""
+    stack: list = [(node, depth)]
+    while stack:
+        n, d = stack.pop()
+        if type(n) not in _CANONICAL:
+            raise TypeError(f"non-canonical node: {type(n).__name__}")
+        stack.extend(cast(Node, n)._validate(d))
 
 
 # ---------------------------------------------------------------------------
