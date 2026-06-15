@@ -86,6 +86,23 @@ the running scratch log. (Moved into the repo at Q's request; was at the parent.
 ## removing it leaves uncaught RecursionError holes for deep proofs/formula-subst (dishonest
 ## totality). Plan: rebuilds via iterative post-order; sort_of term-fold; sort_check formula
 ## scope-stack; derive proof post-order fold. THEN delete check() guard, prove deep test green.
+## ===
+## STEP 2 IN PROGRESS: validate_proof iterative (proof gate). Driver done (worklist over Pf,
+## gate exact-type, extend(_validate())). Converting 16 Pf._validate: -> tuple, return sub-Pf
+## agenda instead of validate_proof(sub). DONE: base, Axiom, Assume, Refl, Sym, Trans, Cong.
+## TODO: MP, ImpIntro, Inst, Induct, ExFalso, RAA, ForallElim, ForallIntro, ExistsIntro,
+## ExistsElim. Then green+commit. THEN derive iterative (post-order fold; refactor 16 rules to
+## take child sequents) -- the big one. THEN rebuilds + sort_of/sort_check iterative. THEN drop
+## guard + add deep-proof totality test. PEANO.signature is None (confirmed). Deep-term test
+## already passes via iterative validate; deep PROOF (Sym^4000) currently caught by guard only.
+## ===
+## STEP 2 DONE (committing): validate_proof iterative (all 16 _validate return sub-Pf agenda,
+## driver worklist). 310 pass/ruff/pyright0. NEXT = STEP 3 derive iterative (the hard one):
+## post-order over proof tree, each rule reads child Sequents from a map instead of
+## self.sub.derive(theory). Refactor _derive_rule(self, theory) -> _derive_rule(self, theory,
+## subseqs) where subseqs maps child-Pf id -> Sequent. Driver does post-order, applies sort_check
+## per node. Then rebuilds (subst/abstract/instantiate) + sort_of/sort_check iterative. Then drop
+## guard + add deep-proof totality test.
 
 ## FIXING (2026-06-15 pt2): Q caught `elif type` in checker.py sort walkers -- NOT
 ## polymorphism. Real failure: I left sort_of/_sort_structure/_collect_consistent/

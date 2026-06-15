@@ -61,7 +61,9 @@ class Pf:
     def _derive_rule(self, theory) -> Sequent:  # overridden by every concrete rule
         raise TypeError(f"not a derivable proof term: {self!r}")  # unreachable post-validate
 
-    def _validate(self) -> None:  # overridden by every concrete rule
+    def _validate(self) -> tuple:  # overridden by every concrete rule
+        """Validate this node's own embedded terms/formulas/labels and return its
+        sub-proof agenda (NOT recursing), so `validate_proof` walks iteratively."""
         raise TypeError(f"not a proof term: {self!r}")  # unreachable: gate checks exact type
 
 
@@ -69,8 +71,9 @@ class Pf:
 class Axiom(Pf):
     formula: Formula  # must be accepted by the theory when checked
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.formula)
+        return ()
 
     def _derive_rule(self, theory) -> Sequent:
         if not theory.accepts(self.formula):
@@ -82,8 +85,9 @@ class Axiom(Pf):
 class Assume(Pf):
     formula: Formula
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.formula)
+        return ()
 
     def _derive_rule(self, theory) -> Sequent:
         return Sequent(frozenset({self.formula}), self.formula)
@@ -93,8 +97,9 @@ class Assume(Pf):
 class Refl(Pf):
     term: Term
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.term)
+        return ()
 
     def _derive_rule(self, theory) -> Sequent:
         return Sequent(frozenset(), Eq(self.term, self.term))
@@ -104,8 +109,8 @@ class Refl(Pf):
 class Sym(Pf):
     sub: Pf
 
-    def _validate(self) -> None:
-        validate_proof(self.sub)
+    def _validate(self) -> tuple:
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         s = self.sub.derive(theory)
@@ -119,9 +124,8 @@ class Trans(Pf):
     left: Pf
     right: Pf
 
-    def _validate(self) -> None:
-        validate_proof(self.left)
-        validate_proof(self.right)
+    def _validate(self) -> tuple:
+        return (self.left, self.right)
 
     def _derive_rule(self, theory) -> Sequent:
         a = self.left.derive(theory)
@@ -138,13 +142,12 @@ class Cong(Pf):
     fun: str
     args: tuple  # tuple[Pf, ...] -- one sub-proof of an equality per slot
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         if type(self.fun) is not str:
             raise TypeError("Cong.fun must be a genuine str")
         if type(self.args) is not tuple:
             raise TypeError("Cong.args must be a tuple")
-        for a in self.args:
-            validate_proof(a)
+        return self.args
 
     def _derive_rule(self, theory) -> Sequent:
         hyps: frozenset = frozenset()
@@ -164,9 +167,8 @@ class MP(Pf):
     imp: Pf
     ant: Pf
 
-    def _validate(self) -> None:
-        validate_proof(self.imp)
-        validate_proof(self.ant)
+    def _validate(self) -> tuple:
+        return (self.imp, self.ant)
 
     def _derive_rule(self, theory) -> Sequent:
         imp = self.imp.derive(theory)
@@ -185,9 +187,9 @@ class ImpIntro(Pf):
     hyp: Formula
     body: Pf
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.hyp)
-        validate_proof(self.body)
+        return (self.body,)
 
     def _derive_rule(self, theory) -> Sequent:
         body = self.body.derive(theory)
@@ -200,11 +202,11 @@ class Inst(Pf):
     var: str
     term: Term
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         if type(self.var) is not str:
             raise TypeError("Inst.var must be a genuine str")
         validate(self.term)
-        validate_proof(self.sub)
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         s = self.sub.derive(theory)
@@ -239,12 +241,11 @@ class Induct(Pf):
     base: Pf
     step: Pf
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         if type(self.var) is not str:
             raise TypeError("Induct.var must be a genuine str")
         validate(self.pred)
-        validate_proof(self.base)
-        validate_proof(self.step)
+        return (self.base, self.step)
 
     def _derive_rule(self, theory) -> Sequent:
         # base : G |- pred[var := 0];  step : D |- pred -> pred[var := S var];
@@ -277,9 +278,9 @@ class ExFalso(Pf):
     sub: Pf
     concl: Formula
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.concl)
-        validate_proof(self.sub)
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         s = self.sub.derive(theory)
@@ -296,9 +297,9 @@ class RAA(Pf):
     goal: Formula
     sub: Pf
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.goal)
-        validate_proof(self.sub)
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         s = self.sub.derive(theory)
@@ -315,9 +316,9 @@ class ForallElim(Pf):
     sub: Pf
     term: Term
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.term)
-        validate_proof(self.sub)
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         s = self.sub.derive(theory)
@@ -343,10 +344,10 @@ class ForallIntro(Pf):
     sort: str
     sub: Pf
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         if type(self.var) is not str or type(self.sort) is not str:
             raise TypeError("ForallIntro.var and .sort must be genuine strs")
-        validate_proof(self.sub)
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         s = self.sub.derive(theory)
@@ -365,10 +366,10 @@ class ExistsIntro(Pf):
     witness: Term
     sub: Pf
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         validate(self.claim)
         validate(self.witness)
-        validate_proof(self.sub)
+        return (self.sub,)
 
     def _derive_rule(self, theory) -> Sequent:
         if type(self.claim) is not Exists:
@@ -398,11 +399,10 @@ class ExistsElim(Pf):
     sub_ex: Pf
     sub_use: Pf
 
-    def _validate(self) -> None:
+    def _validate(self) -> tuple:
         if type(self.eigenvar) is not str:
             raise TypeError("ExistsElim.eigenvar must be a genuine str")
-        validate_proof(self.sub_ex)
-        validate_proof(self.sub_use)
+        return (self.sub_ex, self.sub_use)
 
     def _derive_rule(self, theory) -> Sequent:
         s_ex = self.sub_ex.derive(theory)
@@ -442,12 +442,19 @@ def validate_proof(pf: object) -> None:
     """Structural well-formedness gate, run once up front. Rejects anything whose
     EXACT type is not a known proof term -- a hostile `__eq__`-overriding subclass
     is the attack, and a method could be overridden by exactly that subclass, so
-    the gate is exact-type, not polymorphic. Then runs the node's own `_validate`,
-    which recurses through this same gate, so every embedded term/formula/label is
-    confirmed a genuine canonical node. After this, `derive` may trust `==`."""
-    if type(pf) not in _PROOF_TYPES:
-        raise TypeError(f"not a proof term: {pf!r}")
-    cast(Pf, pf)._validate()
+    the gate is exact-type, not polymorphic. Each node's `_validate` checks its own
+    embedded terms/formulas/labels and returns its sub-proof agenda; the gate
+    re-confirms every sub-proof's exact type as it is popped. After this, `derive`
+    may trust `==`.
+
+    Iterative: the agenda is a heap list, so a proof nested thousands deep is
+    validated without recursion."""
+    stack: list = [pf]
+    while stack:
+        p = stack.pop()
+        if type(p) not in _PROOF_TYPES:
+            raise TypeError(f"not a proof term: {p!r}")
+        stack.extend(cast(Pf, p)._validate())
 
 
 # ---------------------------------------------------------------------------
