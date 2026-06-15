@@ -25,7 +25,7 @@ from cold_start.algebra import (
     mul,
 )
 from cold_start.checker import check, sort_check_formula, sort_of
-from cold_start.syntax import Eq, Fun, Implies, Var
+from cold_start.syntax import Eq, Fun, Implies, Var, exists, forall
 
 M_VARS = [Var("m", "M"), Var("n", "M"), Var("p", "M")]
 X_VARS = [Var("x", "X"), Var("y", "X")]
@@ -263,3 +263,52 @@ def test_proofs_sound_in_sorted_model(pf, data):
     assume(not seq.hyps)
     env = env_for(seq.concl, ACT_MODEL, data)
     assert evaluate(seq.concl, ACT_MODEL, env), f"UNSOUND: {seq!r} at {env}"
+
+
+# --- sorts and quantifiers COEXIST: the sort scope threads through binders -----
+# Earlier the sort-checker rejected every quantified formula. A quantifier just
+# introduces a bound variable of a known sort, so sort-checking threads that sort
+# through the binder (BVar(i) has the i-th enclosing binder's sort), exactly as
+# evaluation threads a value and instantiation threads a depth.
+
+
+def test_quantified_sorted_theorem_checks():
+    # Generalize the action identity over x:X to |- forall x:X. act(e,x) = x.
+    # The derived (quantified, sorted) sequent must pass the sort invariant.
+    seq = check(P.ForallIntro("x", "X", P.Axiom(ACT_ID)), MONOID_ACTION)
+    assert seq.concl == forall("x", "X", ACT_ID)
+    assert seq.hyps == frozenset()
+
+
+def test_quantified_well_sorted_formula_sort_checks():
+    # forall m:M. e*m = m -- under the binder the bound variable has sort M, so
+    # e*m (both M) is M, matching m. Must not raise.
+    sort_check_formula(forall("m", "M", M_LEFT_ID), ACTION_SIG)
+
+
+def test_quantified_ill_sorted_body_rejected():
+    # Under x:X, act(x, e) is ill-sorted: act expects (M, X) but its first argument
+    # is the X-sorted bound variable. The binder sort must be ENFORCED on the body.
+    bad = forall("x", "X", Eq(act(Var("x", "X"), E), Var("x", "X")))
+    try:
+        sort_check_formula(bad, ACTION_SIG)
+    except ValueError:
+        return
+    raise AssertionError("ill-sorted quantifier body was accepted")
+
+
+def test_exists_quantified_sorted_formula_sort_checks():
+    # The existential side works the same way: exists x:X. act(e,x) = x.
+    sort_check_formula(exists("x", "X", ACT_ID), ACTION_SIG)
+
+
+def test_cross_sort_instantiation_under_quantifier_rejected():
+    # The Inst cross-sort guard must see a free variable even inside a quantified
+    # conclusion: instantiating m:M with an X-term stays a sort error.
+    phi = forall("y", "X", M_LEFT_ID)  # forall y:X. e*m = m  (m:M still free)
+    bad = P.Inst(P.Assume(phi), "m", Var("z", "X"))  # m:M <- z:X
+    try:
+        check(bad, MONOID_ACTION)
+    except ValueError:
+        return
+    raise AssertionError("cross-sort instantiation under a quantifier was allowed")

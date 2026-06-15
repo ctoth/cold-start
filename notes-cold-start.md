@@ -44,6 +44,18 @@ run. Robinson/Skolem experiment is the stretch finale (Phase 4).
   via a scope of bound sorts; the walkers recurse into Forall/Exists threading
   binder sort). TODO: update ARCHITECTURE.md (derive is dict dispatch, not methods
   on Pf - trust boundary), then COMMIT checker phase.
+- PHASE 2 COMPLETE (commits 49b0439 syntax, 4108fe9 checker, e46a52e notation;
+  proof/theories/proofs/verify already clean). All core ops methods or exact-type
+  tables; no sprawling type-switch left.
+- PHASE 3 IN PROGRESS (#21), red-first. sorts x quantifiers coexistence: 5 RED
+  tests in test_sorts.py (TypeError "not a formula" - sort-checker rejects
+  quantified formulas). IMPLEMENTING: thread a SORT SCOPE through binders:
+  sort_of(t, sig, scope) handles BVar(i)->scope[i] (scope=tuple of bound sorts;
+  add scope param, update callers, keep lru_cache - test_sort_of_is_memoized still
+  passes since closed terms use scope=()); _sort_structure(f, sig, scope) recurse
+  Forall/Exists body with (f.sort,*scope); _collect_consistent + _sorts_of_var
+  recurse Forall/Exists body (free-var by name, no scope). Then GREEN + remaining
+  Phase 3 (stack-safety) + Phase 4 Robinson.
 - SYNTAX PHASE PROGRESS: checker.py + notation.py call sites migrated to methods;
   Term/Formula got covariant subst narrowing; tests sed-migrated to method form
   (incl nested f.subst(x,t).free_vars()); test_quantifiers import cleaned. TODO:

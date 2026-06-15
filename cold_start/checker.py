@@ -22,6 +22,7 @@ from functools import lru_cache
 from . import proof as P
 from .syntax import (
     Bottom,
+    BVar,
     Eq,
     Exists,
     Forall,
@@ -109,21 +110,29 @@ class Theory:
 
 
 @lru_cache(maxsize=8192)
-def sort_of(t: object, sig: Signature) -> str:
+def sort_of(t: object, sig: Signature, scope: tuple = ()) -> str:
     """The sort of a well-sorted term, or raise ValueError if ill-sorted.
 
-    Memoized: `sort_of` is a pure function of (term, signature) -- both are
-    immutable and hashable -- so each term's sort is computed once and reused.
-    This is the SOUND form of "cache well-sortedness": the verifier memoizes its
-    own computation. It never trusts a sort tag carried on an input term, which
-    would be a forgeable token (and would be wrong anyway, since sort is
-    relative to the signature). Exceptions are not cached, so ill-sorted terms
-    still raise on every check.
+    `scope` is the stack of enclosing binders' sorts (innermost first), so a bound
+    variable `BVar(i)` has sort `scope[i]` -- this is how a quantified sorted
+    formula sort-checks: descending under `Forall(sort, .)`/`Exists(sort, .)` pushes
+    `sort` onto the scope. A closed term has `scope = ()`.
+
+    Memoized: `sort_of` is a pure function of (term, signature, scope) -- all
+    immutable and hashable -- so each term's sort is computed once and reused. This
+    is the SOUND form of "cache well-sortedness": the verifier memoizes its own
+    computation. It never trusts a sort tag carried on an input term, which would be
+    a forgeable token (and would be wrong anyway, since sort is relative to the
+    signature). Exceptions are not cached, so ill-sorted terms still raise.
     """
     if type(t) is Var:
         if t.sort not in sig.sorts:
             raise ValueError(f"variable {t!r} has undeclared sort {t.sort!r}")
         return t.sort
+    if type(t) is BVar:
+        if not (0 <= t.index < len(scope)):
+            raise ValueError(f"dangling bound variable {t.index!r} (scope depth {len(scope)})")
+        return scope[t.index]
     if type(t) is Fun:
         r = sig.rank(t.name)
         if r is None:
@@ -132,24 +141,29 @@ def sort_of(t: object, sig: Signature) -> str:
         if len(t.args) != len(arg_sorts):
             raise ValueError(f"{t.name!r} expects {len(arg_sorts)} args, got {len(t.args)}")
         for a, expected in zip(t.args, arg_sorts, strict=True):
-            actual = sort_of(a, sig)
+            actual = sort_of(a, sig, scope)
             if actual != expected:
                 raise ValueError(f"{t.name!r} arg has sort {actual!r}, expected {expected!r}")
         return result
     raise TypeError(f"not a term: {t!r}")
 
 
-def _sort_structure(f: object, sig: Signature) -> None:
-    """Structural well-sortedness: each equality is between same-sort terms."""
+def _sort_structure(f: object, sig: Signature, scope: tuple = ()) -> None:
+    """Structural well-sortedness: each equality is between same-sort terms.
+    `scope` is the stack of enclosing binders' sorts; descending under a quantifier
+    pushes its bound sort, so the body (whose bound variable is `BVar(0)`) is
+    checked with that sort in scope -- sorts and quantifiers coexist."""
     if type(f) is Eq:
-        ls, rs = sort_of(f.lhs, sig), sort_of(f.rhs, sig)
+        ls, rs = sort_of(f.lhs, sig, scope), sort_of(f.rhs, sig, scope)
         if ls != rs:
             raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {f!r}")
     elif type(f) is Implies:
-        _sort_structure(f.ant, sig)
-        _sort_structure(f.con, sig)
+        _sort_structure(f.ant, sig, scope)
+        _sort_structure(f.con, sig, scope)
     elif type(f) is Bottom:
         pass  # the formula constant carries no sort
+    elif type(f) is Forall or type(f) is Exists:
+        _sort_structure(f.body, sig, (f.sort, *scope))
     else:
         raise TypeError(f"not a formula: {f!r}")
 
@@ -177,6 +191,8 @@ def _collect_consistent(obj: object, acc: dict) -> None:
     elif type(obj) is Implies:
         _collect_consistent(obj.ant, acc)
         _collect_consistent(obj.con, acc)
+    elif type(obj) is Forall or type(obj) is Exists:
+        _collect_consistent(obj.body, acc)  # bound vars are nameless BVars; only free Vars collect
 
 
 def sort_check_formula(f: object, sig: Signature) -> None:
@@ -210,6 +226,8 @@ def _sorts_of_var(obj: object, name: str, out: set) -> None:
     elif type(obj) is Implies:
         _sorts_of_var(obj.ant, name, out)
         _sorts_of_var(obj.con, name, out)
+    elif type(obj) is Forall or type(obj) is Exists:
+        _sorts_of_var(obj.body, name, out)
 
 
 # Per-rule structural validators, keyed by EXACT proof type below. Each checks
@@ -449,7 +467,7 @@ def _d_inst(pf: P.Inst, theory: Theory) -> Sequent:
         var_sorts: set = set()
         _sorts_of_var(s.concl, pf.var, var_sorts)
         if var_sorts:
-            term_sort = sort_of(pf.term, sig)
+            term_sort = sort_of(pf.term, sig, ())
             if term_sort not in var_sorts:
                 raise ValueError(
                     f"cannot instantiate {pf.var!r}:{var_sorts} with a term of sort {term_sort!r}"
@@ -509,7 +527,7 @@ def _d_forallelim(pf: P.ForallElim, theory: Theory) -> Sequent:
         raise ValueError(f"forall-elim needs a universal, got {s.concl!r}")
     sig = theory.signature
     if sig is not None and s.concl.sort:
-        t_sort = sort_of(pf.term, sig)
+        t_sort = sort_of(pf.term, sig, ())
         if t_sort != s.concl.sort:
             raise ValueError(
                 f"cannot instantiate forall :{s.concl.sort!r} with a term of sort {t_sort!r}"
@@ -537,7 +555,7 @@ def _d_existsintro(pf: P.ExistsIntro, theory: Theory) -> Sequent:
         raise ValueError(f"exists-intro: sub-proof must prove {expected!r}, got {s.concl!r}")
     sig = theory.signature
     if sig is not None and pf.claim.sort:
-        t_sort = sort_of(pf.witness, sig)
+        t_sort = sort_of(pf.witness, sig, ())
         if t_sort != pf.claim.sort:
             raise ValueError(
                 f"exists-intro witness has sort {t_sort!r}, expected {pf.claim.sort!r}"
