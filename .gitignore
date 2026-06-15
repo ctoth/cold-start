@@ -15,3 +15,5 @@ temp/
 # coverage / tooling output
 .coverage
 htmlcov/
+papers/**/pngs/
+papers/**/*.pdf
