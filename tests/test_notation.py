@@ -111,3 +111,31 @@ def test_formulas_roundtrip_through_notation(formula: Formula):
 def test_symbols_are_declared_on_formula_classes(cls):
     assert isinstance(cls.symbol, str)
     assert cls.symbol
+
+
+def test_quantifier_repr_uses_the_locally_nameless_form():
+    # Regression: the binder dataclasses must carry repr=False so the iterative
+    # Node.__repr__ / _repr_with is used, not a dataclass-generated recursive repr.
+    f = forall("x", "N", Eq(Var("x", "N"), Var("x", "N")))
+    assert repr(f) == "(forall :N. #0 = #0)"
+    g = exists("y", "", Eq(Var("y"), Var("y")))
+    assert repr(g) == "(exists. #0 = #0)"
+
+
+def test_deep_formula_formats_without_recursion():
+    """The notation printer is iterative: a formula nested far deeper than the
+    recursion limit renders without blowing the stack (implications, no binders --
+    binder fresh-naming is a separate, quadratic concern)."""
+    import sys as _sys
+
+    f: Formula = Eq(Var("x"), Var("x"))  # not Bottom: avoid the ¬ (Not) sugar
+    for _ in range(50_000):
+        f = Implies(Bottom(), f)
+    old = _sys.getrecursionlimit()
+    _sys.setrecursionlimit(300)
+    try:
+        rendered = format_formula(f)
+    finally:
+        _sys.setrecursionlimit(old)
+    assert isinstance(rendered, str)
+    assert rendered.count("→") == 50_000
