@@ -24,7 +24,6 @@ from .syntax import (
     Var,
     exists,
     forall,
-    instantiate,
 )
 
 
@@ -318,20 +317,50 @@ class _Parser:
 
 @dataclass(slots=True)
 class _Printer:
-    """Notation-owned formatting state."""
+    """Notation-owned formatting state.
+
+    Two things keep printing linear in the tree size, even under deep binder nesting:
+
+    * Bound occurrences are never re-opened. A `BVar(i)` is rendered straight from
+      `scope` -- the stack of `(name, sort)` for the enclosing binders -- so there is
+      no per-binder `instantiate` (which would rebuild an O(subtree) body and make
+      formatting O(n^2)). `scope[-1]` is the nearest binder, so `BVar(i)` reads
+      `scope[-1 - i]`.
+    * A binder's surface name is chosen by *depth*, not by rescanning the body for
+      free names. The formula's free names are computed once into `free`, and the
+      d-th nested binder gets the d-th name not in `free` (cached in `_names`).
+      Enclosing binders sit at smaller depths and so hold different names, and every
+      name dodges the free set -- collision-free, at O(1) amortized per binder."""
 
     constants: frozenset[str]
-    bound: dict[str, str] = field(default_factory=dict)
-    used: set[str] = field(default_factory=set)
+    free: frozenset[str] = frozenset()  # free var names of the whole formula
+    scope: list[tuple[str, str]] = field(default_factory=list)  # (name, sort) of enclosing binders
+    _names: list[str] = field(default_factory=list)  # binder name by depth (cached)
+    _raw_pos: int = 0  # cursor into the raw candidate sequence
 
     def name(self, s: str) -> str:
         return _format_name(s)
 
-    def fresh(self, avoid: set[str] | frozenset[str]) -> str:
-        return _fresh_name(avoid)
+    def binder_name(self, depth: int) -> str:
+        while len(self._names) <= depth:
+            self._names.append(self._next_name())
+        return self._names[depth]
+
+    def _next_name(self) -> str:
+        # raw sequence: the readable candidates, then x0, x1, ...; skip free names.
+        # The cursor only advances, so cached names stay distinct across depths.
+        ncand = len(_NAME_CANDIDATES)
+        while True:
+            i = self._raw_pos
+            self._raw_pos += 1
+            cand = _NAME_CANDIDATES[i] if i < ncand else f"x{i - ncand}"
+            if cand not in self.free:
+                return cand
 
 
 def _format_node(node: Term | Formula, printer: _Printer, parent_prec: int = 0) -> str:
+    # free names computed ONCE here, not rescanned per binder; binder names avoid them
+    printer.free = node.free_vars()
     work: list = [("eval", node, parent_prec)]
     values: list[str] = []
     while work:
@@ -348,16 +377,22 @@ def _format_node(node: Term | Formula, printer: _Printer, parent_prec: int = 0) 
 
 def _format_push(node: Term | Formula, printer: _Printer, parent_prec: int, work: list) -> None:
     if type(node) is Var:
-        sort = "" if printer.bound.get(node.name) == node.sort else node.sort
+        # a free variable: render with its sort (bound occurrences are BVar, below)
         name = printer.name(node.name)
-        rendered = f"{name}:{printer.name(sort)}" if sort else name
+        rendered = f"{name}:{printer.name(node.sort)}" if node.sort else name
         work.append(("combine", lambda args: rendered, 0))
         return
     if type(node) is Fun:
         _format_fun_push(node, printer, parent_prec, work)
         return
     if type(node) is BVar:
-        raise ValueError("cannot format a dangling bound variable outside a binder")
+        # bound occurrence: its binder's name, read straight from the scope stack
+        # (scope[-1] is the nearest binder), so no per-binder `instantiate` is needed
+        if not 0 <= node.index < len(printer.scope):
+            raise ValueError("cannot format a dangling bound variable outside a binder")
+        rendered = printer.name(printer.scope[-1 - node.index][0])
+        work.append(("combine", lambda args: rendered, 0))
+        return
     if type(node) is Eq:
         _format_eq_push(node, parent_prec, work)
         return
@@ -431,33 +466,18 @@ def _format_implies_push(node: Implies, parent_prec: int, work: list) -> None:
 def _format_binder_push(
     binder: Forall | Exists, printer: _Printer, parent_prec: int, work: list
 ) -> None:
-    name = printer.fresh(binder.body.free_vars() | printer.used)
-    printer.bound[name] = binder.sort
-    printer.used.add(name)
-    opened = instantiate(binder, Var(name, binder.sort))
+    name = printer.binder_name(len(printer.scope))  # depth-indexed: O(1), avoids `free` + enclosing
+    printer.scope.append((name, binder.sort))
 
-    def combine(args, name=name):
+    def combine(args):
+        printer.scope.pop()
         body = args[0]
-        printer.used.discard(name)
-        printer.bound.pop(name, None)
         sort = f":{printer.name(binder.sort)}" if binder.sort else ""
         text = f"{binder.symbol}{printer.name(name)}{sort}. {body}"
         return f"({text})" if 5 < parent_prec else text
 
     work.append(("combine", combine, 1))
-    work.append(("eval", opened, 0))
-
-
-def _fresh_name(avoid: set[str] | frozenset[str]) -> str:
-    for name in _NAME_CANDIDATES:
-        if name not in avoid:
-            return name
-    i = 0
-    while True:
-        name = f"x{i}"
-        if name not in avoid:
-            return name
-        i += 1
+    work.append(("eval", binder.body, 0))  # the ORIGINAL body (BVar intact) -- no instantiate
 
 
 def _format_name(name: str) -> str:

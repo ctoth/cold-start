@@ -143,3 +143,25 @@ def test_deep_formula_formats_without_recursion():
         _sys.setrecursionlimit(old)
     assert isinstance(rendered, str)
     assert rendered.count("→") == 50_000
+
+
+def test_deep_nested_binders_format_without_recursion():
+    """Binders nested far deeper than the recursion limit format without blowing the
+    stack -- and without the per-binder `instantiate`/free-var rescan that made this
+    O(n^2). A bound occurrence (BVar) is rendered from the scope stack, so each
+    binder costs O(1). Format-only: the parser is recursive, so we do not parse back."""
+    import sys as _sys
+
+    from cold_start.syntax import BVar, Forall
+
+    f: Formula = Eq(BVar(0), Var("a"))  # innermost references the nearest binder
+    for _ in range(20_000):
+        f = Forall("N", f)
+    old = _sys.getrecursionlimit()
+    _sys.setrecursionlimit(300)
+    try:
+        rendered = format_formula(f)
+    finally:
+        _sys.setrecursionlimit(old)
+    assert rendered.count("∀") == 20_000
+    assert rendered.endswith("= a")  # the free var still prints as itself
