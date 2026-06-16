@@ -149,7 +149,7 @@ def test_deep_nested_binders_format_without_recursion():
     """Binders nested far deeper than the recursion limit format without blowing the
     stack -- and without the per-binder `instantiate`/free-var rescan that made this
     O(n^2). A bound occurrence (BVar) is rendered from the scope stack, so each
-    binder costs O(1). Format-only: the parser is recursive, so we do not parse back."""
+    binder costs O(1)."""
     import sys as _sys
 
     from cold_start.syntax import BVar, Forall
@@ -165,3 +165,38 @@ def test_deep_nested_binders_format_without_recursion():
         _sys.setrecursionlimit(old)
     assert rendered.count("∀") == 20_000
     assert rendered.endswith("= a")  # the free var still prints as itself
+
+
+def test_deep_implication_chain_parses_without_recursion():
+    """The parser is iterative (Pratt): a right-nested implication chain far deeper
+    than the recursion limit parses without blowing the stack."""
+    import sys as _sys
+
+    text = " -> ".join(["x = x"] * 5000)  # 4999 right-nested implications
+    old = _sys.getrecursionlimit()
+    _sys.setrecursionlimit(200)
+    try:
+        f = parse_formula(text)
+    finally:
+        _sys.setrecursionlimit(old)
+    assert isinstance(f, Formula)
+    assert format_formula(f).count("→") == 4999
+
+
+def test_deep_parenthesised_notation_round_trips_without_recursion():
+    """Deeply nested *grouping* -- the case the old backtracking parser recursed on
+    (left-nested implications format to nested parens) -- parses back to the same
+    tree under a tiny recursion limit. Exercises the no-backtracking `(...)` path."""
+    import sys as _sys
+
+    f: Formula = Eq(Var("a"), Var("a"))
+    for _ in range(3000):
+        f = Implies(f, Eq(Var("a"), Var("a")))  # left-nested -> deep parens when printed
+    text = format_formula(f)
+    old = _sys.getrecursionlimit()
+    _sys.setrecursionlimit(200)
+    try:
+        parsed = parse_formula(text)
+    finally:
+        _sys.setrecursionlimit(old)
+    assert parsed == f

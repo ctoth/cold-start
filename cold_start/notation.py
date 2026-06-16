@@ -8,7 +8,7 @@ or proved.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import NoReturn
+from typing import NoReturn, cast
 
 from .syntax import (
     Bottom,
@@ -142,7 +142,27 @@ def _is_name_continue(ch: str) -> bool:
     return ch == "_" or ch == "'" or ch.isalpha() or ch.isdecimal()
 
 
+# Parser binding powers (higher binds tighter), one unified expression grammar
+# over terms and formulas. `->` is right-associative and loosest; `=`/`≠` sit
+# between it and the term operators. `not`/`∀`/`∃` are prefixes -- `not` binds an
+# operand down to `_PREC_NOT` (it grabs an equality but not an implication), while a
+# quantifier body is greedy (a full implication). Function args and a bare term
+# parse at `_PREC_ADD`, stopping before `=`/`->`.
+_PREC_IMPLIES = 1
+_PREC_NOT = 2  # not's operand: equalities, not implications
+_PREC_ADD = 3  # also: function args and top-level terms
+_OP_FUNC_NAMES = ("+", "-", "*", "/")
+_PENDING = object()  # a nud that pushed sub-goals rather than producing a value now
+
+
 class _Parser:
+    """Iterative precedence-climbing (Pratt) parser. The recursion of a hand-rolled
+    descent is replaced by an explicit control stack, so input nested arbitrarily
+    deep parses without touching the call stack. One expression grammar covers both
+    terms and formulas; the node constructors enforce the typing (`->` needs
+    formulas, `+`/`=` need terms), and `(...)` is just a grouped expression -- no
+    speculative backtracking."""
+
     def __init__(self, text: str, constants: frozenset[str]) -> None:
         self.tokens = _tokenize(text)
         self.i = 0
@@ -150,19 +170,18 @@ class _Parser:
         self.bound: dict[str, list[str]] = {}
 
     def parse_formula(self) -> Formula:
-        return self._parse_implication()
+        node = self._run(0)
+        if not isinstance(node, Formula):
+            self.error("expected a formula")
+        return node
 
-    def parse_term(self, min_prec: int = 0) -> Term:
-        left = self._parse_term_atom()
-        while self.peek().text in _INFIX_PRECEDENCE:
-            op = self.peek().text
-            prec = _INFIX_PRECEDENCE[op]
-            if prec < min_prec:
-                break
-            self.advance()
-            right = self.parse_term(prec + 1)
-            left = Fun(op, (left, right))
-        return left
+    def parse_term(self) -> Term:
+        node = self._run(_PREC_ADD)  # term level: bind +-*/, stop before = and ->
+        if not isinstance(node, Term):
+            self.error("expected a term")
+        return node
+
+    # --- token helpers ------------------------------------------------------
 
     def expect_eof(self) -> None:
         if self.peek().kind != _EOF:
@@ -200,26 +219,111 @@ class _Parser:
         tok = self.peek()
         raise ParseError(f"{message} at column {tok.pos + 1}")
 
-    def _parse_implication(self) -> Formula:
-        left = self._parse_unary_formula()
-        if self.peek().text in _IMPLIES:
-            self.advance()
-            return Implies(left, self._parse_implication())
-        return left
+    def bound_sort(self, name: str) -> str | None:
+        sorts = self.bound.get(name)
+        if not sorts:
+            return None
+        return sorts[-1]
 
-    def _parse_unary_formula(self) -> Formula:
+    # --- the iterative Pratt core -------------------------------------------
+
+    def _infix_prec(self, text: str) -> int | None:
+        if text in _IMPLIES:
+            return _PREC_IMPLIES
+        if text == Eq.symbol or text in _NEQ:
+            return 2
+        if text in ("+", "-"):
+            return 3
+        if text in ("*", "/"):
+            return 4
+        return None
+
+    def _run(self, min_prec: int) -> Term | Formula:
+        # The control stack interleaves goals ("expr"/"atom") with continuations
+        # ("loop"/"combine"/"close"/"not"/"quant"/"arg"). `result` carries the most
+        # recently completed node from a goal to the continuation that consumes it.
+        ctrl: list = [("expr", min_prec)]
+        result: object = _PENDING
+        while ctrl:
+            tag, *rest = ctrl.pop()
+            if tag == "expr":
+                ctrl.append(("loop", rest[0]))
+                ctrl.append(("atom",))
+            elif tag == "atom":
+                value = self._nud(ctrl)
+                if value is not _PENDING:
+                    result = value
+            elif tag == "loop":
+                min_p = rest[0]
+                prec = self._infix_prec(self.peek().text)
+                if prec is not None and prec >= min_p:
+                    op = self.advance().text
+                    nxt = prec if prec == _PREC_IMPLIES else prec + 1  # `->` right-assoc
+                    ctrl.append(("combine", op, result, min_p))
+                    ctrl.append(("expr", nxt))
+                # else: `result` is the finished operand; the next continuation reads it
+            elif tag == "combine":
+                op, left, min_p = rest
+                result = self._combine(op, left, result)
+                ctrl.append(("loop", min_p))  # keep folding more infix at this level
+            elif tag == "close":
+                self.expect(")")  # `result` is the inner expression, unchanged
+            elif tag == "not":
+                if not isinstance(result, Formula):
+                    self.error("negation needs a formula")
+                result = Not(result)
+            elif tag == "quant":
+                result = self._finish_quant(rest[0], rest[1], result)
+            elif tag == "arg":
+                result = self._continue_call(rest[0], rest[1], result, ctrl)
+        return cast(Term | Formula, result)
+
+    def _nud(self, ctrl: list) -> object:
+        """Parse a nud (atom / prefix). Returns the node, or `_PENDING` after pushing
+        sub-goals whose result will be filled in later."""
         tok = self.peek()
-        if tok.text in _NOT:
+        text = tok.text
+        if text == Bottom.symbol:
             self.advance()
-            return Not(self._parse_unary_formula())
-        if tok.text in _FORALL:
-            return self._parse_quantifier(forall)
-        if tok.text in _EXISTS:
-            return self._parse_quantifier(exists)
-        return self._parse_formula_atom()
+            return Bottom()
+        if text in _NOT:
+            self.advance()
+            ctrl.append(("not",))
+            ctrl.append(("expr", _PREC_NOT))
+            return _PENDING
+        if text in _FORALL:
+            return self._begin_quant(ctrl, forall)
+        if text in _EXISTS:
+            return self._begin_quant(ctrl, exists)
+        if text == "(":
+            self.advance()
+            ctrl.append(("close",))
+            ctrl.append(("expr", 0))  # a grouped expression: term or formula
+            return _PENDING
+        # a name, or an operator symbol used as a function name (e.g. +(a, b))
+        if tok.kind == "NAME" or (text in _OP_FUNC_NAMES and self.peek_next().text == "("):
+            name = self.advance().text
+            if self.accept("("):
+                if self.accept(")"):
+                    return Fun(name, ())
+                ctrl.append(("arg", name, []))
+                ctrl.append(("expr", _PREC_ADD))
+                return _PENDING
+            if name.isdecimal() or name in self.constants:
+                return Fun(name, ())
+            sort = ""
+            if self.accept(":"):
+                sort = self.expect_name()
+            bound = self.bound_sort(name)
+            if bound is not None:
+                if sort and sort != bound:
+                    self.error(f"bound variable {name!r} has sort {bound!r}, not {sort!r}")
+                return Var(name, bound)
+            return Var(name, sort)
+        self.error(f"expected term or formula, got {text!r}")
 
-    def _parse_quantifier(self, ctor) -> Formula:
-        self.advance()
+    def _begin_quant(self, ctrl: list, ctor) -> object:
+        self.advance()  # the quantifier symbol
         specs: list[tuple[str, str]] = []
         while True:
             name = self.expect_name()
@@ -229,90 +333,52 @@ class _Parser:
             specs.append((name, sort))
             if self.accept(","):
                 continue
-            if self.peek().text == ".":
-                break
+            break
         self.expect(".")
         for name, sort in specs:
             self.bound.setdefault(name, []).append(sort)
-        try:
-            body = self._parse_implication()
-        finally:
-            for name, _sort in reversed(specs):
-                self.bound[name].pop()
-                if not self.bound[name]:
-                    del self.bound[name]
+        ctrl.append(("quant", specs, ctor))
+        ctrl.append(("expr", 0))  # body is greedy: a full implication
+        return _PENDING
+
+    def _finish_quant(self, specs: list, ctor, body: object) -> Formula:
+        if not isinstance(body, Formula):
+            self.error("quantifier body must be a formula")
+        for name, _sort in reversed(specs):
+            self.bound[name].pop()
+            if not self.bound[name]:
+                del self.bound[name]
         for name, sort in reversed(specs):
             body = ctor(name, sort, body)
-        return body
+        return cast(Formula, body)
 
-    def _parse_formula_atom(self) -> Formula:
-        if self.peek().text == Bottom.symbol:
-            self.advance()
-            return Bottom()
-        grouped = self._try_grouped_formula()
-        if grouped is not None:
-            return grouped
-        left = self.parse_term()
-        if self.accept(Eq.symbol):
-            return Eq(left, self.parse_term())
-        if self.peek().text in _NEQ:
-            self.advance()
-            return Not(Eq(left, self.parse_term()))
-        self.error("expected formula")
+    def _continue_call(self, name: str, acc: list, arg: object, ctrl: list) -> object:
+        if not isinstance(arg, Term):
+            self.error("function arguments must be terms")
+        acc = [*acc, arg]
+        if self.accept(")"):
+            return Fun(name, tuple(acc))
+        self.expect(",")
+        ctrl.append(("arg", name, acc))
+        ctrl.append(("expr", _PREC_ADD))
+        return _PENDING
 
-    def _try_grouped_formula(self) -> Formula | None:
-        if self.peek().text != "(":
-            return None
-        start = self.i
-        try:
-            self.advance()
-            inner = self._parse_implication()
-            self.expect(")")
-        except ParseError:
-            self.i = start
-            return None
-        if self.peek().text in {Eq.symbol, *_NEQ}:
-            self.i = start
-            return None
-        return inner
-
-    def _parse_term_atom(self) -> Term:
-        tok = self.peek()
-        if self.accept("("):
-            inner = self.parse_term()
-            self.expect(")")
-            return inner
-        if tok.kind == "NAME" or (tok.text in _INFIX_PRECEDENCE and self.peek_next().text == "("):
-            name = self.advance().text
-            if self.accept("("):
-                args: list[Term] = []
-                if not self.accept(")"):
-                    while True:
-                        args.append(self.parse_term())
-                        if self.accept(")"):
-                            break
-                        self.expect(",")
-                return Fun(name, tuple(args))
-            if name.isdecimal() or name in self.constants:
-                return Fun(name, ())
-            sort = ""
-            if self.accept(":"):
-                sort = self.expect_name()
-            bound_sort = self.bound_sort(name)
-            if bound_sort is not None:
-                if sort and sort != bound_sort:
-                    self.error(
-                        f"bound variable {name!r} has sort {bound_sort!r}, not {sort!r}"
-                    )
-                return Var(name, bound_sort)
-            return Var(name, sort)
-        self.error(f"expected term, got {tok.text!r}")
-
-    def bound_sort(self, name: str) -> str | None:
-        sorts = self.bound.get(name)
-        if not sorts:
-            return None
-        return sorts[-1]
+    def _combine(self, op: str, left: object, right: object) -> Term | Formula:
+        if op in _IMPLIES:
+            if not (isinstance(left, Formula) and isinstance(right, Formula)):
+                self.error("implication needs formulas on both sides")
+            return Implies(left, right)
+        if op == Eq.symbol:
+            if not (isinstance(left, Term) and isinstance(right, Term)):
+                self.error("equality needs terms on both sides")
+            return Eq(left, right)
+        if op in _NEQ:
+            if not (isinstance(left, Term) and isinstance(right, Term)):
+                self.error("inequality needs terms on both sides")
+            return Not(Eq(left, right))
+        if not (isinstance(left, Term) and isinstance(right, Term)):
+            self.error(f"{op!r} needs terms on both sides")
+        return Fun(op, (left, right))
 
 
 @dataclass(slots=True)
