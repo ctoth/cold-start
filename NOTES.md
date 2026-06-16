@@ -7,12 +7,11 @@ trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
 the verifier, not the object.
 
 ## Current state: DONE & GREEN
-- pytest: **56 passed**
-- Attack #6 (Q): `Fun("f", list)` aliases a mutable list into a term; mutating
-  it later retroactively rewrites a proved term. Fixed two ways: Fun.__post_init__
-  snapshots args to a tuple (immutable by construction), AND validate_term's
-  exact `type(args) is tuple` is the backstop against object.__new__ bypass.
-  Tests: test_term_args_snapshotted_*, test_forged_fun_with_mutable_args_rejected.
+- pytest: **317 passed**
+- Regression coverage includes exact-type subclass attacks, mutable-args
+  aliasing, deep non-recursive traversal, hamblin byte round-trips, cross-process
+  verification, quantifier rules, classical rules, many-sorted checking, model
+  soundness probes, rings/monoids, Presburger/Peano, and the Robinson bridge.
 - ruff check .: clean
 - pyright (repo-rooted CLI, uses pyrightconfig.json): **0 errors, 0 warnings**
   (NOTE: the editor's inline Pyright is rooted at parent `code\` and ignores our
@@ -20,20 +19,25 @@ the verifier, not the object.
    is authoritative.)
 
 ## Layout
-- `syntax.py`  — language: Var/Fun, Eq/Implies, free_vars/subst, EXACT-type
-                 `validate_term`/`validate_formula`, hamblin byte ser/deser.
-                 Not trusted.
-- `proof.py`   — proof terms (Axiom/Assume/Refl/Sym/Trans/Cong/MP/ImpIntro/
-                 Inst) + to_bytes/from_bytes. Not trusted.
-- `checker.py` — TRUSTED CORE (~190 lines): Sequent, Theory, validate_proof
-                 (one up-front structural pass), check(), pure `_derive`.
-- `peano.py`   — theory: 0/S/+, ADD_ZERO_F, ADD_SUCC_F, PEANO's zero/succ
-                 induction data, induction() builder.
-- `proofs.py`  — left_identity_proof(): 0 + n = n by induction.
+- `syntax.py`  — terms/formulas: Var/Fun/BVar, Eq/Implies/Bottom, locally
+                 nameless Forall/Exists, `Not` sugar, structural operations,
+                 exact-type validation, hamblin byte ser/deser. Not trusted.
+- `proof.py`   — proof terms and rule methods: equality, implication,
+                 induction, classical logic, quantifiers, to_bytes/from_bytes.
+                 Not trusted as data; trusted only after the exact-type gate.
+- `sequent.py` — plain Sequent data plus sort checking.
+- `checker.py` — TRUSTED CORE: Signature, Theory, sort_check_formula, and
+                 check() running validate_proof before proof derivation.
+- `presburger.py` — 0/S/+ arithmetic with successor axioms and induction data.
+- `peano.py`   — Presburger plus recursive multiplication axioms.
+- `robinson.py` — `(1, S, ·)` Robinson arithmetic experiment eliminating `+`
+                 into a definable bridge.
+- `algebra.py` — monoids, rings, sorted monoid actions, and finite models.
+- `notation.py` — untrusted human parser/formatter for terms and formulas.
+- `proofs.py`  — worked proof constructors such as left_identity_proof().
 - `verify.py`  — CLI: checks a binary proof in a SEPARATE process.
-- `test_checker.py` — 25 example/regression tests.
-- `test_model.py` — 17 model-level tests.
-- `test_properties.py` — 14 Hypothesis property tests.
+- `tests/`     — example/regression tests, property tests, model probes,
+                 notation tests, quantifier/classical/sort/algebra coverage.
 - `pyproject.toml` (ruff/pytest), `pyrightconfig.json`.
 
 ## History / decisions
@@ -58,17 +62,16 @@ the verifier, not the object.
    (validated), so all are exact-type canonical with honest hash/eq.
    Proved with 2 new tests (test_lying_formula_*), incl. a sanity assertion
    that the malicious formula really strips h (so the sentinel isn't vacuous).
-   STATUS: not yet committed -- commit next.
 
 ## Soundness model (current)
 Trusted base = checker.py (validate_proof + _derive) + each Theory's concrete
-axioms and induction data. Serialized path immune by construction (from_dict
-only mints Var/Fun). In-process path now immune via exact-type validation.
+axioms and induction data. Serialized path decodes hamblin bytes into canonical
+nodes. In-process path is protected by exact-type validation before equality,
+hashing, or rule methods are trusted.
 
 ## Next step (not started)
 - `n + 0 = 0 + n` -> commutativity of `+`, then associativity. First proof that
-  exercises nested induction. (Alternatively: add `Not` to state 0 != S(x) and
-  successor injectivity.)
+  exercises nested induction.
 - Possible: proof-term pretty-printer; non-trusted tactics layer emitting Pf.
 
 ## Blockers

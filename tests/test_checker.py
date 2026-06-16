@@ -265,7 +265,7 @@ def test_implies_intro_discharges():
     assert seq.hyps == frozenset()
 
 
-# --- the induction schema recognizer --------------------------------------
+# --- the induction rule ----------------------------------------------------
 
 
 def _left_identity_base_and_step():
