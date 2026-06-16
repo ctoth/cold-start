@@ -8,11 +8,14 @@ or proved.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import ClassVar, NoReturn
+from typing import NoReturn
 
 from .syntax import (
     Bottom,
+    BVar,
     Eq,
+    Exists,
+    Forall,
     Formula,
     Fun,
     Implies,
@@ -21,6 +24,7 @@ from .syntax import (
     Var,
     exists,
     forall,
+    instantiate,
 )
 
 
@@ -66,12 +70,12 @@ def parse_formula(text: str, *, constants: frozenset[str] = _DEFAULT_CONSTANTS) 
 
 def format_term(term: Term, *, constants: frozenset[str] = _DEFAULT_CONSTANTS) -> str:
     """Render a term in notation accepted by :func:`parse_term`."""
-    return term.format(_Printer(constants))
+    return _format_node(term, _Printer(constants))
 
 
 def format_formula(formula: Formula, *, constants: frozenset[str] = _DEFAULT_CONSTANTS) -> str:
     """Render a formula in notation accepted by :func:`parse_formula`."""
-    return formula.format(_Printer(constants))
+    return _format_node(formula, _Printer(constants))
 
 
 def _tokenize(text: str) -> list[_Token]:
@@ -312,32 +316,136 @@ class _Parser:
         return sorts[-1]
 
 
-# Pretty-printing is a polymorphic `node.format(ctx, parent_prec)` method on each
-# syntax node: structural precedence is intrinsic to the operator, so it belongs on
-# the node. The notation-specific *lexical* concerns the core syntax must not own --
-# name quoting, the infix-symbol table, the constant set, fresh-name choice, the
-# bound-name stack -- are carried here, in this printer context threaded as `ctx`.
-
-
 @dataclass(slots=True)
 class _Printer:
-    """The lexical side of formatting, handed to each node's `format` method.
-
-    `constants` are the symbols printed bare (e.g. ``0``, ``e``); `bound` maps an
-    open binder's surface name to its sort (so a bound variable hides its sort);
-    `used` tracks names in play so a binder can choose a fresh one. `infix` and the
-    name-quoting / fresh-name helpers are the rest of the surface notation."""
+    """Notation-owned formatting state."""
 
     constants: frozenset[str]
     bound: dict[str, str] = field(default_factory=dict)
     used: set[str] = field(default_factory=set)
-    infix: ClassVar[dict[str, int]] = _INFIX_PRECEDENCE
 
     def name(self, s: str) -> str:
         return _format_name(s)
 
     def fresh(self, avoid: set[str] | frozenset[str]) -> str:
         return _fresh_name(avoid)
+
+
+def _format_node(node: Term | Formula, printer: _Printer, parent_prec: int = 0) -> str:
+    work: list = [("eval", node, parent_prec)]
+    values: list[str] = []
+    while work:
+        item = work.pop()
+        if item[0] == "eval":
+            _format_push(item[1], printer, item[2], work)
+        else:
+            _, fn, nargs = item
+            args = [values.pop() for _ in range(nargs)]
+            args.reverse()
+            values.append(fn(args))
+    return values[0]
+
+
+def _format_push(node: Term | Formula, printer: _Printer, parent_prec: int, work: list) -> None:
+    if type(node) is Var:
+        sort = "" if printer.bound.get(node.name) == node.sort else node.sort
+        name = printer.name(node.name)
+        rendered = f"{name}:{printer.name(sort)}" if sort else name
+        work.append(("combine", lambda args: rendered, 0))
+        return
+    if type(node) is Fun:
+        _format_fun_push(node, printer, parent_prec, work)
+        return
+    if type(node) is BVar:
+        raise ValueError("cannot format a dangling bound variable outside a binder")
+    if type(node) is Eq:
+        _format_eq_push(node, parent_prec, work)
+        return
+    if type(node) is Implies:
+        _format_implies_push(node, parent_prec, work)
+        return
+    if type(node) is Bottom:
+        work.append(("combine", lambda args: node.symbol, 0))
+        return
+    if type(node) is Forall or type(node) is Exists:
+        _format_binder_push(node, printer, parent_prec, work)
+        return
+    raise TypeError(f"cannot format {type(node).__name__}")
+
+
+def _format_fun_push(node: Fun, printer: _Printer, parent_prec: int, work: list) -> None:
+    prec = _INFIX_PRECEDENCE.get(node.name)
+    if prec is not None and len(node.args) == 2:
+
+        def combine(args, prec=prec):
+            text = f"{args[0]} {node.name} {args[1]}"
+            return f"({text})" if prec < parent_prec else text
+
+        work.append(("combine", combine, 2))
+        work.append(("eval", node.args[1], prec + 1))
+        work.append(("eval", node.args[0], prec))
+        return
+    name = printer.name(node.name)
+    if not node.args and (node.name in printer.constants or node.name.isdecimal()):
+        work.append(("combine", lambda args: name, 0))
+        return
+
+    def combine_app(args):
+        return f"{name}({', '.join(args)})"
+
+    work.append(("combine", combine_app, len(node.args)))
+    for arg in reversed(node.args):
+        work.append(("eval", arg, 0))
+
+
+def _format_eq_push(node: Eq, parent_prec: int, work: list) -> None:
+    def combine(args):
+        text = f"{args[0]} {node.symbol} {args[1]}"
+        return f"({text})" if 40 < parent_prec else text
+
+    work.append(("combine", combine, 2))
+    work.append(("eval", node.rhs, 0))
+    work.append(("eval", node.lhs, 0))
+
+
+def _format_implies_push(node: Implies, parent_prec: int, work: list) -> None:
+    if type(node.con) is Bottom:
+
+        def combine_not(args):
+            text = "¬" + args[0]
+            return f"({text})" if 35 < parent_prec else text
+
+        work.append(("combine", combine_not, 1))
+        work.append(("eval", node.ant, 35))
+        return
+
+    def combine(args):
+        text = f"{args[0]} {node.symbol} {args[1]}"
+        return f"({text})" if 10 < parent_prec else text
+
+    work.append(("combine", combine, 2))
+    work.append(("eval", node.con, 10))
+    work.append(("eval", node.ant, 11))
+
+
+def _format_binder_push(
+    binder: Forall | Exists, printer: _Printer, parent_prec: int, work: list
+) -> None:
+    name = printer.fresh(binder.body.free_vars() | printer.used)
+    printer.bound[name] = binder.sort
+    printer.used.add(name)
+    opened = instantiate(binder, Var(name, binder.sort))
+
+    def combine(args, name=name):
+        body = args[0]
+        printer.used.discard(name)
+        printer.bound.pop(name, None)
+        sort = f":{printer.name(binder.sort)}" if binder.sort else ""
+        text = f"{binder.symbol}{printer.name(name)}{sort}. {body}"
+        return f"({text})" if 5 < parent_prec else text
+
+    work.append(("combine", combine, 1))
+    work.append(("eval", opened, 0))
 
 
 def _fresh_name(avoid: set[str] | frozenset[str]) -> str:

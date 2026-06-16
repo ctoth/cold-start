@@ -27,15 +27,15 @@ enumerate concrete subclasses), and the concrete frozen-dataclass nodes:
 
 **Binders are locally nameless.** A bound variable is a de Bruijn index `BVar(i)`
 (0 = nearest enclosing binder); the binder records only the sort, not a name. So
-α-equivalence is *literal `==`* — no fresh names, no capture-avoidance. Smart
+α-equivalence is *literal `==`* — no chosen binder names, no capture-avoidance. Smart
 constructors `forall(name, sort, body)` / `exists(...)` let you still write named
 binders at the surface; they `abstract` the named variable to an index.
 
 ### Operations are methods (polymorphism, not type-switches)
-`free_vars`, `subst`, `abstract`, `instantiate`, `evaluate`, `format`, `to_dict` are
-methods on `Node`. `Node` supplies the generic recursion over a node's children;
-only `Var` (the variable leaf) and the binders (which raise the scope depth)
-override. There is no external `if type(node) is …` dispatch.
+`free_vars`, `subst`, `abstract`, `instantiate`, `sort_of`, and `sort_check` are
+methods on the syntax nodes. `Node` supplies the generic structural operations over
+a node's children; only the leaves or binders override where scope requires it.
+Human notation parsing and printing live in `notation.py`, not on the syntax nodes.
 
 ### The scope (environment) — one concept, several payloads
 The single thing threaded through a tree walk is the **scope**: a stack pushed under

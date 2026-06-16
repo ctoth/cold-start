@@ -122,6 +122,10 @@ def test_quantifier_repr_uses_the_locally_nameless_form():
     assert repr(g) == "(exists. #0 = #0)"
 
 
+def test_human_notation_formatting_is_not_a_syntax_node_method():
+    assert not hasattr(Eq(Var("x"), Var("x")), "format")
+
+
 def test_deep_formula_formats_without_recursion():
     """The notation printer is iterative: a formula nested far deeper than the
     recursion limit renders without blowing the stack (implications, no binders --

@@ -236,38 +236,6 @@ class Node:
         confirms `type(self)` is canonical."""
         raise TypeError(f"non-canonical node: {type(self).__name__}")
 
-    def format(self, ctx, parent_prec: int = 0) -> str:
-        """Render to surface text, parenthesizing when this node's structural
-        precedence is below `parent_prec`. `ctx` is a notation-side printer carrying
-        the *lexical* concerns the core syntax must not own -- name quoting, the
-        infix table, the constant set, fresh-name choice, and the bound-name stack.
-
-        ITERATIVE: an explicit DFS over a work stack with a parallel value stack, so
-        a deeply nested term or formula prints without recursion. Each node's
-        `_format_push` appends a `combine` step (which builds this node's text from
-        its children's rendered strings) and then its children's `eval` steps. A
-        binder mutates `ctx` (pushes its bound name) when pushed and its `combine`
-        restores it -- enter and exit bracket the binder's whole subtree exactly as
-        the recursive form did, because the explicit stack is a faithful DFS."""
-        work: list = [("eval", self, parent_prec)]
-        values: list[str] = []
-        while work:
-            item = work.pop()
-            if item[0] == "eval":
-                cast(Node, item[1])._format_push(ctx, item[2], work)
-            else:  # ("combine", fn, nargs): pop nargs child strings (in order), build
-                _, fn, nargs = item
-                args = [values.pop() for _ in range(nargs)]
-                args.reverse()
-                values.append(fn(args))
-        return values[0]
-
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        """Append this node's `combine` step and its children's `eval` steps to
-        `work` (children pushed last so they render first, their results landing in
-        field order). Each concrete node overrides."""
-        raise NotImplementedError(f"cannot format {type(self).__name__}")
-
 
 # ---------------------------------------------------------------------------
 # Terms
@@ -324,13 +292,6 @@ class Var(Term):
         _check_str(self.sort, "Var.sort")
         return ()
 
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        # a bound variable's sort is implied by its binder, so suppress it there
-        sort = "" if ctx.bound.get(self.name) == self.sort else self.sort
-        name = ctx.name(self.name)
-        rendered = f"{name}:{ctx.name(sort)}" if sort else name
-        work.append(("combine", lambda args: rendered, 0))
-
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Fun(Term):
@@ -369,37 +330,13 @@ class Fun(Term):
             raise TypeError("Fun.args must be a tuple")
         return tuple((a, depth) for a in self.args)
 
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        prec = ctx.infix.get(self.name)
-        if prec is not None and len(self.args) == 2:  # binary infix: a + b
-
-            def combine(args, prec=prec):
-                text = f"{args[0]} {self.name} {args[1]}"
-                return f"({text})" if prec < parent_prec else text
-
-            work.append(("combine", combine, 2))
-            work.append(("eval", self.args[1], prec + 1))  # left-assoc: right binds tighter
-            work.append(("eval", self.args[0], prec))  # pushed last -> rendered first
-            return
-        name = ctx.name(self.name)
-        if not self.args and (self.name in ctx.constants or self.name.isdecimal()):
-            work.append(("combine", lambda args: name, 0))  # a bare constant or numeral
-            return
-
-        def combine_app(args):
-            return f"{name}({', '.join(args)})"
-
-        work.append(("combine", combine_app, len(self.args)))
-        for a in reversed(self.args):  # reversed so arg 0 renders first, in order
-            work.append(("eval", a, 0))
-
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
 class BVar(Term):
     """A bound variable, as a de Bruijn index (0 = nearest enclosing binder).
 
     Bound variables carry no name, so alpha-equivalent formulas are *identical*
-    data: `==` is alpha-equivalence, with no fresh names and no separate alpha
+    data: `==` is alpha-equivalence, with no chosen binder names and no separate alpha
     relation. The binder (Forall/Exists) records the sort.
     """
 
@@ -417,9 +354,6 @@ class BVar(Term):
         if type(self.index) is not int or not (0 <= self.index < depth):
             raise TypeError(f"dangling bound variable {self.index!r} at binder depth {depth}")
         return ()
-
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        raise ValueError("cannot format a dangling bound variable outside a binder")
 
 
 # ---------------------------------------------------------------------------
@@ -472,15 +406,6 @@ class Eq(Formula):
     def _validate(self, depth: int) -> tuple:
         return ((self.lhs, depth), (self.rhs, depth))
 
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        def combine(args):
-            text = f"{args[0]} {self.symbol} {args[1]}"
-            return f"({text})" if 40 < parent_prec else text
-
-        work.append(("combine", combine, 2))
-        work.append(("eval", self.rhs, 0))
-        work.append(("eval", self.lhs, 0))  # pushed last -> rendered first
-
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Implies(Formula):
@@ -498,25 +423,6 @@ class Implies(Formula):
     def _validate(self, depth: int) -> tuple:
         return ((self.ant, depth), (self.con, depth))
 
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        if type(self.con) is Bottom:  # Not(A) == Implies(A, Bottom): render as ¬A
-
-            def combine_not(args):
-                text = "¬" + args[0]
-                return f"({text})" if 35 < parent_prec else text
-
-            work.append(("combine", combine_not, 1))
-            work.append(("eval", self.ant, 35))
-            return
-
-        def combine(args):
-            text = f"{args[0]} {self.symbol} {args[1]}"
-            return f"({text})" if 10 < parent_prec else text
-
-        work.append(("combine", combine, 2))
-        work.append(("eval", self.con, 10))
-        work.append(("eval", self.ant, 11))  # right-assoc: antecedent binds tighter, renders first
-
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Bottom(Formula):
@@ -532,9 +438,6 @@ class Bottom(Formula):
 
     def _validate(self, depth: int) -> tuple:
         return ()  # no fields, no children
-
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        work.append(("combine", lambda args: self.symbol, 0))  # an atom: never parenthesized
 
 
 def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
@@ -570,9 +473,6 @@ class Forall(Formula):
         _check_str(self.sort, "quantifier sort")
         return ((self.body, depth + 1),)
 
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        _binder_format_push(self, ctx, parent_prec, work)
-
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Exists(Formula):
@@ -593,33 +493,6 @@ class Exists(Formula):
     def _validate(self, depth: int) -> tuple:
         _check_str(self.sort, "quantifier sort")
         return ((self.body, depth + 1),)
-
-    def _format_push(self, ctx, parent_prec: int, work: list) -> None:
-        _binder_format_push(self, ctx, parent_prec, work)
-
-
-def _binder_format_push(binder: Forall | Exists, ctx, parent_prec: int, work: list) -> None:
-    """Shared push step for Forall/Exists (identical but for the symbol): pick a
-    fresh surface name, open the binder onto it, and push the opened body to render.
-    The bound name is added to `ctx` here (on the way in) and removed in `combine`
-    (on the way out), so it is in scope for exactly the body's subtree. The
-    quantifier's structural precedence is 5."""
-    name = ctx.fresh(binder.body.free_vars() | ctx.used)
-    ctx.bound[name] = binder.sort
-    ctx.used.add(name)
-    opened = instantiate(binder, Var(name, binder.sort))
-
-    def combine(args, name=name):
-        body = args[0]
-        ctx.used.discard(name)
-        ctx.bound.pop(name, None)
-        sort = f":{ctx.name(binder.sort)}" if binder.sort else ""
-        text = f"{binder.symbol}{ctx.name(name)}{sort}. {body}"  # binder.symbol: ∀ or ∃
-        return f"({text})" if 5 < parent_prec else text
-
-    work.append(("combine", combine, 1))
-    work.append(("eval", opened, 0))
-
 
 # --- binder smart constructors --------------------------------------------
 # `forall`/`exists` let us WRITE named binders at the surface; they `abstract` the

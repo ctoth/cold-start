@@ -33,12 +33,14 @@ trusting nothing but that checking code and the theory.
   gate. It runs first; everything downstream then sees only canonical nodes. This
   keeps the security property (no hostile method runs) without a pile of per-type
   handler functions -- those were shims; the logic belongs on the node.
-- **Derivation and printing are methods too.** A proof term checks *itself*:
-  `pf.derive(theory)` re-derives its sequent (after the gate), and `node.format(ctx)`
-  prints it. "Inert data" means a `Pf` carries no pre-made theorem -- you can build
-  nonsense -- not that the class has no methods; the methods are trusted code an
-  adversary cannot override past the gate. `Sequent` lives in `sequent.py` so the
-  proof methods can return/recurse on it without an import cycle.
+- **Derivation is a method; human notation is not.** A proof term checks *itself*:
+  `pf.derive(theory)` re-derives its sequent after the gate. "Inert data" means a
+  `Pf` carries no pre-made theorem -- you can build nonsense -- not that the class
+  has no methods; the methods are trusted code an adversary cannot override past
+  the gate. Human notation printing lives in `notation.py`, alongside parsing, so
+  presentation state does not leak into syntax nodes. `Sequent` lives in
+  `sequent.py` so the proof methods can return/recurse on it without an import
+  cycle.
 
 ## Process rules
 - **Commit after every green step.** Never leave verified work uncommitted — a

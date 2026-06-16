@@ -3,6 +3,16 @@
 Project lives in this git repo. Full design notes in `NOTES.md`; this file is
 the running scratch log. (Moved into the repo at Q's request; was at the parent.)
 
+## 2026-06-16: notation formatter deletion-first cleanup
+
+Workstream: `workstreams/notation-formatter-deletion-first.md`. Target is exact:
+`notation.py` owns human parse/print notation; `syntax.py` owns object-language
+structure and structural operations only. Deleted the syntax-owned formatter
+surface (`Node.format`, node `_format_push` methods, `_binder_format_push`) and
+rebuilt formatting as a notation-local iterative work stack. Added a notation
+boundary test so syntax nodes do not grow a public `.format` method again. Search
+gates and full runtime gates are recorded in the workstream log.
+
 ## 2026-06-15 pt3: Q ALSO caught the bigger thing -- "shims are fucking everywhere",
 ## quoted `_vp_assume(pf): validate(pf.formula)`. The dict-of-tiny-functions
 ## (_vp_*/_d_*/_ff_*) IS the shim pile -- I dodged methods-on-Pf with a manual
