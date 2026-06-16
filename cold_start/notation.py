@@ -359,125 +359,116 @@ class _Printer:
 
 
 def _format_node(node: Term | Formula, printer: _Printer, parent_prec: int = 0) -> str:
-    # free names computed ONCE here, not rescanned per binder; binder names avoid them
-    printer.free = node.free_vars()
-    work: list = [("eval", node, parent_prec)]
-    values: list[str] = []
-    while work:
-        item = work.pop()
-        if item[0] == "eval":
-            _format_push(item[1], printer, item[2], work)
-        else:
-            _, fn, nargs = item
-            args = [values.pop() for _ in range(nargs)]
-            args.reverse()
-            values.append(fn(args))
-    return values[0]
+    """Render `node` to surface text, ITERATIVELY and in O(tree size).
+
+    A pre-order walk emits string fragments left-to-right into `out`, joined once at
+    the end -- so the result is built in O(total length), never by re-wrapping a
+    growing accumulator (which would be O(n^2) in characters copied). The work stack
+    holds three kinds of item: `("emit", node, prec)` to expand a node, `("lit", s)`
+    to append a literal, and `("pop",)` to close a binder's scope after its body.
+    Parenthesisation is decided top-down from `prec`, so each node emits its own
+    brackets; bound variables read their binder's name from the scope stack."""
+    printer.free = node.free_vars()  # computed once: binder names avoid these
+    out: list[str] = []
+    stack: list = [("emit", node, parent_prec)]
+    while stack:
+        item = stack.pop()
+        tag = item[0]
+        if tag == "lit":
+            out.append(item[1])
+        elif tag == "pop":
+            printer.scope.pop()
+        else:  # ("emit", node, prec)
+            _emit(item[1], printer, item[2], out, stack)
+    return "".join(out)
 
 
-def _format_push(node: Term | Formula, printer: _Printer, parent_prec: int, work: list) -> None:
-    if type(node) is Var:
-        # a free variable: render with its sort (bound occurrences are BVar, below)
+def _push(stack: list, pieces: list) -> None:
+    """Push `pieces` (a forward-order list) so they pop left-to-right."""
+    stack.extend(reversed(pieces))
+
+
+def _emit(node: Term | Formula, printer: _Printer, prec: int, out: list, stack: list) -> None:
+    if type(node) is Var:  # free variable: render with its sort (bound occurrences are BVar)
         name = printer.name(node.name)
-        rendered = f"{name}:{printer.name(node.sort)}" if node.sort else name
-        work.append(("combine", lambda args: rendered, 0))
+        out.append(f"{name}:{printer.name(node.sort)}" if node.sort else name)
         return
-    if type(node) is Fun:
-        _format_fun_push(node, printer, parent_prec, work)
-        return
-    if type(node) is BVar:
-        # bound occurrence: its binder's name, read straight from the scope stack
-        # (scope[-1] is the nearest binder), so no per-binder `instantiate` is needed
+    if type(node) is BVar:  # bound occurrence: its binder's name, from the scope stack
         if not 0 <= node.index < len(printer.scope):
             raise ValueError("cannot format a dangling bound variable outside a binder")
-        rendered = printer.name(printer.scope[-1 - node.index][0])
-        work.append(("combine", lambda args: rendered, 0))
-        return
-    if type(node) is Eq:
-        _format_eq_push(node, parent_prec, work)
-        return
-    if type(node) is Implies:
-        _format_implies_push(node, parent_prec, work)
+        out.append(printer.name(printer.scope[-1 - node.index][0]))
         return
     if type(node) is Bottom:
-        work.append(("combine", lambda args: node.symbol, 0))
+        out.append(node.symbol)
+        return
+    if type(node) is Fun:
+        _emit_fun(node, printer, prec, out, stack)
+        return
+    if type(node) is Eq:
+        wrap = 40 < prec
+        pieces: list = [("lit", "(")] if wrap else []
+        pieces += [("emit", node.lhs, 0), ("lit", f" {node.symbol} "), ("emit", node.rhs, 0)]
+        if wrap:
+            pieces.append(("lit", ")"))
+        _push(stack, pieces)
+        return
+    if type(node) is Implies:
+        if type(node.con) is Bottom:  # Not(A) == Implies(A, Bottom): render as ¬A
+            wrap = 35 < prec
+            pieces = [("lit", "(")] if wrap else []
+            pieces += [("lit", "¬"), ("emit", node.ant, 35)]
+            if wrap:
+                pieces.append(("lit", ")"))
+            _push(stack, pieces)
+            return
+        wrap = 10 < prec
+        pieces = [("lit", "(")] if wrap else []
+        pieces += [("emit", node.ant, 11), ("lit", f" {node.symbol} "), ("emit", node.con, 10)]
+        if wrap:
+            pieces.append(("lit", ")"))
+        _push(stack, pieces)
         return
     if type(node) is Forall or type(node) is Exists:
-        _format_binder_push(node, printer, parent_prec, work)
+        name = printer.binder_name(len(printer.scope))  # O(1): avoids `free` + enclosing names
+        printer.scope.append((name, node.sort))
+        wrap = 5 < prec
+        sort = f":{printer.name(node.sort)}" if node.sort else ""
+        pieces = [("lit", "(")] if wrap else []
+        # the body keeps its BVars (no instantiate); `pop` closes the scope after it
+        pieces += [("lit", f"{node.symbol}{printer.name(name)}{sort}. "), ("emit", node.body, 0)]
+        pieces.append(("pop",))
+        if wrap:
+            pieces.append(("lit", ")"))
+        _push(stack, pieces)
         return
     raise TypeError(f"cannot format {type(node).__name__}")
 
 
-def _format_fun_push(node: Fun, printer: _Printer, parent_prec: int, work: list) -> None:
-    prec = _INFIX_PRECEDENCE.get(node.name)
-    if prec is not None and len(node.args) == 2:
-
-        def combine(args, prec=prec):
-            text = f"{args[0]} {node.name} {args[1]}"
-            return f"({text})" if prec < parent_prec else text
-
-        work.append(("combine", combine, 2))
-        work.append(("eval", node.args[1], prec + 1))
-        work.append(("eval", node.args[0], prec))
+def _emit_fun(node: Fun, printer: _Printer, prec: int, out: list, stack: list) -> None:
+    infix = _INFIX_PRECEDENCE.get(node.name)
+    if infix is not None and len(node.args) == 2:
+        wrap = infix < prec
+        pieces: list = [("lit", "(")] if wrap else []
+        pieces += [
+            ("emit", node.args[0], infix),
+            ("lit", f" {node.name} "),
+            ("emit", node.args[1], infix + 1),  # left-assoc: right binds tighter
+        ]
+        if wrap:
+            pieces.append(("lit", ")"))
+        _push(stack, pieces)
         return
     name = printer.name(node.name)
     if not node.args and (node.name in printer.constants or node.name.isdecimal()):
-        work.append(("combine", lambda args: name, 0))
+        out.append(name)  # a bare constant or numeral
         return
-
-    def combine_app(args):
-        return f"{name}({', '.join(args)})"
-
-    work.append(("combine", combine_app, len(node.args)))
-    for arg in reversed(node.args):
-        work.append(("eval", arg, 0))
-
-
-def _format_eq_push(node: Eq, parent_prec: int, work: list) -> None:
-    def combine(args):
-        text = f"{args[0]} {node.symbol} {args[1]}"
-        return f"({text})" if 40 < parent_prec else text
-
-    work.append(("combine", combine, 2))
-    work.append(("eval", node.rhs, 0))
-    work.append(("eval", node.lhs, 0))
-
-
-def _format_implies_push(node: Implies, parent_prec: int, work: list) -> None:
-    if type(node.con) is Bottom:
-
-        def combine_not(args):
-            text = "¬" + args[0]
-            return f"({text})" if 35 < parent_prec else text
-
-        work.append(("combine", combine_not, 1))
-        work.append(("eval", node.ant, 35))
-        return
-
-    def combine(args):
-        text = f"{args[0]} {node.symbol} {args[1]}"
-        return f"({text})" if 10 < parent_prec else text
-
-    work.append(("combine", combine, 2))
-    work.append(("eval", node.con, 10))
-    work.append(("eval", node.ant, 11))
-
-
-def _format_binder_push(
-    binder: Forall | Exists, printer: _Printer, parent_prec: int, work: list
-) -> None:
-    name = printer.binder_name(len(printer.scope))  # depth-indexed: O(1), avoids `free` + enclosing
-    printer.scope.append((name, binder.sort))
-
-    def combine(args):
-        printer.scope.pop()
-        body = args[0]
-        sort = f":{printer.name(binder.sort)}" if binder.sort else ""
-        text = f"{binder.symbol}{printer.name(name)}{sort}. {body}"
-        return f"({text})" if 5 < parent_prec else text
-
-    work.append(("combine", combine, 1))
-    work.append(("eval", binder.body, 0))  # the ORIGINAL body (BVar intact) -- no instantiate
+    pieces = [("lit", name), ("lit", "(")]
+    for k, arg in enumerate(node.args):
+        if k:
+            pieces.append(("lit", ", "))
+        pieces.append(("emit", arg, 0))
+    pieces.append(("lit", ")"))
+    _push(stack, pieces)
 
 
 def _format_name(name: str) -> str:

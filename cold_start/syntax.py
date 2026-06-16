@@ -106,6 +106,12 @@ def _rebuild(root, start_depth: int, *, on_var=None, on_bvar=None):
     return done[(id(root), start_depth)]
 
 
+def _emit_pieces(stack: list, pieces: list) -> None:
+    """Push `pieces` (a forward-order list of ``("emit", node)`` / ``("lit", text)``)
+    so they pop left-to-right -- the shared helper for the O(n) emit-and-join repr."""
+    stack.extend(reversed(pieces))
+
+
 class Node:
     """Base of every syntax node. Operations are methods here, dispatched by class.
     The generic versions recurse over a node's children; only `Var` and the binders
@@ -174,25 +180,26 @@ class Node:
         return hashes[id(self)]
 
     def __repr__(self) -> str:
-        """Structural repr, computed ITERATIVELY (post-order over the children, each
-        node's repr built from its children's), so a deeply nested term or formula
-        prints without recursion. Each concrete node overrides `_repr_with`, which
-        renders the node from its children's already-computed reprs (looked up by
-        id). Replaces the per-class recursive `__repr__` (hence `repr=False` on the
-        node dataclasses), whose recursion blew the stack on deep terms."""
-        order: list = []
-        stack: list = [self]
+        """Structural repr, computed ITERATIVELY and in O(tree size): a pre-order walk
+        emits string fragments left-to-right into `out`, joined once at the end. This
+        avoids both recursion (deep terms don't blow the stack) and the O(n^2)
+        character-copying of building the string by re-wrapping a growing accumulator.
+        Each concrete node overrides `_repr_emit`, appending leaf text to `out` and/or
+        pushing child `("emit", child)` and `("lit", text)` items onto `stack`. (The
+        node dataclasses set `repr=False` so this drives instead of a generated one.)"""
+        out: list[str] = []
+        stack: list = [("emit", self)]
         while stack:
-            n = stack.pop()
-            order.append(n)
-            stack.extend(children(n))
-        reprs: dict = {}
-        for n in reversed(order):
-            reprs[id(n)] = n._repr_with(reprs)
-        return reprs[id(self)]
+            item = stack.pop()
+            if item[0] == "lit":
+                out.append(item[1])
+            else:
+                item[1]._repr_emit(out, stack)
+        return "".join(out)
 
-    def _repr_with(self, reprs: dict) -> str:
-        """This node's repr given its children's already-computed reprs (by id).
+    def _repr_emit(self, out: list, stack: list) -> None:
+        """Append this node's repr fragments to `out`, pushing children as `("emit",
+        child)` and literals as `("lit", text)` (in forward order via `_emit_pieces`).
         Each concrete node overrides."""
         raise NotImplementedError(f"cannot repr {type(self).__name__}")
 
@@ -210,17 +217,21 @@ class Node:
     def abstract(self, name: str, depth: int) -> Node:
         """Close a binder: replace the free variable `name` with the bound index for
         its position (`depth` rises under each binder; `Var` becomes `BVar(d)`)."""
+
         def to_index(n, d):
             return BVar(d) if n.name == name else n
+
         return cast(Node, _rebuild(self, depth, on_var=to_index))
 
     def instantiate(self, repl: Term, depth: int) -> Node:
         """Open a binder: the bound variable at the binder's depth becomes `repl`;
         deeper indices shift down by one. `depth` rises under each binder."""
+
         def open_bvar(n, d):
             if n.index == d:
                 return repl
             return BVar(n.index - 1) if n.index > d else n
+
         return cast(Node, _rebuild(self, depth, on_bvar=open_bvar))
 
     def free_var_sorts(self) -> frozenset:
@@ -279,8 +290,8 @@ class Var(Term):
     name: str
     sort: str = ""  # "" means unsorted (single-sorted theories ignore it)
 
-    def _repr_with(self, reprs: dict) -> str:
-        return f"{self.name}:{self.sort}" if self.sort else self.name
+    def _repr_emit(self, out: list, stack: list) -> None:
+        out.append(f"{self.name}:{self.sort}" if self.sort else self.name)
 
     def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         if self.sort not in sig.sorts:
@@ -306,10 +317,17 @@ class Fun(Term):
         if type(self.args) is not tuple:
             object.__setattr__(self, "args", tuple(self.args))
 
-    def _repr_with(self, reprs: dict) -> str:
+    def _repr_emit(self, out: list, stack: list) -> None:
         if not self.args:
-            return self.name
-        return f"{self.name}({', '.join(reprs[id(a)] for a in self.args)})"
+            out.append(self.name)
+            return
+        pieces: list = [("lit", self.name), ("lit", "(")]
+        for k, a in enumerate(self.args):
+            if k:
+                pieces.append(("lit", ", "))
+            pieces.append(("emit", a))
+        pieces.append(("lit", ")"))
+        _emit_pieces(stack, pieces)
 
     def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         rank = sig.rank(self.name)
@@ -342,8 +360,8 @@ class BVar(Term):
 
     index: int
 
-    def _repr_with(self, reprs: dict) -> str:
-        return f"#{self.index}"
+    def _repr_emit(self, out: list, stack: list) -> None:
+        out.append(f"#{self.index}")
 
     def _sort_step(self, sig, scope: tuple, sorts: dict) -> str:
         if not (0 <= self.index < len(scope)):
@@ -394,8 +412,8 @@ class Eq(Formula):
     lhs: Term
     rhs: Term
 
-    def _repr_with(self, reprs: dict) -> str:
-        return f"{reprs[id(self.lhs)]} = {reprs[id(self.rhs)]}"
+    def _repr_emit(self, out: list, stack: list) -> None:
+        _emit_pieces(stack, [("emit", self.lhs), ("lit", " = "), ("emit", self.rhs)])
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         ls, rs = self.lhs.sort_of(sig, scope), self.rhs.sort_of(sig, scope)
@@ -414,8 +432,11 @@ class Implies(Formula):
     ant: Formula
     con: Formula
 
-    def _repr_with(self, reprs: dict) -> str:
-        return f"({reprs[id(self.ant)]} -> {reprs[id(self.con)]})"
+    def _repr_emit(self, out: list, stack: list) -> None:
+        _emit_pieces(
+            stack,
+            [("lit", "("), ("emit", self.ant), ("lit", " -> "), ("emit", self.con), ("lit", ")")],
+        )
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ((self.ant, scope), (self.con, scope))
@@ -430,8 +451,8 @@ class Bottom(Formula):
 
     symbol: ClassVar[str] = "⊥"
 
-    def _repr_with(self, reprs: dict) -> str:
-        return self.symbol
+    def _repr_emit(self, out: list, stack: list) -> None:
+        out.append(self.symbol)
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ()  # the formula constant carries no sort and no children
@@ -462,9 +483,9 @@ class Forall(Formula):
     sort: str
     body: Formula
 
-    def _repr_with(self, reprs: dict) -> str:
-        b = reprs[id(self.body)]
-        return f"(forall :{self.sort}. {b})" if self.sort else f"(forall. {b})"
+    def _repr_emit(self, out: list, stack: list) -> None:
+        head = f"(forall :{self.sort}. " if self.sort else "(forall. "
+        _emit_pieces(stack, [("lit", head), ("emit", self.body), ("lit", ")")])
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ((self.body, (self.sort, *scope)),)
@@ -483,9 +504,9 @@ class Exists(Formula):
     sort: str
     body: Formula
 
-    def _repr_with(self, reprs: dict) -> str:
-        b = reprs[id(self.body)]
-        return f"(exists :{self.sort}. {b})" if self.sort else f"(exists. {b})"
+    def _repr_emit(self, out: list, stack: list) -> None:
+        head = f"(exists :{self.sort}. " if self.sort else "(exists. "
+        _emit_pieces(stack, [("lit", head), ("emit", self.body), ("lit", ")")])
 
     def _sort_check_step(self, sig, scope: tuple) -> tuple:
         return ((self.body, (self.sort, *scope)),)
@@ -493,6 +514,7 @@ class Exists(Formula):
     def _validate(self, depth: int) -> tuple:
         _check_str(self.sort, "quantifier sort")
         return ((self.body, depth + 1),)
+
 
 # --- binder smart constructors --------------------------------------------
 # `forall`/`exists` let us WRITE named binders at the surface; they `abstract` the
