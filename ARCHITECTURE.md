@@ -95,8 +95,8 @@ already held the input.
   recursively from addition; with induction this is where incompleteness begins.
 - `algebra.py` — monoids, rings (incl. non-commutative models), and a many-sorted
   monoid action `M ↷ X` (the shape that points toward modules/Clifford).
-- `skolem.py` (Phase 4) — the multiplication-only fragment, the decidable
-  *multiplicative* twin of Presburger.
+- `robinson.py` — Robinson's `(1, S, ·)` arithmetic experiment: addition
+  eliminated into a definable bridge over multiplication and successor.
 
 ## On `+` vs `×`: the honest foundational note
 Peano defines `×` recursively from `+` (`x·S(y) = x·y + x`). That axiom *contains a
@@ -113,7 +113,7 @@ the integers, kills those automorphisms, and lets `+` be defined.
 
 We keep `+`-primitive with recursive `×` as the trusted base, because it is small and
 readable — Robinson herself called the eliminated-`+` axioms "complicated and
-artificial." But we *exhibit* the Robinson basis (`skolem.py` + the `(S,·)` Peano
+artificial." But we *exhibit* the Robinson basis (`robinson.py` + the `(S,·)` Peano
 axioms) and make her bridge a **checked theorem**, so the `+`/`×` entanglement is on
 display, paid for in a derivation rather than buried in an axiom. See
 `papers/Robinson_1949_DefinabilityArithmetic/`.
