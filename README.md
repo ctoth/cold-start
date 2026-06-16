@@ -28,11 +28,11 @@ a lying subclass is rejected as non-canonical.
 The code is the `cold_start/` package (flat, no src-layout):
 
 - **`cold_start/syntax.py`** — the object language: terms (`Var`/`Fun`), formulas
-  (`Eq`/`Implies`), free-vars/substitution, exact-type `validate_*`, and JSON
-  ser/deser. *Not trusted* — a formula is a claim, not a proof.
+  (`Eq`/`Implies`), free-vars/substitution, exact-type `validate_*`, and hamblin
+  byte ser/deser. *Not trusted* — a formula is a claim, not a proof.
 - **`cold_start/proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`,
   `Trans`, `Cong`, `MP`, `ImpIntro`, `Inst`): the inert recipe a prover emits.
-  Serializable to JSON. *Not trusted.*
+  Serializable to hamblin bytes. *Not trusted.*
 - **`cold_start/checker.py`** — **THE TRUSTED CORE.** `validate_proof` (one
   structural pass), `check(proof, theory) -> Sequent`, and the pure recursive
   `_derive`. A `Sequent` deliberately has no construction guard: holding one
@@ -46,7 +46,7 @@ The code is the `cold_start/` package (flat, no src-layout):
   step quantified correctly and enforces *var not free in the hypotheses*. The
   exploit is a permanent regression test.
 - **`cold_start/proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
-- **`cold_start/verify.py`** — a CLI that checks a JSON proof in a **separate
+- **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`test_checker.py`** — example tests: rules, the soundness attacks,
   serialization round-trip, cross-process verification.
@@ -68,9 +68,9 @@ uv run pytest                          # the whole suite
 uv run python -m cold_start.proofs     # prints:  |- +(0, n) = n
 uv run ruff check . && uv run pyright  # lint + type-check
 
-# verify a proof in a fresh process, end to end:
-uv run python -c "from cold_start.proof import to_json; from cold_start.proofs import left_identity_proof; print(to_json(left_identity_proof()))" \
-    | uv run python -m cold_start.verify
+# verify a hamblin-encoded proof in a fresh process, end to end:
+# tests/test_checker.py covers the exact to_bytes(...) -> verify stdin path.
+uv run python -m cold_start.verify proof.hmb
 ```
 
 ## Design commitments (v0)

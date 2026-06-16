@@ -21,15 +21,16 @@ the verifier, not the object.
 
 ## Layout
 - `syntax.py`  — language: Var/Fun, Eq/Implies, free_vars/subst, EXACT-type
-                 `validate_term`/`validate_formula`, JSON ser/deser. Not trusted.
+                 `validate_term`/`validate_formula`, hamblin byte ser/deser.
+                 Not trusted.
 - `proof.py`   — proof terms (Axiom/Assume/Refl/Sym/Trans/Cong/MP/ImpIntro/
-                 Inst) + to_json/from_json. Not trusted.
+                 Inst) + to_bytes/from_bytes. Not trusted.
 - `checker.py` — TRUSTED CORE (~190 lines): Sequent, Theory, validate_proof
                  (one up-front structural pass), check(), pure `_derive`.
 - `peano.py`   — theory: 0/S/+, ADD_ZERO_F, ADD_SUCC_F, PEANO's zero/succ
                  induction data, induction() builder.
 - `proofs.py`  — left_identity_proof(): 0 + n = n by induction.
-- `verify.py`  — CLI: checks a JSON proof in a SEPARATE process.
+- `verify.py`  — CLI: checks a binary proof in a SEPARATE process.
 - `test_checker.py` — 25 example/regression tests.
 - `test_model.py` — 17 model-level tests.
 - `test_properties.py` — 14 Hypothesis property tests.

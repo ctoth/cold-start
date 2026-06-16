@@ -12,7 +12,7 @@ The design is the **De Bruijn criterion**: separate an untrusted, possibly-large
 - `check(proof, theory)` (`checker.py`) re-derives the `Sequent` the proof proves,
   or raises. It is the only trusted code. A `Sequent(hyps, concl)` is plain data you
   can fabricate freely; its authority is `check()` *returning* it, never the value.
-- `verify.py` re-checks a proof from JSON in a fresh process, trusting only the
+- `verify.py` re-checks a proof from hamblin bytes in a fresh process, trusting only the
   checker module and the theory's axioms — the payoff of inert proof terms.
 
 Trust = `checker.py` + each theory's axioms. Everything else (syntax, serialization,

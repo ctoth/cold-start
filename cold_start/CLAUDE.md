@@ -5,7 +5,7 @@ proof terms are inert, serializable data that claim nothing; one small *trusted*
 `check(proof, theory)` re-derives the sequent. Trust is the checking code -- the
 exact-type gates plus the `_validate`/`derive`/`sort_check` methods they guard
 (in `syntax.py`, `proof.py`, `sequent.py`) driven by `checker.py` -- plus each
-theory's axioms. `verify.py` re-checks proofs from JSON in a fresh process,
+theory's axioms. `verify.py` re-checks proofs from hamblin bytes in a fresh process,
 trusting nothing but that checking code and the theory.
 
 ## Design rules
