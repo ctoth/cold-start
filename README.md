@@ -27,35 +27,40 @@ a lying subclass is rejected as non-canonical.
 
 The code is the `cold_start/` package (flat, no src-layout):
 
-- **`cold_start/syntax.py`** — the object language: terms (`Var`/`Fun`), formulas
-  (`Eq`/`Implies`), free-vars/substitution, exact-type `validate_*`, and hamblin
-  byte ser/deser. *Not trusted* — a formula is a claim, not a proof.
+- **`cold_start/syntax.py`** — the object language: terms (`Var`/`Fun`/`BVar`),
+  formulas (`Eq`/`Implies`/`Bottom`/`Forall`/`Exists`, with `Not` as sugar),
+  free-vars/substitution, exact-type `validate_*`, and hamblin byte ser/deser.
+  *Not trusted* — a formula is a claim, not a proof.
 - **`cold_start/proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`,
-  `Trans`, `Cong`, `MP`, `ImpIntro`, `Inst`): the inert recipe a prover emits.
-  Serializable to hamblin bytes. *Not trusted.*
+  `Trans`, `Cong`, `MP`, `ImpIntro`, `Inst`, `Induct`, classical rules, and
+  quantifier rules): the inert recipe a prover emits. Serializable to hamblin
+  bytes. *Not trusted.*
 - **`cold_start/checker.py`** — **THE TRUSTED CORE.** `validate_proof` (one
-  structural pass), `check(proof, theory) -> Sequent`, and the pure recursive
-  `_derive`. A `Sequent` deliberately has no construction guard: holding one
-  proves nothing; only `check()` returning it is authority.
-- **`cold_start/peano.py`** — Peano as a *theory*: signature (`0`, `S`, `+`), the
-  two addition axioms, and the theory's induction structure (`zero`/`succ`).
+  exact-type structural gate), `check(proof, theory) -> Sequent`, and the
+  trusted proof-rule methods it calls. A `Sequent` deliberately has no
+  construction guard: holding one proves nothing; only `check()` returning it is
+  authority.
+- **`cold_start/presburger.py`** — Presburger arithmetic: signature (`0`, `S`,
+  `+`), addition and successor axioms, and induction structure (`zero`/`succ`).
   Induction is a **first-class rule** (`Induct`), *not* an axiom formula —
   encoding the schema `P[0] -> ((P -> P[Sx]) -> P)` as an axiom is **unsound**
   under our implicit-∀ reading (its free `x` wrongly quantifies the whole
   implication, letting `P(n):=n=0`, x:=1 derive `1 = 0`). The rule keeps the
   step quantified correctly and enforces *var not free in the hypotheses*. The
   exploit is a permanent regression test.
+- **`cold_start/peano.py`** — Peano arithmetic: Presburger plus recursive
+  multiplication axioms.
 - **`cold_start/proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
-- **`test_checker.py`** — example tests: rules, the soundness attacks,
+- **`tests/test_checker.py`** — example tests: rules, the soundness attacks,
   serialization round-trip, cross-process verification.
-- **`test_properties.py`** — Hypothesis property tests: round-trips, checker
+- **`tests/test_properties.py`** — Hypothesis property tests: round-trips, checker
   totality, substitution algebra, and a sound proof generator the checker must
   agree with.
-- **`test_model.py`** — model-soundness probes: every closed theorem is true in
+- **`tests/test_model.py`** — model-soundness probes: every closed theorem is true in
   ℕ, plus per-rule local soundness.
-- **`test_algebra.py` / `test_rings.py` / `test_sorts.py`** — abstract theories
+- **`tests/test_algebra.py` / `tests/test_rings.py` / `tests/test_sorts.py`** — abstract theories
   (monoids, rings, a sorted monoid action) checked against multiple models,
   including non-commutative ones, with sort-checking invariants.
 
@@ -80,7 +85,8 @@ uv run python -m cold_start.verify proof.hmb
 - **Validate untrusted input with exact types** before trusting `==`.
 - **Free variables are implicitly universally quantified** (the Boyer–Moore
   instinct); `instantiate` is sound for variables not free in the hypotheses.
-- **Minimal logic:** `Eq` and `Implies` only — enough to bootstrap addition.
+- **Small logic:** equality, implication, falsum/negation, explicit quantifiers,
+  induction, and classical rules are enough for the current arithmetic work.
 
 ## Roadmap / next holes to dig
 
@@ -88,10 +94,10 @@ uv run python -m cold_start.verify proof.hmb
 - [x] Soundness against lying `__eq__` / `__hash__` / mutable-args aliasing
 - [x] Property-based tests (Hypothesis); uv-managed, locked deps
 - [x] Induction as a sound first-class rule (was an unsound axiom schema)
-- [ ] `Not` (so we can state `0 != S(x)`, successor injectivity)
+- [x] `Bottom`/`Not`, successor disequality/injectivity, and classical rules
+- [x] Explicit quantifiers with locally nameless binders
 - [ ] `n + 0 = 0 + n` → commutativity of `+`, then associativity
 - [ ] `*` and its laws; distributivity
 - [ ] Ordering (`<=`), divisibility, primality
 - [ ] A proof-term pretty-printer (proof trees / step listings)
 - [ ] A *non-trusted* tactics layer that emits proof terms
-- [ ] Explicit quantifiers, if/when we outgrow implicit-universal free vars

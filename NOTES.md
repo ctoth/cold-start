@@ -64,10 +64,11 @@ the verifier, not the object.
    that the malicious formula really strips h (so the sentinel isn't vacuous).
 
 ## Soundness model (current)
-Trusted base = checker.py (validate_proof + _derive) + each Theory's concrete
-axioms and induction data. Serialized path decodes hamblin bytes into canonical
-nodes. In-process path is protected by exact-type validation before equality,
-hashing, or rule methods are trusted.
+Trusted base = the exact-type gates and rule/sort-checking methods in
+`syntax.py`, `proof.py`, `sequent.py`, and `checker.py`, plus each Theory's
+concrete axioms and induction data. Serialized path decodes hamblin bytes into
+canonical nodes. In-process path is protected by exact-type validation before
+equality, hashing, or rule methods are trusted.
 
 ## Next step (not started)
 - `n + 0 = 0 + n` -> commutativity of `+`, then associativity. First proof that
