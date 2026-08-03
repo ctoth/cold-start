@@ -20,9 +20,10 @@ The layer is a small equational engine:
 
 from __future__ import annotations
 
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 
-from .syntax import Node, Var
+from .proof import Assume, Axiom, Inst, Pf, Sym
+from .syntax import Eq, Node, Term, Var
 
 
 class TacticError(Exception):
@@ -83,4 +84,92 @@ def match(pattern: Node, target: Node, vars: frozenset[str] | None = None) -> di
     return sigma
 
 
-__all__ = ["TacticError", "match"]
+# ---------------------------------------------------------------------------
+# Rules: a directed equation plus the proof term that justifies it
+# ---------------------------------------------------------------------------
+
+
+def _fresh(base: str, avoid: set) -> str:
+    k = 0
+    name = f"{base}!"
+    while name in avoid:
+        k += 1
+        name = f"{base}!{k}"
+    return name
+
+
+@dataclass(frozen=True)
+class Rule:
+    """A rewrite rule: read `eq` left-to-right, justified by `proof`.
+
+    `proof` derives `eq` itself -- with no hypotheses for an axiom or a lemma,
+    or under the single hypothesis `eq` for an assumption. `vars` are the names
+    in `eq` that act as holes; every other variable is literal. `instance(sigma)`
+    specialises the proof to a match.
+    """
+
+    eq: Eq
+    proof: Pf
+    vars: frozenset
+
+    @property
+    def lhs(self) -> Term:
+        return self.eq.lhs
+
+    @property
+    def rhs(self) -> Term:
+        return self.eq.rhs
+
+    @property
+    def flipped(self) -> Rule:
+        """The same equation used right-to-left; the proof gains a `Sym`."""
+        return Rule(Eq(self.rhs, self.lhs), Sym(self.proof), self.vars)
+
+    def instance(self, sigma: dict) -> Pf:
+        """A `Pf` of `eq` with every hole replaced per `sigma`.
+
+        `Inst` substitutes *sequentially*, so instantiating x := y and then
+        y := 0 would rewrite the `y` the first step introduced. We therefore
+        rename all holes to fresh names first and only then substitute -- a
+        simultaneous substitution, spelled in the trusted core's sequential
+        primitive. Holes `sigma` does not mention are renamed back to
+        themselves."""
+        if not self.vars:
+            return self.proof
+        sorts = dict(self.eq.free_var_sorts())
+        avoid = set(self.eq.free_vars())
+        for t in sigma.values():
+            avoid |= set(t.free_vars())
+        holes = sorted(self.vars)
+        renaming = {}
+        for v in holes:
+            renaming[v] = _fresh(v, avoid)
+            avoid.add(renaming[v])
+        pf = self.proof
+        for v in holes:
+            pf = Inst(pf, v, Var(renaming[v], sorts.get(v, "")))
+        for v in holes:
+            pf = Inst(pf, renaming[v], sigma.get(v, Var(v, sorts.get(v, ""))))
+        return pf
+
+
+def axiom_rule(eq: Eq) -> Rule:
+    """Rewrite by a theory axiom; its free variables are the holes."""
+    return Rule(eq, Axiom(eq), eq.free_vars())
+
+
+def lemma_rule(eq: Eq, proof: Pf) -> Rule:
+    """Rewrite by an already-proved lemma. `proof` must derive `eq` with no
+    hypotheses -- then instances stay hypothesis-free too, so a theorem built on
+    lemmas comes back from `check` with an empty context."""
+    return Rule(eq, proof, eq.free_vars())
+
+
+def hypothesis_rule(eq: Eq) -> Rule:
+    """Rewrite by an assumed equation -- the induction hypothesis. It is GROUND:
+    its variables are fixed eigenvariables, not holes, because `Inst` may not
+    instantiate a variable that is free in a hypothesis."""
+    return Rule(eq, Assume(eq), frozenset())
+
+
+__all__ = ["Rule", "TacticError", "axiom_rule", "hypothesis_rule", "lemma_rule", "match"]

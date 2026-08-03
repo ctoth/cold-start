@@ -8,9 +8,11 @@ false theorem.
 
 from __future__ import annotations
 
-from cold_start.presburger import ZERO, S, add
+from cold_start.checker import check
+from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add
+from cold_start.proof import Axiom, Inst
 from cold_start.syntax import Eq, Fun, Implies, Var
-from cold_start.tactics import match
+from cold_start.tactics import axiom_rule, hypothesis_rule, match
 
 x, y, n = Var("x"), Var("y"), Var("n")
 
@@ -54,3 +56,48 @@ def test_match_works_on_formulas_too():
 
 def test_match_of_an_empty_pattern_set_is_structural_equality():
     assert match(add(x, y), add(x, y), vars=frozenset()) == {}
+
+
+# --- rules: a directed equation plus the Pf that justifies it -------------
+
+
+def test_a_naive_inst_chain_captures():
+    """Pinning the trusted API's behaviour before building on it. `Inst` is a
+    *sequential* substitution, so instantiating x := y and then y := 0 rewrites
+    the y that the first step just introduced. Rule.instance must not do this."""
+    naive = Inst(Inst(Axiom(ADD_SUCC_F), "x", y), "y", ZERO)
+    assert check(naive, PRESBURGER).concl == Eq(add(ZERO, S(ZERO)), S(add(ZERO, ZERO)))
+
+
+def test_rule_instance_is_simultaneous_and_capture_free():
+    rule = axiom_rule(ADD_SUCC_F)
+    pf = rule.instance({"x": y, "y": ZERO})
+    seq = check(pf, PRESBURGER)
+    assert seq.hyps == frozenset()
+    assert seq.concl == Eq(add(y, S(ZERO)), S(add(y, ZERO)))
+
+
+def test_axiom_rule_instance_checks_against_the_theory():
+    rule = axiom_rule(ADD_ZERO_F)
+    assert rule.lhs == add(x, ZERO)
+    assert rule.rhs == x
+    seq = check(rule.instance({"x": S(ZERO)}), PRESBURGER)
+    assert seq == check(Inst(Axiom(ADD_ZERO_F), "x", S(ZERO)), PRESBURGER)
+
+
+def test_a_flipped_rule_runs_the_equation_right_to_left():
+    rule = axiom_rule(ADD_ZERO_F).flipped
+    assert rule.lhs == x
+    assert rule.rhs == add(x, ZERO)
+    seq = check(rule.instance({"x": ZERO}), PRESBURGER)
+    assert seq.concl == Eq(ZERO, add(ZERO, ZERO))
+    assert seq.hyps == frozenset()
+
+
+def test_a_hypothesis_rule_is_ground_and_keeps_its_hypothesis():
+    eq = Eq(add(ZERO, n), n)
+    rule = hypothesis_rule(eq)
+    assert rule.vars == frozenset()  # `n` is an eigenvariable, not a hole
+    seq = check(rule.instance({}), PRESBURGER)
+    assert seq.concl == eq
+    assert seq.hyps == frozenset({eq})
