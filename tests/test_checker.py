@@ -18,11 +18,9 @@ from cold_start.presburger import (
     ZERO,
     S,
     add,
-    numeral,
 )
 from cold_start.proof import from_bytes, to_bytes
-from cold_start.proofs import left_identity_proof
-from cold_start.robinson import ADD_ONE
+from cold_start.proofs import left_identity_proof, robinson_add_proof
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -365,9 +363,9 @@ def test_cross_process_verifies_under_presburger():
 
 
 def test_cross_process_verifies_under_robinson():
-    # The (1, S, ·) theory with `+` eliminated: a fresh process re-derives a
-    # bridge instance (2 + 1 = 3) from Robinson's own axioms, no `+` symbol.
-    proof_bytes = to_bytes(P.Inst(P.Axiom(ADD_ONE), "a", numeral(2)))
+    # The (1, S, ·) theory with `+` eliminated: a fresh process re-derives
+    # 2 + 3 = 5 from Robinson's own axioms, as a bridge with no `+` symbol.
+    proof_bytes = to_bytes(robinson_add_proof(2, 3))
     result = _run_verify(proof_bytes, "--theory", "robinson")
     assert result.returncode == 0, result.stderr
     assert "VERIFIED [robinson]" in result.stdout.decode()

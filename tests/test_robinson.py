@@ -17,6 +17,7 @@ from semantics import Model, evaluate
 import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.presburger import S, numeral
+from cold_start.proofs import robinson_add_proof
 from cold_start.robinson import (
     ADD_ONE,
     ONE,
@@ -65,3 +66,30 @@ def test_checker_derives_a_robinson_axiom_instance():
     assert seq.concl == bridge(numeral(2), ONE, S(numeral(2)))
     assert seq.concl == bridge(numeral(2), numeral(1), numeral(3))
     assert seq.hyps == frozenset()
+
+
+def test_robinson_add_proof_derives_two_plus_three():
+    # The payoff: 2 + 3 = 5 as a DERIVED theorem of the (1, S, ·) theory. The
+    # sequent has no hypotheses and its conclusion contains no `+` symbol at
+    # all -- addition is the bridge, chained out of A4' and A5' by modus ponens.
+    seq = check(robinson_add_proof(2, 3), ROBINSON_PEANO)
+    assert seq.hyps == frozenset()
+    assert seq.concl == bridge(numeral(2), numeral(3), numeral(5))
+
+
+@pytest.mark.parametrize("b", [1, 2, 3, 4, 5])
+@pytest.mark.parametrize("a", [1, 2, 3, 4, 5])
+def test_robinson_add_proof_computes(a, b):
+    # Robinson's recursion laws compute addition for every positive a, b, and
+    # the trusted checker re-derives each one.
+    seq = check(robinson_add_proof(a, b), ROBINSON_PEANO)
+    assert seq.hyps == frozenset()
+    assert seq.concl == bridge(numeral(a), numeral(b), numeral(a + b))
+
+
+@pytest.mark.parametrize("a,b", [(0, 1), (1, 0), (0, 0), (-1, 2)])
+def test_robinson_add_proof_rejects_non_positive(a, b):
+    # Robinson's §2 domain is the POSITIVE integers -- there is no 0, and the
+    # bridge is only the graph of addition for c > 0.
+    with pytest.raises(ValueError):
+        robinson_add_proof(a, b)

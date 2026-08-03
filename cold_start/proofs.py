@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F
 from .presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction, numeral
-from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Trans
+from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Trans
+from .robinson import ADD_ONE, ADD_SUCC
 from .syntax import Eq, Var
 
 
@@ -68,6 +69,30 @@ def mul_proof(a: int, b: int) -> Pf:
     #  numeral(a*(b-1)) + a = numeral(a*(b-1) + a) = numeral(a*b)
     collapse_sum = add_proof(a * (b - 1), a)
     return Trans(succ_step, Trans(fold_product, collapse_sum))
+
+
+def robinson_add_proof(a: int, b: int) -> Pf:
+    """Proof term for  bridge(numeral(a), numeral(b), numeral(a+b))  in the
+    (1, S, ·) theory -- addition computed with no `+` symbol anywhere.
+
+    Recurses on the second argument through Robinson's own §2 recursion laws:
+    A4' (`a + 1 = S a`) is the base, and A5' (`a + b = c -> a + S b = S c`) is
+    instantiated at the concrete numerals and discharged by modus ponens. Both
+    arguments must be positive -- Robinson's domain is the positive integers,
+    and the bridge is the graph of addition only for c > 0.
+    """
+    if a < 1 or b < 1:
+        raise ValueError(f"Robinson's domain is the positive integers, got a={a}, b={b}")
+    big_a = numeral(a)
+    if b == 1:
+        return Inst(Axiom(ADD_ONE), "a", big_a)  # a + 1 = S a
+    #  a + (b-1) = a+b-1  ->  a + S(b-1) = S(a+b-1),  i.e.  a + b = a+b
+    succ_step = Inst(
+        Inst(Inst(Axiom(ADD_SUCC), "a", big_a), "b", numeral(b - 1)),
+        "c",
+        numeral(a + b - 1),
+    )
+    return MP(succ_step, robinson_add_proof(a, b - 1))
 
 
 if __name__ == "__main__":
