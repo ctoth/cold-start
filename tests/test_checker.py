@@ -18,9 +18,11 @@ from cold_start.presburger import (
     ZERO,
     S,
     add,
+    numeral,
 )
 from cold_start.proof import from_bytes, to_bytes
 from cold_start.proofs import left_identity_proof
+from cold_start.robinson import ADD_ONE
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -334,9 +336,9 @@ def test_validate_proof_runs_on_wellformed():
     validate_proof(left_identity_proof())  # must not raise
 
 
-def _run_verify(stdin_bytes: bytes):
+def _run_verify(stdin_bytes: bytes, *args: str):
     return subprocess.run(
-        [sys.executable, "-m", "cold_start.verify"],
+        [sys.executable, "-m", "cold_start.verify", *args],
         input=stdin_bytes,
         capture_output=True,
         cwd=REPO_ROOT,
@@ -352,6 +354,29 @@ def test_cross_process_verifies_valid_proof():
     out = result.stdout.decode()
     assert "VERIFIED" in out
     assert "+(0, n) = n" in out
+
+
+def test_cross_process_verifies_under_presburger():
+    # `0 + n = n` cites only the addition axioms, so it checks under the
+    # addition-only fragment too -- if the verifier knows that theory exists.
+    result = _run_verify(to_bytes(left_identity_proof()), "--theory", "presburger")
+    assert result.returncode == 0, result.stderr
+    assert "VERIFIED [presburger]" in result.stdout.decode()
+
+
+def test_cross_process_verifies_under_robinson():
+    # The (1, S, ·) theory with `+` eliminated: a fresh process re-derives a
+    # bridge instance (2 + 1 = 3) from Robinson's own axioms, no `+` symbol.
+    proof_bytes = to_bytes(P.Inst(P.Axiom(ADD_ONE), "a", numeral(2)))
+    result = _run_verify(proof_bytes, "--theory", "robinson")
+    assert result.returncode == 0, result.stderr
+    assert "VERIFIED [robinson]" in result.stdout.decode()
+
+
+def test_cross_process_rejects_unknown_theory():
+    result = _run_verify(to_bytes(left_identity_proof()), "--theory", "nonesuch")
+    assert result.returncode == 2
+    assert "unknown theory" in result.stderr.decode()
 
 
 def test_cross_process_rejects_forged_axiom():

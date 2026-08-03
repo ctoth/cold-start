@@ -16,6 +16,10 @@ Usage:
     python verify.py proof.hmb
     cat proof.hmb | python verify.py
     python verify.py proof.hmb --theory peano
+
+The theories are `peano`, `presburger` (the addition-only fragment) and
+`robinson` (the (1, S, ·) basis with `+` eliminated). A proof is checked against
+exactly the one theory named, so citing an axiom from another is a rejection.
 """
 
 from __future__ import annotations
@@ -30,8 +34,12 @@ THEORIES = {}
 
 def _load_theories() -> None:
     from .peano import PEANO
+    from .presburger import PRESBURGER
+    from .robinson import ROBINSON_PEANO
 
     THEORIES["peano"] = PEANO
+    THEORIES["presburger"] = PRESBURGER
+    THEORIES["robinson"] = ROBINSON_PEANO
 
 
 def main(argv: list[str]) -> int:
