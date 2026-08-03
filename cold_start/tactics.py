@@ -22,7 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
 
-from .proof import Assume, Axiom, Cong, Inst, Pf, Refl, Sym, Trans
+from .presburger import ZERO, S, induction
+from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Sym, Trans
 from .syntax import Eq, Formula, Fun, Node, Term, Var
 
 
@@ -283,6 +284,52 @@ def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
     raise TacticError(f"rewriting did not terminate within {budget} steps: {term!r} -> {current!r}")
 
 
+# ---------------------------------------------------------------------------
+# Goal-directed tactics
+# ---------------------------------------------------------------------------
+
+
+def prove_eq(goal: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
+    """Prove an equation by normalizing both sides to a common normal form.
+
+    `l = l_nf` and `r = r_nf` come from `normalize`; if the normal forms agree,
+    the goal is `Trans(l = nf, Sym(r = nf))`. Otherwise the rule set does not
+    decide this goal and we raise, naming both normal forms -- which is the
+    single most useful thing to see when a tactic fails."""
+    eq = _equation(goal)
+    left_nf, left_pf = normalize(eq.lhs, rules, budget)
+    right_nf, right_pf = normalize(eq.rhs, rules, budget)
+    if left_nf != right_nf:
+        raise TacticError(
+            f"cannot prove {eq!r}: the sides have different normal forms "
+            f"{left_nf!r} and {right_nf!r}"
+        )
+    return Trans(left_pf, Sym(right_pf))
+
+
+def by_induction(var: str, pred: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
+    """Prove the equation `pred` by induction on `var`, over Presburger's 0/S.
+
+    Base and step are each handed to `prove_eq`. The step gets one extra rule:
+    the induction hypothesis, assumed as `pred` itself and therefore GROUND --
+    `var` is an eigenvariable there, not a hole. `ImpIntro` then discharges that
+    assumption, which is what lets `Induct` accept the result: its side
+    condition forbids `var` free in any surviving hypothesis, and after the
+    discharge there are none."""
+    eq = _equation(pred)
+    base_goal = eq.subst(var, ZERO)
+    step_goal = eq.subst(var, S(Var(var)))
+    try:
+        base = prove_eq(base_goal, rules, budget)
+    except TacticError as exc:
+        raise TacticError(f"induction on {var!r}: base case failed: {exc}") from exc
+    try:
+        step_body = prove_eq(step_goal, (*rules, hypothesis_rule(eq)), budget)
+    except TacticError as exc:
+        raise TacticError(f"induction on {var!r}: step case failed: {exc}") from exc
+    return induction(var, eq, base, ImpIntro(eq, step_body))
+
+
 __all__ = [
     "DEFAULT_BUDGET",
     "Rule",
@@ -290,7 +337,9 @@ __all__ = [
     "axiom_rule",
     "hypothesis_rule",
     "lemma_rule",
+    "by_induction",
     "match",
     "normalize",
+    "prove_eq",
     "rewrite_step",
 ]

@@ -17,9 +17,11 @@ from cold_start.syntax import Eq, Fun, Implies, Var
 from cold_start.tactics import (
     TacticError,
     axiom_rule,
+    by_induction,
     hypothesis_rule,
     match,
     normalize,
+    prove_eq,
     rewrite_step,
 )
 
@@ -183,3 +185,52 @@ def test_normalize_raises_instead_of_hanging_on_a_looping_rule_set():
     looping = (axiom_rule(ADD_ZERO_F).flipped,)  # x -> x + 0, forever
     with pytest.raises(TacticError):
         normalize(x, looping, budget=8)
+
+
+# --- prove_eq: join the two normal forms ----------------------------------
+
+
+def test_prove_eq_joins_both_sides_through_their_normal_form():
+    goal = Eq(add(add(x, ZERO), S(ZERO)), S(x))
+    seq = check(prove_eq(goal, ADD_RULES), PRESBURGER)
+    assert seq.concl == goal
+    assert seq.hyps == frozenset()
+
+
+def test_prove_eq_proves_a_goal_that_only_the_right_side_reduces():
+    goal = Eq(S(x), S(add(x, ZERO)))
+    assert check(prove_eq(goal, ADD_RULES), PRESBURGER).concl == goal
+
+
+def test_prove_eq_names_both_normal_forms_when_they_differ():
+    with pytest.raises(TacticError) as excinfo:
+        prove_eq(Eq(add(x, ZERO), S(x)), ADD_RULES)
+    message = str(excinfo.value)
+    assert repr(x) in message
+    assert repr(S(x)) in message
+
+
+# --- by_induction ---------------------------------------------------------
+
+
+def test_by_induction_proves_left_identity():
+    pred = Eq(add(ZERO, n), n)
+    seq = check(by_induction("n", pred, ADD_RULES), PRESBURGER)
+    assert seq.concl == pred
+    assert seq.hyps == frozenset()  # the IH was discharged by ImpIntro
+
+
+def test_by_induction_discharges_the_hypothesis_it_assumed():
+    # The eigenvariable side condition is the whole game: Induct rejects a proof
+    # whose base or step leaves the induction variable free in a hypothesis. An
+    # undischarged IH would do exactly that, so a checked result with empty hyps
+    # is evidence the ImpIntro really fired.
+    pred = Eq(add(ZERO, n), n)
+    pf = by_induction("n", pred, ADD_RULES)
+    assert check(pf, PRESBURGER).hyps == frozenset()
+
+
+def test_by_induction_reports_the_offending_case():
+    pred = Eq(add(ZERO, n), S(n))  # false, so the base case 0 + 0 = S(0) fails
+    with pytest.raises(TacticError):
+        by_induction("n", pred, ADD_RULES)
