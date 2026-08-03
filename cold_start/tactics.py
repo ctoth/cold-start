@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
 
-from .proof import Assume, Axiom, Inst, Pf, Sym
-from .syntax import Eq, Node, Term, Var
+from .proof import Assume, Axiom, Cong, Inst, Pf, Refl, Sym, Trans
+from .syntax import Eq, Formula, Fun, Node, Term, Var
 
 
 class TacticError(Exception):
@@ -153,23 +153,144 @@ class Rule:
         return pf
 
 
-def axiom_rule(eq: Eq) -> Rule:
+def _equation(f: Formula) -> Eq:
+    """A rule needs an equation; anything else is a tactic-authoring mistake.
+    (The axiom constants are typed `Formula`, so this is also the narrowing.)"""
+    if type(f) is not Eq:
+        raise TacticError(f"a rewrite rule needs an equation, got {f!r}")
+    return f
+
+
+def axiom_rule(eq: Formula) -> Rule:
     """Rewrite by a theory axiom; its free variables are the holes."""
-    return Rule(eq, Axiom(eq), eq.free_vars())
+    e = _equation(eq)
+    return Rule(e, Axiom(e), e.free_vars())
 
 
-def lemma_rule(eq: Eq, proof: Pf) -> Rule:
+def lemma_rule(eq: Formula, proof: Pf) -> Rule:
     """Rewrite by an already-proved lemma. `proof` must derive `eq` with no
     hypotheses -- then instances stay hypothesis-free too, so a theorem built on
     lemmas comes back from `check` with an empty context."""
-    return Rule(eq, proof, eq.free_vars())
+    e = _equation(eq)
+    return Rule(e, proof, e.free_vars())
 
 
-def hypothesis_rule(eq: Eq) -> Rule:
+def hypothesis_rule(eq: Formula) -> Rule:
     """Rewrite by an assumed equation -- the induction hypothesis. It is GROUND:
     its variables are fixed eigenvariables, not holes, because `Inst` may not
     instantiate a variable that is free in a hypothesis."""
-    return Rule(eq, Assume(eq), frozenset())
+    e = _equation(eq)
+    return Rule(e, Assume(e), frozenset())
 
 
-__all__ = ["Rule", "TacticError", "axiom_rule", "hypothesis_rule", "lemma_rule", "match"]
+# ---------------------------------------------------------------------------
+# Positional rewriting
+# ---------------------------------------------------------------------------
+
+DEFAULT_BUDGET = 200
+"""Rewrite steps `normalize` will take before declaring the rule set looping."""
+
+
+def _subst_all(term: Term, sigma: dict) -> Term:
+    """Simultaneous substitution of a match into a rule's right-hand side.
+    Iterative (post-order over an explicit agenda). Rule equations are
+    quantifier-free, so only `Var` and `Fun` occur."""
+    if not sigma:
+        return term
+    order: list = []
+    stack: list = [term]
+    while stack:
+        t = stack.pop()
+        order.append(t)
+        if type(t) is Fun:
+            stack.extend(t.args)
+    done: dict = {}
+    for t in reversed(order):
+        if type(t) is Var and t.name in sigma:
+            done[id(t)] = sigma[t.name]
+        elif type(t) is Fun:
+            done[id(t)] = Fun(t.name, tuple(done[id(a)] for a in t.args))
+        else:
+            done[id(t)] = t
+    return done[id(term)]
+
+
+def _find_redex(term: Term, rules) -> tuple | None:
+    """The LEFTMOST-OUTERMOST redex: `(path, rule, sigma)`, or None.
+
+    `path` is the tuple of argument indices from `term` down to the redex. The
+    search is a pre-order DFS pushing children right-to-left, so a node is tried
+    before its arguments and an earlier argument before a later one; within one
+    position the rules are tried in the order given. Deterministic, and the
+    reason the tactics' output is reproducible."""
+    stack: list = [((), term)]
+    while stack:
+        path, t = stack.pop()
+        for rule in rules:
+            sigma = match(rule.lhs, t, rule.vars)
+            if sigma is not None:
+                return path, rule, sigma
+        if type(t) is Fun:
+            for i in reversed(range(len(t.args))):
+                stack.append(((*path, i), t.args[i]))
+    return None
+
+
+def rewrite_step(term: Term, rules) -> tuple | None:
+    """Rewrite the leftmost-outermost redex once: `(new_term, Pf of term = new)`,
+    or None if no rule applies.
+
+    The rule proves only the redex's own equation; the surrounding context is
+    rebuilt as a tower of `Cong` nodes along the path, with `Refl` on every
+    sibling that did not move. That tower is precisely "equals may be
+    substituted for equals", spelled out for the checker."""
+    found = _find_redex(term, rules)
+    if found is None:
+        return None
+    path, rule, sigma = found
+    pf = rule.instance(sigma)
+    new: Term = _subst_all(rule.rhs, sigma)
+    # walk back up the path, wrapping in Cong and rebuilding the term
+    spine: list[tuple[Fun, int]] = []
+    node = term
+    for i in path:
+        assert type(node) is Fun  # only a Fun has arguments, so only it has a path
+        spine.append((node, i))
+        node = node.args[i]
+    for parent, i in reversed(spine):
+        pf = Cong(
+            parent.name,
+            tuple(pf if j == i else Refl(a) for j, a in enumerate(parent.args)),
+        )
+        new = Fun(parent.name, tuple(new if j == i else a for j, a in enumerate(parent.args)))
+    return new, pf
+
+
+def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
+    """Rewrite to a fixpoint: `(normal_form, Pf of term = normal_form)`.
+
+    Steps are joined with `Trans`; a term already in normal form gets `Refl`.
+    `budget` bounds the number of steps -- a non-terminating rule set (say, an
+    equation used right-to-left) raises `TacticError` instead of hanging."""
+    pf: Pf = Refl(term)
+    current = term
+    for _ in range(budget):
+        step = rewrite_step(current, rules)
+        if step is None:
+            return current, pf
+        current, step_pf = step
+        pf = Trans(pf, step_pf)
+    raise TacticError(f"rewriting did not terminate within {budget} steps: {term!r} -> {current!r}")
+
+
+__all__ = [
+    "DEFAULT_BUDGET",
+    "Rule",
+    "TacticError",
+    "axiom_rule",
+    "hypothesis_rule",
+    "lemma_rule",
+    "match",
+    "normalize",
+    "rewrite_step",
+]

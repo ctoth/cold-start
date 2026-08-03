@@ -8,11 +8,22 @@ false theorem.
 
 from __future__ import annotations
 
+import pytest
+
 from cold_start.checker import check
-from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add
+from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
 from cold_start.proof import Axiom, Inst
 from cold_start.syntax import Eq, Fun, Implies, Var
-from cold_start.tactics import axiom_rule, hypothesis_rule, match
+from cold_start.tactics import (
+    TacticError,
+    axiom_rule,
+    hypothesis_rule,
+    match,
+    normalize,
+    rewrite_step,
+)
+
+ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
 
 x, y, n = Var("x"), Var("y"), Var("n")
 
@@ -101,3 +112,74 @@ def test_a_hypothesis_rule_is_ground_and_keeps_its_hypothesis():
     seq = check(rule.instance({}), PRESBURGER)
     assert seq.concl == eq
     assert seq.hyps == frozenset({eq})
+
+
+# --- positional rewriting -------------------------------------------------
+
+
+def test_rewrite_step_at_the_root():
+    step = rewrite_step(add(x, ZERO), ADD_RULES)
+    assert step is not None
+    new, pf = step
+    assert new == x
+    assert check(pf, PRESBURGER).concl == Eq(add(x, ZERO), x)
+
+
+def test_rewrite_step_under_a_congruence_tower():
+    # the redex sits two constructors deep: S(S(x + 0))
+    term = S(S(add(x, ZERO)))
+    step = rewrite_step(term, ADD_RULES)
+    assert step is not None
+    new, pf = step
+    assert new == S(S(x))
+    seq = check(pf, PRESBURGER)
+    assert seq.concl == Eq(term, S(S(x)))
+    assert seq.hyps == frozenset()
+
+
+def test_rewrite_step_keeps_untouched_siblings_by_reflexivity():
+    term = add(add(y, ZERO), S(ZERO))  # the LEFT argument is the redex
+    step = rewrite_step(term, (axiom_rule(ADD_ZERO_F),))
+    assert step is not None
+    new, pf = step
+    assert new == add(y, S(ZERO))
+    assert check(pf, PRESBURGER).concl == Eq(term, new)
+
+
+def test_rewrite_step_is_leftmost_outermost():
+    # (x + 0) + 0 has redexes at the root and inside. Outermost wins, so one
+    # step yields x + 0, not (x) + 0 -- both are legal, we pick deterministically.
+    step = rewrite_step(add(add(x, ZERO), ZERO), ADD_RULES)
+    assert step is not None
+    assert step[0] == add(x, ZERO)
+
+
+def test_rewrite_step_returns_none_when_nothing_matches():
+    assert rewrite_step(S(x), ADD_RULES) is None
+
+
+def test_normalize_rewrites_to_a_fixpoint():
+    term = add(add(add(x, ZERO), ZERO), ZERO)
+    nf, pf = normalize(term, ADD_RULES)
+    assert nf == x
+    seq = check(pf, PRESBURGER)
+    assert seq.concl == Eq(term, x)
+    assert seq.hyps == frozenset()
+
+
+def test_normalize_of_a_normal_form_is_reflexivity():
+    nf, pf = normalize(S(x), ADD_RULES)
+    assert nf == S(x)
+    assert check(pf, PRESBURGER).concl == Eq(S(x), S(x))
+
+
+def test_normalize_evaluates_closed_numeral_addition():
+    nf, pf = normalize(add(numeral(2), numeral(3)), ADD_RULES)
+    assert nf == numeral(5)
+    assert check(pf, PRESBURGER).concl == Eq(add(numeral(2), numeral(3)), numeral(5))
+
+
+def test_normalize_raises_instead_of_hanging_on_a_looping_rule_set():
+    looping = (axiom_rule(ADD_ZERO_F).flipped,)  # x -> x + 0, forever
+    with pytest.raises(TacticError):
+        normalize(x, looping, budget=8)
