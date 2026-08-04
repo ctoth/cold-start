@@ -23,22 +23,34 @@ from .divisibility_bridges import (
     divisibility_into_peano,
     robinson_product_interpretation,
 )
+from .integers import integers_interpretation
 from .interp import BridgeReport, Interpretation, verify
+from .quotient import QuotientInterpretation
+from .quotient import verify as verify_quotient
 from .skolem import skolem_interpretation
 
-ARTIFACTS: tuple[Callable[[], Interpretation], ...] = (
+Artifact = Interpretation | QuotientInterpretation
+
+ARTIFACTS: tuple[Callable[[], Artifact], ...] = (
     robinson_interpretation,
     robinson_into_peano,
     divisibility_into_peano,
     robinson_product_interpretation,
     skolem_interpretation,
+    integers_interpretation,
 )
 """Every interpretation artifact the repository has landed."""
 
 
+def _verify(artifact: Artifact) -> BridgeReport:
+    if isinstance(artifact, QuotientInterpretation):
+        return verify_quotient(artifact)
+    return verify(artifact)
+
+
 def ledger() -> tuple[BridgeReport, ...]:
     """Verify every artifact; complete bridges first, then by name."""
-    reports = [verify(build()) for build in ARTIFACTS]
+    reports = [_verify(build()) for build in ARTIFACTS]
     reports.sort(key=lambda r: (not r.complete, r.name))
     return tuple(reports)
 

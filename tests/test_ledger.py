@@ -24,7 +24,15 @@ def test_ledger_covers_every_artifact(reports):
     assert len(set(names)) == len(names)
     assert "presburger-into-skolem-powers-of-two" in names
     assert "robinson-1949-s2-into-peano-positives" in names
+    assert "integers-into-presburger-pairs" in names
     assert all(isinstance(r, BridgeReport) for r in reports)
+
+
+def test_ledger_reads_quotient_artifacts_as_complete(reports):
+    """The dispatch: a QuotientInterpretation verifies through its own
+    machinery and lands in the same table, fully paid."""
+    by_name = {r.name: r for r in reports}
+    assert by_name["integers-into-presburger-pairs"].complete
 
 
 def test_ledger_orders_paid_before_open(reports):
