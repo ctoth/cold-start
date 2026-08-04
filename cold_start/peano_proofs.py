@@ -145,6 +145,31 @@ def mul_left_comm() -> Pf:
     )
 
 
+def ring_kit() -> tuple:
+    """Everything proved about `+` and `*` so far, as one rewrite kit.
+
+    On top of `add_kit`: the multiplication recursion axioms and their
+    first-argument mirrors reduce a product against a zero or successor;
+    both distribution laws, read expansively, push every product across every
+    sum; associativity right-nests a monomial and the two `ordered` rules sort
+    its factors, exactly as the addition kit sorts summands. The normal form
+    is a sorted right-nested sum of sorted right-nested monomials -- a
+    POLYNOMIAL -- so `prove_eq` under this kit decides any identity of
+    commutative semirings, which is what every payment core of the ring-of-
+    integers bridge reduces to."""
+    return (
+        *add_kit(),
+        *MUL_RULES,
+        lemma_rule(MUL_ZERO_LEFT, mul_zero_left()),
+        lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),
+        lemma_rule(DISTRIB_LEFT, distrib_left()),
+        lemma_rule(DISTRIB_RIGHT, distrib_right()),
+        lemma_rule(MUL_ASSOC, mul_assoc()),
+        lemma_rule(MUL_COMM, mul_comm(), ordered=True),
+        lemma_rule(MUL_LEFT_COMM, mul_left_comm(), ordered=True),
+    )
+
+
 def _positive_cancel_pred(x: Term, z: Term) -> Formula:
     """The explicitly quantified predicate used by multiplication induction."""
     y = Var("y")

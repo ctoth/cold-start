@@ -23,8 +23,8 @@ theory with no negative numbers in it anywhere.
 
 Every payment is one cancellation argument: sum the hypotheses with `Cong`,
 shuffle with the ordered AC rewriting of `add_kit`, and cancel the common
-suffix with `add_cancel_right`. That recipe (`by_cancellation`) is this
-module's whole proof engine.
+suffix with `add_cancel_right`. That recipe -- `combination.by_combination`
+with every coefficient `None` -- is this module's whole proof engine.
 
 Untrusted, like every prover module: `check` remains the only judge.
 """
@@ -32,24 +32,20 @@ Untrusted, like every prover module: `check` remains the only judge.
 from __future__ import annotations
 
 from .algebra import AB_GROUP, ADD_ASSOC, ADD_COMM, ADD_NEG, ADD_ZERO
+from .combination import Hypothesis, by_combination
 from .presburger import PRESBURGER, ZERO, add
-from .presburger_proofs import add_cancel_right, add_kit
+from .presburger_proofs import add_kit
 from .proof import (
-    MP,
     Assume,
-    Cong,
     ExistsIntro,
     ForallIntro,
     ImpIntro,
-    Inst,
     Pf,
     Refl,
     Sym,
-    Trans,
 )
 from .quotient import QuotientInterpretation, Vec, VecSymbol, vec
 from .syntax import Eq, Formula, Term, exists
-from .tactics import prove_eq
 
 # ---------------------------------------------------------------------------
 # The translation
@@ -83,48 +79,22 @@ NEG_AS_SWAP = VecSymbol("neg", 1, _g_neg)
 # ---------------------------------------------------------------------------
 # The proof engine: one cancellation recipe
 # ---------------------------------------------------------------------------
-
-
-def by_cancellation(goal: Eq, hyps: tuple[tuple[Eq, Pf], ...]) -> Pf:
-    """Prove `goal` from equational hypotheses by summing and cancelling.
-
-    Each hypothesis arrives as (its equation, its proof), already oriented by
-    the caller. Summing them all with `Cong` gives one equation H_L = H_R;
-    then
-
-        G_L + H_L  =  G_L + H_R      (congruence on the sum)
-                   =  G_R + H_L      (pure AC shuffling, `prove_eq`)
-
-    and cancelling the suffix H_L lands the goal. The AC step is exactly the
-    multiset identity G_L + H_R == G_R + H_L, so a wrongly oriented
-    hypothesis fails loudly inside `prove_eq`, never silently."""
-    if not hyps:
-        return prove_eq(goal, _KIT)
-    combined = hyps[0][1]
-    h_l: Term = hyps[0][0].lhs
-    h_r: Term = hyps[0][0].rhs
-    for eq, pf in hyps[1:]:
-        combined = Cong("+", (combined, pf))
-        h_l, h_r = add(h_l, eq.lhs), add(h_r, eq.rhs)
-    on_sum = Cong("+", (Refl(goal.lhs), combined))  # G_L + H_L = G_L + H_R
-    shuffle = prove_eq(Eq(add(goal.lhs, h_r), add(goal.rhs, h_l)), _KIT)
-    cancel = Inst(
-        Inst(Inst(add_cancel_right(), "x", goal.lhs), "y", goal.rhs),
-        "z",
-        h_l,
-    )
-    return MP(cancel, Trans(on_sum, shuffle))
-
+# `by_combination` with every coefficient `None`: sum the oriented hypotheses,
+# AC-shuffle with the addition kit, cancel the common suffix.
 
 _KIT = add_kit()
 
 
-def _assume(eq: Eq) -> tuple[Eq, Pf]:
-    return eq, Assume(eq)
+def _cancel(goal: Eq, hyps: tuple[Hypothesis, ...]) -> Pf:
+    return by_combination(goal, hyps, _KIT)
 
 
-def _flip(eq: Eq) -> tuple[Eq, Pf]:
-    return Eq(eq.rhs, eq.lhs), Sym(Assume(eq))
+def _assume(eq: Eq) -> Hypothesis:
+    return eq, Assume(eq), None
+
+
+def _flip(eq: Eq) -> Hypothesis:
+    return Eq(eq.rhs, eq.lhs), Sym(Assume(eq)), None
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +115,7 @@ def _pay_sym() -> Pf:
 
 def _pay_trans() -> Pf:
     h1, h2 = int_eq(_a, _b), int_eq(_b, _c)
-    core = by_cancellation(int_eq(_a, _c), (_assume(h1), _assume(h2)))
+    core = _cancel(int_eq(_a, _c), (_assume(h1), _assume(h2)))
     return ImpIntro(h1, ImpIntro(h2, core))
 
 
@@ -175,7 +145,7 @@ def _pay_respect(symbol: VecSymbol, orient) -> Pf:
     g_c = symbol.graph(args, c)
     g_d = symbol.graph(primed, d)
     assert type(g_c) is Eq and type(g_d) is Eq
-    core = by_cancellation(int_eq(c, d), orient(eps_hyps, g_c, g_d))
+    core = _cancel(int_eq(c, d), orient(eps_hyps, g_c, g_d))
     out = ImpIntro(g_c, ImpIntro(g_d, core))
     for hyp in reversed(eps_hyps):
         out = ImpIntro(hyp, out)
@@ -220,7 +190,7 @@ def _pay_add_zero() -> Pf:
     g0 = _g_zero((), _u)
     ga = _g_add((_x, _u), _u0)
     assert type(ga) is Eq
-    core = by_cancellation(int_eq(_u0, _x), (_flip(ga), _assume(g0)))
+    core = _cancel(int_eq(_u0, _x), (_flip(ga), _assume(g0)))
     return _pay_axiom((("u!", g0), ("u!0", ga)), core)
 
 
@@ -229,7 +199,7 @@ def _pay_add_comm() -> Pf:
     g_r = _g_add((_y, _x), _u)
     g_l = _g_add((_x, _y), _u0)
     assert type(g_r) is Eq and type(g_l) is Eq
-    core = by_cancellation(int_eq(_u0, _u), (_flip(g_l), _assume(g_r)))
+    core = _cancel(int_eq(_u0, _u), (_flip(g_l), _assume(g_r)))
     return _pay_axiom((("u!", g_r), ("u!0", g_l)), core)
 
 
@@ -241,7 +211,7 @@ def _pay_add_assoc() -> Pf:
     g4 = _g_add((_u1, _z), _u2)
     for g in (g1, g2, g3, g4):
         assert type(g) is Eq
-    core = by_cancellation(
+    core = _cancel(
         int_eq(_u2, _u0),
         (_assume(g1), _assume(g2), _flip(g3), _flip(g4)),
     )
@@ -254,7 +224,7 @@ def _pay_add_neg() -> Pf:
     gn = _g_neg((_x,), _u0)
     ga = _g_add((_x, _u0), _u1)
     assert type(g0) is Eq and type(gn) is Eq and type(ga) is Eq
-    core = by_cancellation(int_eq(_u1, _u), (_flip(ga), _flip(gn), _flip(g0)))
+    core = _cancel(int_eq(_u1, _u), (_flip(ga), _flip(gn), _flip(g0)))
     return _pay_axiom((("u!", g0), ("u!0", gn), ("u!1", ga)), core)
 
 
@@ -308,7 +278,6 @@ __all__ = [
     "ADD_COMPONENTWISE",
     "NEG_AS_SWAP",
     "ZERO_AS_DIAGONAL",
-    "by_cancellation",
     "int_eq",
     "integers_interpretation",
 ]
