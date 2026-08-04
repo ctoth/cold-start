@@ -10,12 +10,13 @@ PEANO.
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
-from .presburger import ZERO, S, add, induction
+from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, add, induction
 from .proof import (
     MP,
     Assume,
     Axiom,
     Cong,
+    ExFalso,
     ExistsElim,
     ExistsIntro,
     ImpIntro,
@@ -33,6 +34,7 @@ from .proofs import (
     MUL_ASSOC,
     MUL_COMM,
     MUL_RULES,
+    MUL_ZERO_LEFT,
     add_assoc,
     add_cancel_right,
     add_eq_zero,
@@ -40,9 +42,10 @@ from .proofs import (
     left_identity,
     mul_assoc,
     mul_comm,
+    mul_zero_left,
     zero_or_succ,
 )
-from .prop import and_left, or_elim
+from .prop import and_left, and_right, or_elim
 from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
 from .tactics import lemma_rule, prove_eq
 
@@ -98,6 +101,7 @@ DIVIDES_ADD_CANCEL: Formula = Implies(
     peano_divides(_a, add(_b, mul(_a, _c))),
     peano_divides(_a, _b),
 )
+DIVIDES_ONE: Formula = Implies(peano_divides(_a, ONE), Eq(_a, ONE))
 
 
 def _mul_one(term: Term) -> Pf:
@@ -288,12 +292,91 @@ def divides_add_cancel() -> Pf:
     return induction("c", pred, base, step)
 
 
+def divides_one() -> Pf:
+    """PEANO proves ``a | 1 -> a = 1``: units are trivial.
+
+    From the witness ``a*k = 1``, case on ``k``: zero makes the product zero,
+    never ``S(0)``. At ``k = S(j)``, case on ``a``: zero zeroes the product
+    again; at ``a = S(m)`` the recursion laws expose ``S(a*j + m) = S(0)``,
+    injectivity peels it, and a zero sum forces ``m = 0`` -- so ``a = S(0)``.
+    The unit-divisor constraint of formula (2)'s first disjunct becomes
+    ``a = b = c = 1`` through this lemma.
+    """
+    hyp = peano_divides(_a, ONE)
+    goal = Eq(_a, ONE)
+    k, j, m = Var("k!"), Var("j!"), Var("m!")
+    witness = instantiate(hyp, k)  # a*k! = S(0)
+
+    # k! = 0: the product is zero, contradicting S(0).
+    k_zero = Eq(k, ZERO)
+    to_zero = Cong("*", (Refl(_a), Assume(k_zero)))  # a*k! = a*0
+    times_zero = Inst(Axiom(MUL_ZERO_F), "x", _a)  # a*0 = 0
+    zero_is_one = Trans(Trans(Sym(times_zero), Sym(to_zero)), Assume(witness))  # 0 = S(0)
+    k_zero_arm = ImpIntro(
+        k_zero,
+        ExFalso(MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", ZERO), Sym(zero_is_one)), goal),
+    )
+
+    # k! = S(j!): one recursion rung leaves  a*j! + a = S(0).
+    k_succ = Eq(k, S(j))
+    to_succ = Cong("*", (Refl(_a), Assume(k_succ)))  # a*k! = a*S(j!)
+    unfold = Inst(Inst(Axiom(MUL_SUCC_F), "x", _a), "y", j)  # a*S(j!) = a*j! + a
+    sum_is_one = Trans(Sym(unfold), Trans(Sym(to_succ), Assume(witness)))  # a*j! + a = S(0)
+
+    #   a = 0: the sum collapses to zero, contradicting S(0) again.
+    a_zero = Eq(_a, ZERO)
+    collapse = Cong("+", (Cong("*", (Assume(a_zero), Refl(j))), Assume(a_zero)))
+    zero_sum = Trans(
+        Cong("+", (lemma_rule(MUL_ZERO_LEFT, mul_zero_left()).instance({"n": j}), Refl(ZERO))),
+        Inst(Axiom(ADD_ZERO_F), "x", ZERO),
+    )  # 0*j! + 0 = 0
+    zero_is_one_again = Trans(Trans(Sym(zero_sum), Sym(collapse)), sum_is_one)  # 0 = S(0)
+    a_zero_arm = ImpIntro(
+        a_zero,
+        ExFalso(MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", ZERO), Sym(zero_is_one_again)), goal),
+    )
+
+    #   a = S(m!): injectivity and the zero-sum split force m! = 0.
+    a_succ = Eq(_a, S(m))
+    shift = Cong("+", (Refl(mul(_a, j)), Assume(a_succ)))  # a*j! + a = a*j! + S(m!)
+    push = Inst(Inst(Axiom(ADD_SUCC_F), "x", mul(_a, j)), "y", m)  # a*j! + S(m!) = S(a*j! + m!)
+    succs_equal = Trans(Sym(push), Trans(Sym(shift), sum_is_one))  # S(a*j! + m!) = S(0)
+    inject = Inst(Inst(Axiom(SUCC_INJ), "x", add(mul(_a, j), m)), "y", ZERO)
+    split = MP(Inst(Inst(add_eq_zero(), "x", mul(_a, j)), "y", m), MP(inject, succs_equal))
+    m_zero = and_right(Eq(mul(_a, j), ZERO), Eq(m, ZERO), split)  # m! = 0
+    a_is_one = Trans(Assume(a_succ), Cong("S", (m_zero,)))  # a = S(0)
+    ex_succ_a = exists("m", "", Eq(_a, S(Var("m"))))
+    a_succ_arm = ImpIntro(ex_succ_a, ExistsElim("m!", Assume(ex_succ_a), a_is_one))
+
+    by_a = or_elim(
+        a_zero,
+        ex_succ_a,
+        goal,
+        Inst(zero_or_succ(), "n", _a),
+        a_zero_arm,
+        a_succ_arm,
+    )
+    ex_succ_k = exists("m", "", Eq(k, S(Var("m"))))
+    k_succ_arm = ImpIntro(ex_succ_k, ExistsElim("j!", Assume(ex_succ_k), by_a))
+
+    by_k = or_elim(
+        k_zero,
+        ex_succ_k,
+        goal,
+        Inst(zero_or_succ(), "n", k),
+        k_zero_arm,
+        k_succ_arm,
+    )
+    return ImpIntro(hyp, ExistsElim("k!", Assume(hyp), by_k))
+
+
 __all__ = [
     "DIVIDES_ADD",
     "DIVIDES_ADD_CANCEL",
     "DIVIDES_STEP",
     "DIVIDES_FACTOR",
     "DIVIDES_MUL_LEFT",
+    "DIVIDES_ONE",
     "DIVIDES_PRODUCT",
     "DIVIDES_PRODUCT_RIGHT",
     "DIVIDES_REFL",
@@ -304,6 +387,7 @@ __all__ = [
     "divides_add_cancel",
     "divides_factor",
     "divides_mul_left",
+    "divides_one",
     "divides_step",
     "divides_product",
     "divides_product_right",

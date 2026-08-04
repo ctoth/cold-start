@@ -10,6 +10,7 @@ from cold_start.divisibility import (
     DIVIDES_ADD_CANCEL,
     DIVIDES_FACTOR,
     DIVIDES_MUL_LEFT,
+    DIVIDES_ONE,
     DIVIDES_PRODUCT,
     DIVIDES_PRODUCT_RIGHT,
     DIVIDES_REFL,
@@ -21,6 +22,7 @@ from cold_start.divisibility import (
     divides_add_cancel,
     divides_factor,
     divides_mul_left,
+    divides_one,
     divides_product,
     divides_product_right,
     divides_refl,
@@ -141,6 +143,15 @@ def test_a_divisor_of_a_shifted_sum_divides_the_remainder_in_peano():
         peano_divides(a, add(b, mul(a, c))),
         peano_divides(a, b),
     )
+
+
+def test_only_one_divides_one_in_peano():
+    a = Var("a")
+    seq = check(divides_one(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_ONE
+    assert DIVIDES_ONE == Implies(peano_divides(a, ONE), Eq(a, ONE))
 
 
 def test_transitivity_formula_has_the_expected_mathematical_shape():
