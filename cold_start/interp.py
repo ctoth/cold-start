@@ -1,12 +1,13 @@
 """Interpretations between theories, as checked artifacts -- the bridge layer.
 
 An *interpretation* carries one theory's language into another's: each source
-function symbol either survives verbatim or is translated RELATIONALLY, through
-a graph formula in the target ("x + y = z" becomes Robinson's bridge identity,
-which mentions only S and multiplication). The artifact then owes obligations:
+function symbol either survives verbatim or is translated RELATIONALLY through
+a graph formula in the target ("x + y = z" becomes Robinson's bridge identity),
+and each source predicate can be replaced by a target formula. The artifact then
+owes obligations:
 
   - one per source axiom -- its translation must be a target theorem;
-  - totality and uniqueness per relational symbol -- the graph must really be
+  - totality and uniqueness per translated function -- the graph must really be
     the graph of a function on the target's domain.
 
 `verify` drives every offered payment through the trusted `check` and returns a
@@ -47,6 +48,7 @@ from .syntax import (
     Fun,
     Implies,
     Node,
+    Rel,
     Term,
     Var,
     exists,
@@ -77,6 +79,23 @@ class GraphSymbol:
 
     def _args(self) -> tuple[Term, ...]:
         return tuple(Var(f"x!{i}") for i in range(self.arity))
+
+
+@dataclass(frozen=True)
+class PredicateSymbol:
+    """A source relation translated directly to a target formula.
+
+    Predicates incur no totality or uniqueness debt: unlike a function graph,
+    their interpretation need not select a result. Their formula still counts
+    toward the measured bridge size.
+    """
+
+    rel: str
+    arity: int
+    formula: Callable[[tuple[Term, ...]], Formula]
+
+    def instance(self) -> Formula:
+        return self.formula(tuple(Var(f"x!{i}") for i in range(self.arity)))
 
 
 @dataclass(frozen=True)
@@ -125,6 +144,7 @@ class Interpretation:
     source: Theory
     target: Theory
     symbols: tuple[GraphSymbol, ...]
+    predicates: tuple[PredicateSymbol, ...] = ()
     payments: tuple[tuple[str, Pf], ...] = ()
 
     # Relativization: when `domain` is set, the interpretation lands on the
@@ -238,15 +258,61 @@ def _translate_eq(eq: Eq, names: dict, domain: Callable[[Term], Formula] | None)
     return atom
 
 
+def _translate_rel(
+    rel: Rel,
+    names: dict,
+    predicates: dict,
+    domain: Callable[[Term], Formula] | None,
+) -> Formula:
+    """Translate a relation atom, hoisting translated functions in its args."""
+    guards: list[tuple[str, Formula]] = []
+    avoid = set(rel.free_vars())
+
+    def hoist(t: Term) -> Term:
+        node = _innermost_relational(t, names)
+        name = _fresh(avoid)
+        avoid.add(name)
+        value = Var(name)
+        guards.append((name, names[node.name].graph(node.args, value)))
+        return _replace_equal(t, node, value)
+
+    args: list[Term] = []
+    for original in rel.args:
+        arg = original
+        while _has_relational(arg, names):
+            arg = hoist(arg)
+        args.append(arg)
+
+    predicate = predicates.get(rel.name)
+    if predicate is None:
+        atom: Formula = Rel(rel.name, tuple(args))
+    else:
+        if len(args) != predicate.arity:
+            raise InterpError(
+                f"predicate {rel.name!r} expects {predicate.arity} args, got {len(args)}"
+            )
+        atom = predicate.formula(tuple(args))
+
+    for name, guard in reversed(guards):
+        body = Implies(guard, atom)
+        if domain is not None:
+            body = Implies(domain(Var(name)), body)
+        atom = forall(name, "", body)
+    return atom
+
+
 def translate(
     f: Formula,
     symbols: tuple[GraphSymbol, ...],
     domain: Callable[[Term], Formula] | None = None,
+    *,
+    predicates: tuple[PredicateSymbol, ...] = (),
 ) -> Formula:
     """Translate a quantifier-free source formula through the graph symbols.
     Structure is preserved; only atoms change. Source axioms are shallow by
     nature, so the structural recursion here is harmless."""
     names = {s.fun: s for s in symbols}
+    predicate_names = {p.rel: p for p in predicates}
 
     def tr(g: Formula) -> Formula:
         if type(g) is Implies:
@@ -255,6 +321,8 @@ def translate(
             return g
         if type(g) is Eq:
             return _translate_eq(g, names, domain)
+        if type(g) is Rel:
+            return _translate_rel(g, names, predicate_names, domain)
         raise InterpError(
             f"cannot translate {type(g).__name__}: source formulas must be quantifier-free"
         )
@@ -266,10 +334,12 @@ def translate_axiom(
     f: Formula,
     symbols: tuple[GraphSymbol, ...],
     domain: Callable[[Term], Formula] | None = None,
+    *,
+    predicates: tuple[PredicateSymbol, ...] = (),
 ) -> Formula:
     """A source axiom's full obligation: its translation, with the implicitly
     universal free variables guarded into the domain when relativizing."""
-    out = translate(f, symbols, domain)
+    out = translate(f, symbols, domain, predicates=predicates)
     if domain is not None:
         for name in sorted(f.free_vars(), reverse=True):
             out = Implies(domain(Var(name)), out)
@@ -287,10 +357,15 @@ def obligations(interp: Interpretation) -> tuple[Obligation, ...]:
     obligations (nonempty, closed under retained symbols, holding of retained
     constants). Labels are stable (the axiom's repr), so payments can be
     prepared independently of iteration order."""
-    symbols, dom = interp.symbols, interp.domain
+    symbols, predicates, dom = interp.symbols, interp.predicates, interp.domain
     obs: list[Obligation] = []
     for ax in sorted(interp.source.axioms, key=repr):
-        obs.append(Obligation(f"axiom:{ax!r}", translate_axiom(ax, symbols, dom)))
+        obs.append(
+            Obligation(
+                f"axiom:{ax!r}",
+                translate_axiom(ax, symbols, dom, predicates=predicates),
+            )
+        )
     for s in symbols:
         args = s._args()
         c, d = Var("c!"), Var("d!")
@@ -350,7 +425,7 @@ def verify(interp: Interpretation) -> BridgeReport:
                 f"  owed: {o.formula!r}\n  paid: {seq.concl!r}"
             )
         statuses.append(ObligationStatus(o, paid=True, toll=_size(pf)))
-    bridge_size = sum(_size(s.instance()) for s in interp.symbols)
+    bridge_size = sum(_size(s.instance()) for s in (*interp.symbols, *interp.predicates))
     return BridgeReport(name=interp.name, bridge_size=bridge_size, statuses=tuple(statuses))
 
 
@@ -361,6 +436,7 @@ __all__ = [
     "InterpError",
     "Obligation",
     "ObligationStatus",
+    "PredicateSymbol",
     "obligations",
     "translate",
     "translate_axiom",
