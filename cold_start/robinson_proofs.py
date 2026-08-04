@@ -9,8 +9,7 @@ Robinson's definition of addition *correct*? Here it is, as a theorem.
 Read with `+` back in, that is `(1 + ac)(1 + bc) = 1 + c²(1 + ab)` at `c := a+b`,
 and at that instance it is a pure semiring identity -- both sides multiply out to
 `ab(a+b)² + (a+b)² + 1`. So it needs no positivity and no case split: it is true
-of every natural number, 0 included. (Positivity is what the CONVERSE needs --
-that the bridge holding forces `a + b = c` -- and that is not proved here.)
+of every natural number, 0 included.
 
 The proof is the identity's own reason: `poly_kit()` normalises both sides to
 one canonical polynomial. Distributivity expands the products, the recursion
@@ -22,9 +21,12 @@ sides of the theorem above land on
 
 which is `1 + (a+b)² + ab(a+b)²` written in the canonical arrangement.
 
-Robinson's §2 axioms A4' and A7' then come out as instances, with one rewrite
-each to put the sum back in the shape the axiom is stated in. A5' does NOT come
-out, and cannot -- see `A5_IS_NOT_A_PEANO_THEOREM` at the bottom.
+The converse is derived too, precisely on Robinson's positive domain.  A bridge
+hypothesis normalizes to `(a+b)c=c²`; additive cancellation removes the common
+polynomial part, and a nested-induction proof cancels a positive factor `S(c)`.
+Thus `bridge(a,b,S(c)) -> a+b=S(c)`.  Robinson's A4' and A7' come out as direct
+instances, while A5' comes out with exactly that positivity guard.  Its
+unguarded Peano version remains false at `c=0`, as documented at the bottom.
 """
 
 from __future__ import annotations
@@ -282,9 +284,9 @@ def robinson_mul_succ() -> Pf:
     return _instance_at({"a": mul(_a, _b), "b": _a}, (axiom_rule(MUL_SUCC_F).flipped,))
 
 
-# --- why A5' is missing ----------------------------------------------------
+# --- why unguarded A5' is still impossible --------------------------------
 # Robinson's A5' -- `bridge(a,b,c) -> bridge(a, S b, S c)`, the recursion law for
-# addition -- has no proof here, and can have none. It is not that the tactics
+# addition -- has no unguarded proof here, and can have none. It is not that the tactics
 # are too weak: the implication is FALSE in the standard model of PEANO, which by
 # soundness settles it.
 #
@@ -294,5 +296,6 @@ def robinson_mul_succ() -> Pf:
 # `bridge(1, 2, 1)` demands `2·3 = 1 + 1·3`, i.e. `6 = 4`. Robinson's §2 domain is
 # the POSITIVE integers, where `c > 0` makes the cancellation available; PEANO's
 # is the naturals, where it does not. That is precisely the work positivity does
-# in her definition -- A4' and A7' transfer to PEANO without it, A5' does not --
-# and `tests/test_robinson.py` pins the counterexample.
+# in her definition. A4' and A7' transfer without it; `robinson_add_succ_positive`
+# proves A5' under `c = S(k)`, and `tests/test_robinson.py` pins the lone boundary
+# obstruction at zero.

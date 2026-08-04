@@ -95,19 +95,29 @@ each rung proved by induction over the rungs below it.
 theorem: `PEANO ⊢ bridge(a, 1, S a)` and `PEANO ⊢ bridge(a·b, a, a·S b)`. The derived
 sequent is the axiom formula on the nose, with no hypotheses.
 
-**A5' is not, and cannot be.** `bridge(a,b,c) → bridge(a, S b, S c)` is FALSE in the
+**Unguarded A5' is not, and cannot be, a PEANO theorem.**
+`bridge(a,b,c) → bridge(a, S b, S c)` is FALSE in the
 standard model of PEANO: the bridge says `(a+b)·c = c²`, which pins `a + b = c` down
 only where `c` can be cancelled, and 0 cannot. At `a = b = 1, c = 0` the hypothesis
 holds vacuously while the conclusion demands `6 = 4`. By soundness there is no proof.
 This is exactly the work Robinson's positive-integer domain does in §2 — and it locates
 it precisely: two of her three recursion axioms are positivity-free, one is not.
 
+**The missing positive case is now proved.** `cold_start.robinson_proofs` derives
+`PEANO ⊢ bridge(a,b,S(c)) → a+b=S(c)`. Expansion and successor injectivity reduce
+the bridge to `(a+b)S(c)=S(c)²`; a separately checked nested-induction theorem
+derives `xS(c)=yS(c) → x=y`. Consequently A5' itself is a theorem under the exact
+guard `c=S(k)`. Both the cancellation and converse proof terms are also rendered
+into `lean_export/ColdStart.lean` and accepted by Lean 4's kernel.
+
 ## Open follow-ups
-- [x] The bridge itself as a PEANO theorem, plus A4'/A7' as instances (A5' refuted).
+- [x] Both bridge directions as PEANO theorems on the positive domain, plus
+      A4'/A7' outright and A5' with its exact positivity guard (unguarded A5'
+      remains refuted at zero).
 - [ ] Mechanise Theorem 1.2 (`+`, `·` from `S` and `|`) — needs a divisibility-based
   defined `·` and the coprimality/lcm definitions (p. 102).
 - [x] A genuine *induction* proof in `ROBINSON_PEANO` (base 1): `cold_start/rigidity.py`
   derives `|- f(x) = x` from `f(1)=1`, `f(Sx)=S(fx)` via the induction rule
   (and `|- f(x·y) = f(x)·f(y)` from it) — Wehrung's brachymorphism laws over ℕ⁺.
-- [ ] The CONVERSE of the bridge theorem — `bridge(a,b,c) → a + b = c` for `c > 0` —
-  which is where positivity has to enter, and where A5' would come from.
+- [x] The CONVERSE of the bridge theorem — `bridge(a,b,c) → a + b = c` for `c > 0` —
+      derived through positive multiplication cancellation.

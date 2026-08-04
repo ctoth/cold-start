@@ -7,10 +7,10 @@ Addition is first-order definable from multiplication and successor. Here we:
      integers); and
   3. have the trusted `check()` re-derive a Robinson-axiom instance, so the
      eliminated-addition theory really runs through the proof checker; and
-  4. prove the bridge itself IN PEANO -- Robinson's definition of addition is
-     correct as a theorem, not as a table of checked cases -- and with it two of
-     her three §2 axioms. The third, A5', is refuted instead: it needs the
-     positivity that PEANO does not have.
+  4. prove both directions of the bridge IN PEANO -- Robinson's definition of
+     addition is correct as a theorem, not as a table of checked cases -- and
+     recover A5' with its exact positivity guard. The unguarded A5' is refuted
+     at zero, locating why Robinson works over the positive integers.
 """
 
 from __future__ import annotations

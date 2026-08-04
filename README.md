@@ -65,9 +65,12 @@ The code is the `cold_start/` package (flat, no src-layout):
   same `check()`, which cannot tell them apart.
 - **`cold_start/robinson_proofs.py`** — Robinson's bridge proved in PEANO:
   `PEANO ⊢ S(a·(a+b))·S(b·(a+b)) = S(((a+b)·(a+b))·S(a·b))`, i.e. her definition
-  of addition is *correct*, for all `a, b` at once. Her §2 axioms A4' and A7'
-  follow as instances; A5' is refuted instead — it is false at `c = 0`, which is
-  precisely where her positive-integer domain earns its keep.
+  of addition is *correct*, for all `a, b` at once. The converse is a checked
+  theorem at every positive result: `bridge(a,b,S(c)) → a+b=S(c)`, resting on a
+  derived nested-induction proof that positive multiplication factors cancel.
+  Her §2 axioms A4' and A7' follow outright; A5' follows with that exact
+  positivity guard. Unguarded A5' is false at `c = 0`, precisely where her
+  positive-integer domain earns its keep.
 - **`cold_start/rigidity.py`** — the first genuine *induction* proof in Robinson's
   `(1, S, ·)` theory, whose base is **1**. Extends `ROBINSON_PEANO` (with
   `dataclasses.replace`, never a subclass) by a fresh unary `f` and the successor
@@ -131,6 +134,9 @@ uv run python -m cold_start.verify proof.hmb
 - [x] `*` and its laws; distributivity — the full ladder up to `(x·y)·z = x·(y·z)`,
       and with it Robinson's bridge `(1+ac)(1+bc) = 1+c²(1+ab)` at `c := a+b`
       proved in PEANO (`cold_start.robinson_proofs`)
+- [x] Positive multiplication cancellation and Robinson's converse, proving the
+      bridge is exactly the graph of addition on the positive domain; independently
+      re-checked by the generated Lean 4 corpus
 - [ ] Ordering (`<=`), divisibility, primality
 - [ ] A proof-term pretty-printer (proof trees / step listings)
 - [x] A *non-trusted* tactics layer that emits proof terms — including ordered

@@ -142,12 +142,15 @@ at once rather than per instance: `robinson_proofs.bridge_theorem()` proves
 `PEANO ⊢ bridge(a, b, a+b)`. At `c := a+b` the bridge is a pure semiring identity —
 both sides multiply out to `ab(a+b)² + (a+b)² + 1` — so it falls to normalising both
 sides to one canonical polynomial over the multiplication laws in `proofs.py`, and it
-needs no positivity: `a = b = 0` is covered like everything else. Her §2 axioms A4'
-and A7' come out as instances of it, and **A5' does not** — it is false in the standard
-model of PEANO (at `c = 0` the hypothesis holds vacuously and the conclusion fails), so
-by soundness it has no proof. That is where positivity actually bites.
+needs no positivity: `a = b = 0` is covered like everything else. The **converse is
+now derived as well** on precisely Robinson's domain:
+`PEANO ⊢ bridge(a,b,S(c)) → a+b=S(c)`. Normalization first extracts
+`(a+b)S(c)=S(c)²`; a nested-induction theorem proves that multiplication by `S(c)`
+is cancellative, so the bridge is exactly the graph of addition for positive results.
 
-What is still *not* derived is the CONVERSE — that the bridge holding **forces**
-`a + b = c` when `c > 0`. That is the direction needing positivity, and
-`tests/test_robinson.py` still only model-checks it over a finite range. See
-`papers/Robinson_1949_DefinabilityArithmetic/`.
+Her §2 axioms A4' and A7' come out as unrestricted instances. A5' comes out with
+the exact guard `c=S(k)`: `bridge(a,b,S(k)) → bridge(a,S(b),S(S(k)))`. The unguarded
+formula is still false in the standard model at `c=0`, so by soundness it still has
+no PEANO proof. This cleanly separates the theorem from its single boundary
+obstruction. The generated Lean 4 corpus independently re-checks the cancellation
+and converse proofs.

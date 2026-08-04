@@ -7,11 +7,12 @@ trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
 the verifier, not the object.
 
 ## Current state: DONE & GREEN
-- pytest: **1031 passed**
+- pytest: **1164 passed**
 - Regression coverage includes exact-type subclass attacks, mutable-args
   aliasing, deep non-recursive traversal, hamblin byte round-trips, cross-process
   verification, quantifier rules, classical rules, many-sorted checking, model
-  soundness probes, rings/monoids, Presburger/Peano, the Robinson bridge, and
+  soundness probes, rings/monoids, Presburger/Peano, both directions of the
+  Robinson bridge (including derived positive multiplication cancellation), and
   Padoa's method (a prime-swapping automorphism of `(N⁺, ·)` that preserves `·`
   but breaks `+` and `S`, so `+` is not definable from `·` alone).
 - ruff check .: clean
@@ -39,7 +40,8 @@ the verifier, not the object.
 - `tactics.py` — UNTRUSTED prover: matching, rewrite rules, normalization,
                  prove_eq, by_induction. Emits proof terms; has no authority.
 - `proofs.py`  — worked proof constructors, by hand (left_identity_proof) and by
-                 tactics (add_comm, add_assoc, ...).
+                 tactics (add_comm, add_assoc, ...), plus additive and positive
+                 multiplicative cancellation by induction.
 - `verify.py`  — CLI: checks a binary proof in a SEPARATE process.
 - `lean.py`    — untrusted Lean 4 compat layer: conditional-theorem export
                  (axioms as hypotheses, never `axiom`), statement-fragment
