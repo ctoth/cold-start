@@ -3,7 +3,38 @@
 Project lives in this git repo. Full design notes in `NOTES.md`; this file is
 the running scratch log. (Moved into the repo at Q's request; was at the parent.)
 
-## 2026-06-16: notation formatter deletion-first cleanup
+## 2026-08-03: orchestration — prover layer + Robinson derivation (IN PROGRESS)
+
+Session assessment concluded: the checker is a cathedral with one theorem in it
+(`0+n=n`), because there is no untrusted prover — the missing half of the De
+Bruijn split. Also: ARCHITECTURE overclaimed the Robinson bridge as a "checked
+theorem" (it was only model-checked), and verify.py knew only the peano theory.
+Q approved: "drive Opus subagents and get it done."
+
+Two Opus coder agents dispatched:
+1. fixes-coder (main repo) — DONE, verified independently:
+   - 62e1d72 verify.py registers peano/presburger/robinson
+   - 52eeaf8 proofs.robinson_add_proof(a,b): bridge(a,b,a+b) DERIVED from
+     Robinson's A4'/A5' via Inst+MP chain; 1..5 sweep in test_robinson.py
+   - cddd630 ARCHITECTURE.md now claims exactly what is true (instances
+     derived; general definability NOT derived)
+   - 6a273a7 notes entry. Gates: 352 passed (was 322), ruff+pyright clean.
+   - I re-ran pytest myself (green) and cross-process-verified
+     robinson_add_proof(2,3) via `verify.py --theory robinson` -> VERIFIED,
+     hypothesis-free, no `+` symbol in the sequent.
+2. tactics-coder (worktree .claude/worktrees/agent-a92fb955711a2172f) — RUNNING.
+   Building cold_start/tactics.py (untrusted: matching, proof-producing
+   rewriting, normalize/prove_eq, by_induction) + tests/test_tactics.py.
+   Targets: 0+n=n, S(x)+y=S(x+y), x+y=y+x, (x+y)+z=x+(y+z), all through
+   check(_, PRESBURGER), plus a Hypothesis numeral-addition property test.
+   Diagnostics show left_identity/succ_add/add_comm/add_assoc in flight.
+
+Known cosmetic issue: repo-root `ruff check .` sees F401s inside the agent
+worktree under .claude/ — goes away when the worktree is cleaned up post-merge.
+
+NEXT: when tactics-coder reports — review its API, merge worktree branch into
+main, re-run full gates in main, refresh README/NOTES.md (prover layer now
+exists; theorem corpus grew), final commit. Blockers: none; waiting on agent.
 
 Workstream: `workstreams/notation-formatter-deletion-first.md`. Target is exact:
 `notation.py` owns human parse/print notation; `syntax.py` owns object-language
