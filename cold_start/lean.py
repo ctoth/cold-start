@@ -67,7 +67,14 @@ from .proof import (
     Sym,
     Trans,
 )
-from .proofs import add_proof, left_identity_proof, mul_proof, robinson_add_proof
+from .proofs import (
+    add_proof,
+    left_identity_proof,
+    mul_cancel_right_succ,
+    mul_proof,
+    robinson_add_proof,
+)
+from .robinson_proofs import bridge_converse_positive
 from .sequent import Sequent
 from .syntax import (
     Bottom,
@@ -1098,6 +1105,18 @@ def corpus_entries() -> list:
         ("coldstart_left_identity", left_identity_proof(), _presburger.PRESBURGER, True),
         ("coldstart_add_two_three", add_proof(2, 3), _presburger.PRESBURGER, True),
         ("coldstart_mul_two_three", mul_proof(2, 3), _peano.PEANO, True),
+        (
+            "coldstart_mul_cancel_right_positive",
+            mul_cancel_right_succ(),
+            _peano.PEANO,
+            True,
+        ),
+        (
+            "coldstart_robinson_bridge_converse_positive",
+            bridge_converse_positive(),
+            _peano.PEANO,
+            True,
+        ),
         (
             "coldstart_robinson_add_two_three",
             robinson_add_proof(2, 3),

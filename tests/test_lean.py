@@ -297,6 +297,8 @@ def test_corpus_epilogue_instantiates_the_arithmetic_theorems_at_Nat():
     assert "(ax_add_zero := fun x => rfl)" in text
     assert "(ax_succ_ne_zero := fun x h => Nat.noConfusion h)" in text
     assert "(mul := Nat.mul)" in text
+    assert "coldstart_mul_cancel_right_positive (M := Nat)" in text
+    assert "coldstart_robinson_bridge_converse_positive (M := Nat)" in text
     # Robinson's axioms hold of the POSITIVE integers (S a != 1 fails at a := 0),
     # so that theorem stays conditional -- it must not be instantiated at Nat.
     assert "coldstart_robinson_add_two_three (M := Nat)" not in text
