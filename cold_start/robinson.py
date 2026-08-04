@@ -29,7 +29,7 @@ from .syntax import Eq, Formula, Implies, Not, Term, Var
 ONE: Term = S(ZERO)  # the multiplicative identity, 1 = S(0)
 
 
-def bridge(a: Term, b: Term, c: Term) -> Formula:
+def bridge(a: Term, b: Term, c: Term) -> Eq:
     """Robinson's identity defining `a + b = c` using only `S` and `·`:
 
         S(a·c) · S(b·c) = S((c·c) · S(a·b)).
