@@ -34,12 +34,16 @@ from cold_start.robinson import (
 )
 from cold_start.robinson_proofs import (
     BRIDGE_CONVERSE_POS,
+    BRIDGE_FORWARD,
     BRIDGE_RESIDUAL,
     BRIDGE_SUM,
+    ROBINSON_ADD_SUCC_POS,
     bridge_converse_positive,
+    bridge_forward,
     bridge_residual,
     bridge_theorem,
     robinson_add_one,
+    robinson_add_succ_positive,
     robinson_mul_succ,
 )
 from cold_start.syntax import Var
@@ -144,10 +148,24 @@ def test_the_bridge_hypothesis_reduces_to_its_cancellation_equation():
     assert seq.hyps == frozenset()
 
 
+def test_addition_equality_implies_the_bridge():
+    seq = check(bridge_forward(), PEANO)
+
+    assert seq.concl == BRIDGE_FORWARD
+    assert seq.hyps == frozenset()
+
+
 def test_the_positive_bridge_converse_is_a_peano_theorem():
     seq = check(bridge_converse_positive(), PEANO)
 
     assert seq.concl == BRIDGE_CONVERSE_POS
+    assert seq.hyps == frozenset()
+
+
+def test_a5_is_a_peano_theorem_with_its_missing_positivity_guard():
+    seq = check(robinson_add_succ_positive(), PEANO)
+
+    assert seq.concl == ROBINSON_ADD_SUCC_POS
     assert seq.hyps == frozenset()
 
 

@@ -30,8 +30,8 @@ out, and cannot -- see `A5_IS_NOT_A_PEANO_THEOREM` at the bottom.
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
-from .presburger import SUCC_INJ, S, add
-from .proof import MP, Assume, Axiom, ImpIntro, Inst, Pf, Sym, Trans
+from .presburger import ADD_SUCC_F, SUCC_INJ, S, add
+from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Sym, Trans
 from .proofs import (
     ADD_ASSOC,
     DISTRIB_LEFT,
@@ -55,7 +55,14 @@ from .proofs import (
 )
 from .robinson import ONE, bridge
 from .syntax import Eq, Formula, Implies, Var
-from .tactics import axiom_rule, lemma_rule, normalize, normalize_equality, prove_eq
+from .tactics import (
+    axiom_rule,
+    hypothesis_rule,
+    lemma_rule,
+    normalize,
+    normalize_equality,
+    prove_eq,
+)
 
 _a, _b, _c = Var("a"), Var("b"), Var("c")
 
@@ -69,12 +76,24 @@ BRIDGE_RESIDUAL: Formula = Implies(
 )
 """The exact algebraic content left by a bridge hypothesis after expansion."""
 
+BRIDGE_FORWARD: Formula = Implies(
+    Eq(add(_a, _b), _c),
+    bridge(_a, _b, _c),
+)
+"""The forward graph direction, with the result named independently."""
+
 BRIDGE_CONVERSE_POS: Formula = Implies(
     bridge(_a, _b, S(_c)),
     Eq(add(_a, _b), S(_c)),
 )
 """The missing half of Robinson's theorem: her bridge defines addition when
 the result is positive (represented as ``S(c)``)."""
+
+ROBINSON_ADD_SUCC_POS: Formula = Implies(
+    bridge(_a, _b, S(_c)),
+    bridge(_a, S(_b), S(S(_c))),
+)
+"""Robinson's A5' recursion theorem with exactly its missing positivity guard."""
 
 POLY_BUDGET = 400
 """Rewrite steps the bridge needs; the identity is degree four in two
@@ -162,6 +181,21 @@ def bridge_residual() -> Pf:
     return ImpIntro(hyp, folded)
 
 
+def bridge_forward() -> Pf:
+    """PEANO |- a+b=c -> bridge(a,b,c), the graph's forward direction.
+
+    The earlier ``bridge_theorem`` chooses ``c := a+b`` in its statement.  This
+    implication names ``c`` independently: under the equality hypothesis,
+    rewriting ``c`` back to ``a+b`` reduces the target to that same polynomial
+    identity.  Discharging the equality makes the direction reusable by later
+    proofs instead of relying on metalevel substitution.
+    """
+    hyp = Eq(add(_a, _b), _c)
+    replace_c = hypothesis_rule(hyp).flipped
+    body = prove_eq(bridge(_a, _b, _c), (*poly_kit(), replace_c), POLY_BUDGET)
+    return ImpIntro(hyp, body)
+
+
 def bridge_converse_positive() -> Pf:
     """PEANO |- bridge(a,b,S(c)) -> a+b=S(c), Robinson's positive converse.
 
@@ -182,6 +216,33 @@ def bridge_converse_positive() -> Pf:
         S(_c),
     )
     return ImpIntro(hyp, MP(cancel, product_eq))
+
+
+def robinson_add_succ_positive() -> Pf:
+    """A5' with ``c`` positive, derived in PEANO instead of assumed.
+
+    The positive converse reads a bridge hypothesis as ``a+b=S(c)``.  Peano's
+    addition recursion turns that into ``a+S(b)=S(S(c))``; ``bridge_forward``
+    then turns the equality back into Robinson's successor bridge.  The
+    unguarded A5' remains correctly unprovable because its ``c=0`` instance is
+    false.
+    """
+    hyp = bridge(_a, _b, S(_c))
+    sum_eq_c = MP(bridge_converse_positive(), Assume(hyp))
+    unfold = Inst(Inst(Axiom(ADD_SUCC_F), "x", _a), "y", _b)
+    successor_eq = Cong("S", (sum_eq_c,))
+    next_sum = Trans(unfold, successor_eq)
+
+    forward = Inst(
+        Inst(
+            Inst(bridge_forward(), "c", S(S(_c))),
+            "a",
+            _a,
+        ),
+        "b",
+        S(_b),
+    )
+    return ImpIntro(hyp, MP(forward, next_sum))
 
 
 def _instance_at(sigma: dict, rewrite: tuple) -> Pf:
