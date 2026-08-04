@@ -181,8 +181,14 @@ argument, now isolated rather than blurred into the transcription.
 `x + y = z ↦ S(x·z)·S(y·z) = S((z·z)·S(x·y))`. Into her own `(1, S, ·)` theory,
 the translator drops base-1 Presburger's axioms onto A4' and (the closure of) A5'
 verbatim, and totality — `∃c bridge(a,b,c)`, the repo's first existential theorem —
-is derived by induction based at 1; uniqueness stays an honest open ledger entry
-pending a far-shore multiplication ladder. Into PEANO relativized to the positives
+is derived by induction based at 1; uniqueness stays an honest open ledger entry —
+and deservedly so: it is exactly **Robinson's axiom A8**, which she *added* (p. 104,
+"to guarantee the operational character of addition") rather than derived, leaving
+the axioms' mutual independence open. The structural obstruction is itself a
+checked theorem (`uniqueness_descends`): A5' maps bridge solutions injectively *up*
+the second argument, so uniqueness propagates *downward* — while induction only
+climbs, and no axiom inverts a bridge. Our open obligation is the paper's own open
+question, with the reason it resists derivable and derived. Into PEANO relativized to the positives
 (`δ(x) := ∃k. x = S(k)`), **every obligation is paid** (toll: 484,089 proof nodes):
 the guarded A5' theorem settles the translated recursion axiom and the bridge
 converse settles uniqueness — and the relativization is forced, since unguarded

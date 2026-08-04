@@ -139,6 +139,23 @@ derives `xS(c)=yS(c) → x=y`. Consequently A5' itself is a theorem under the ex
 guard `c=S(k)`. Both the cancellation and converse proof terms are also rendered
 into `lean_export/ColdStart.lean` and accepted by Lean 4's kernel.
 
+## The §2 interpretation as a checked artifact, and A8 (p. 104)
+
+`cold_start.bridges` packages §2 as two `Interpretation` artifacts over the
+19-node translation `x+y=z ↦ bridge(x,y,z)`. Landing in PEANO relativized to the
+positives, every obligation is paid (uniqueness by the bridge converse above).
+Landing in `ROBINSON_PEANO` itself, totality — `∃c bridge(a,b,c)` — is derived by
+base-1 induction from A4'/A5', but **uniqueness is exactly Robinson's A8**: on
+p. 104 she *adds* `[bridge(a,b,c) ∧ bridge(a,b,d)] → c=d` as a new axiom "to
+guarantee the operational character of addition," and notes "We do not know
+whether the axioms of S … are mutually independent." Her Theorem 2.1 equivalence
+argument (p. 105) is semantic (coprimality cases over ℕ), not a first-order
+derivation. Our artifact therefore ledgers `uniqueness:+` open — the paper's own
+open question — and `bridges.uniqueness_descends` checks the structural
+obstruction: A5' pushes bridge solutions injectively *up* the second argument,
+so uniqueness propagates *downward* while induction only climbs. The rungs that
+do fall without A8 are derived (`one_add`: `bridge(1,b,Sb)`).
+
 ## Open follow-ups
 - [x] Both bridge directions as PEANO theorems on the positive domain, plus
       A4'/A7' outright and A5' with its exact positivity guard (unguarded A5'
