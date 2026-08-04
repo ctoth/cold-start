@@ -29,6 +29,7 @@ from .proof import (
     Axiom,
     Cong,
     ExFalso,
+    ExistsIntro,
     ForallElim,
     ForallIntro,
     ImpIntro,
@@ -38,8 +39,9 @@ from .proof import (
     Sym,
     Trans,
 )
+from .prop import Or, or_left, or_right
 from .robinson import ADD_ONE, ADD_SUCC
-from .syntax import Eq, Formula, Implies, Term, Var, forall
+from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import axiom_rule, by_induction, lemma_rule, normalize_equality
 
 
@@ -482,6 +484,29 @@ def mul_cancel_right_succ() -> Pf:
     step = ImpIntro(pred, ForallIntro("y", "", nested_induction))
     all_x = induction("x", pred, base, step)
     return ForallElim(all_x, y)
+
+
+ZERO_OR_SUCC: Formula = Or(  # n = 0  or  exists m, n = S(m)
+    Eq(_n, ZERO),
+    exists("m", "", Eq(_n, S(Var("m")))),
+)
+
+
+def zero_or_succ() -> Pf:
+    """Every number is zero or a successor -- the case-split principle.
+
+    Induction on ``n`` where neither case needs its hypothesis: at zero the
+    left disjunct is reflexivity, and at ``S(n)`` the right disjunct holds
+    with witness ``n``. A Presburger theorem; classical only through the
+    disjunction encoding itself."""
+    ex_zero = exists("m", "", Eq(ZERO, S(Var("m"))))
+    base = or_left(Eq(ZERO, ZERO), ex_zero, Refl(ZERO))
+
+    ex_succ = exists("m", "", Eq(S(_n), S(Var("m"))))
+    witness = ExistsIntro(ex_succ, _n, Refl(S(_n)))
+    step = ImpIntro(ZERO_OR_SUCC, or_right(Eq(S(_n), ZERO), ex_succ, witness))
+
+    return induction("n", ZERO_OR_SUCC, base, step)
 
 
 if __name__ == "__main__":
