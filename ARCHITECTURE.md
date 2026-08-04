@@ -110,6 +110,8 @@ mean swallowing CIC); only the emitted statement fragment parses back.
   monoid action `M ↷ X` (the shape that points toward modules/Clifford).
 - `robinson.py` — Robinson's `(1, S, ·)` arithmetic experiment: addition
   eliminated into a definable bridge over multiplication and successor.
+- `robinson_proofs.py` — that bridge proved *inside* PEANO, plus two of Robinson's
+  §2 axioms as theorems and a note on why the third is refutable instead.
 
 ## On `+` vs `×`: the honest foundational note
 Peano defines `×` recursively from `+` (`x·S(y) = x·y + x`). That axiom *contains a
@@ -135,9 +137,17 @@ sequent — so `2 + 3 = 5` arrives as an identity in `S` and `·` with no `+` sy
 it. `tests/test_robinson.py` checks that for every `a, b` in 1..5, and `verify.py
 --theory robinson` re-checks it in a fresh process.
 
-What is *not* derived here is Robinson's general definability theorem — that the
-bridge defines addition for **all** `a, b, c`. That is a statement about the standard
-model, and `tests/test_robinson.py` only model-checks it over a finite range rather
-than proving it. What the checker gives us is the entanglement of `+` and `×` on
-display, paid for per instance in a derivation rather than buried in an axiom. See
+Half of Robinson's general definability theorem is now derived too, for **all** `a, b`
+at once rather than per instance: `robinson_proofs.bridge_theorem()` proves
+`PEANO ⊢ bridge(a, b, a+b)`. At `c := a+b` the bridge is a pure semiring identity —
+both sides multiply out to `ab(a+b)² + (a+b)² + 1` — so it falls to normalising both
+sides to one canonical polynomial over the multiplication laws in `proofs.py`, and it
+needs no positivity: `a = b = 0` is covered like everything else. Her §2 axioms A4'
+and A7' come out as instances of it, and **A5' does not** — it is false in the standard
+model of PEANO (at `c = 0` the hypothesis holds vacuously and the conclusion fails), so
+by soundness it has no proof. That is where positivity actually bites.
+
+What is still *not* derived is the CONVERSE — that the bridge holding **forces**
+`a + b = c` when `c > 0`. That is the direction needing positivity, and
+`tests/test_robinson.py` still only model-checks it over a finite range. See
 `papers/Robinson_1949_DefinabilityArithmetic/`.

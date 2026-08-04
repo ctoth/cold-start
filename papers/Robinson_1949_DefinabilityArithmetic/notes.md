@@ -65,8 +65,37 @@ by bridges. `test_robinson_peano_axioms_true_in_N` confirms all are true in N.
 - `check(Inst(Axiom(A4'), "a", 2), ROBINSON_PEANO)` derives `bridge(2, 1, 3)` — a
   closed theorem with no `+` symbol, verified by the trusted checker.
 
+## The bridge as a PEANO theorem (`cold_start.robinson_proofs`)
+The model checks above say the bridge *works*; this says it is *correct*, for every
+pair of naturals at once:
+
+    PEANO ⊢ S(a·(a+b)) · S(b·(a+b)) = S(((a+b)·(a+b)) · S(a·b))
+
+At `c := a+b` the bridge is a pure semiring identity — both sides multiply out to
+`ab(a+b)² + (a+b)² + 1` — so it needs no positivity and no case split, and `a = b = 0`
+is covered like everything else. The proof is that identity's own reason: `poly_kit()`
+floats every successor out, expands the products by distributivity, and AC-sorts the
+resulting sum of monomials, so both sides reach one canonical polynomial and `prove_eq`
+joins them there. It rests on the multiplication ladder in `cold_start.proofs`
+(`0·n = 0`, `S(x)·y = x·y + y`, commutativity, distributivity both ways, associativity),
+each rung proved by induction over the rungs below it.
+
+**A4' and A7' are Peano theorems**, one rewrite each from an instance of the bridge
+theorem: `PEANO ⊢ bridge(a, 1, S a)` and `PEANO ⊢ bridge(a·b, a, a·S b)`. The derived
+sequent is the axiom formula on the nose, with no hypotheses.
+
+**A5' is not, and cannot be.** `bridge(a,b,c) → bridge(a, S b, S c)` is FALSE in the
+standard model of PEANO: the bridge says `(a+b)·c = c²`, which pins `a + b = c` down
+only where `c` can be cancelled, and 0 cannot. At `a = b = 1, c = 0` the hypothesis
+holds vacuously while the conclusion demands `6 = 4`. By soundness there is no proof.
+This is exactly the work Robinson's positive-integer domain does in §2 — and it locates
+it precisely: two of her three recursion axioms are positivity-free, one is not.
+
 ## Open follow-ups
+- [x] The bridge itself as a PEANO theorem, plus A4'/A7' as instances (A5' refuted).
 - [ ] Mechanise Theorem 1.2 (`+`, `·` from `S` and `|`) — needs a divisibility-based
   defined `·` and the coprimality/lcm definitions (p. 102).
 - [ ] A genuine *induction* proof in `ROBINSON_PEANO` (base 1), e.g. re-deriving an
   ordinary `+` law, to show the eliminated-`+` system proves what Peano does.
+- [ ] The CONVERSE of the bridge theorem — `bridge(a,b,c) → a + b = c` for `c > 0` —
+  which is where positivity has to enter, and where A5' would come from.

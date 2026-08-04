@@ -53,14 +53,21 @@ The code is the `cold_start/` package (flat, no src-layout):
 - **`cold_start/tactics.py`** — the **untrusted prover** half of the split: a
   small equational engine (first-order matching, directed rewrite rules,
   leftmost-outermost rewriting under a `Cong` tower, normalization to a fixpoint,
-  `prove_eq`, `by_induction`) that *emits* proof terms. It may be arbitrarily
+  `prove_eq`, `by_induction`, and *ordered* rewriting so that commutativity can be
+  a rule without looping) that *emits* proof terms. It may be arbitrarily
   clever, because it has no authority: a bug here yields a proof `check()`
   rejects, never a false theorem. Nothing in the trusted core imports it, and a
   test enforces that direction.
 - **`cold_start/proofs.py`** — worked proofs, in two styles: built by hand
   (`left_identity_proof`) and built by tactics (`left_identity`, `succ_add`,
-  `add_comm`, `add_assoc` — commutativity and associativity of addition). Both
-  face the same `check()`, which cannot tell them apart.
+  `add_comm`, `add_assoc`, then the multiplication ladder up through
+  `mul_comm`, `distrib_left`/`distrib_right` and `mul_assoc`). Both face the
+  same `check()`, which cannot tell them apart.
+- **`cold_start/robinson_proofs.py`** — Robinson's bridge proved in PEANO:
+  `PEANO ⊢ S(a·(a+b))·S(b·(a+b)) = S(((a+b)·(a+b))·S(a·b))`, i.e. her definition
+  of addition is *correct*, for all `a, b` at once. Her §2 axioms A4' and A7'
+  follow as instances; A5' is refuted instead — it is false at `c = 0`, which is
+  precisely where her positive-integer domain earns its keep.
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`cold_start/lean.py`** — untrusted **Lean 4 compat layer**: renders checked
@@ -111,8 +118,11 @@ uv run python -m cold_start.verify proof.hmb
 - [x] Induction as a sound first-class rule (was an unsound axiom schema)
 - [x] `Bottom`/`Not`, successor disequality/injectivity, and classical rules
 - [x] Explicit quantifiers with locally nameless binders
-- [ ] `n + 0 = 0 + n` → commutativity of `+`, then associativity
-- [ ] `*` and its laws; distributivity
+- [x] `n + 0 = 0 + n` → commutativity of `+`, then associativity
+- [x] `*` and its laws; distributivity — the full ladder up to `(x·y)·z = x·(y·z)`,
+      and with it Robinson's bridge `(1+ac)(1+bc) = 1+c²(1+ab)` at `c := a+b`
+      proved in PEANO (`cold_start.robinson_proofs`)
 - [ ] Ordering (`<=`), divisibility, primality
 - [ ] A proof-term pretty-printer (proof trees / step listings)
-- [ ] A *non-trusted* tactics layer that emits proof terms
+- [x] A *non-trusted* tactics layer that emits proof terms — including ordered
+      rewriting, so commutativity can be a rule without looping
