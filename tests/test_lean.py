@@ -19,19 +19,21 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from cold_start.checker import Theory
-from cold_start.lean import (
+from cold_start.lean.corpus import (
     CORPUS_NAMES,
     CORPUS_PATH,
-    LeanError,
     export_corpus,
-    export_theorem,
+    write_corpus,
+)
+from cold_start.lean.proof import export_theorem
+from cold_start.lean.syntax import (
+    LeanError,
     parse_formula,
     parse_term,
     render_formula,
     render_statement,
     render_term,
     universal_closure,
-    write_corpus,
 )
 from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO, mul
 from cold_start.presburger import (

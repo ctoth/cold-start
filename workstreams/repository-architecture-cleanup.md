@@ -826,8 +826,58 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 2 commit
+- `be1fdca refactor: unify external text emitters`
 
 Next slice:
 
 - Iteration 3 - Lean ownership package
+
+### Iteration 3 - Lean Ownership Package - Complete
+
+Surfaces:
+
+- combined `cold_start/lean.py` ownership
+  - Disposition: delete/split
+  - Owners after cleanup: statement syntax in `lean/syntax.py`, checked proof
+    export in `lean/proof.py`, generated corpus in `lean/corpus.py`, and the real
+    command entry point in `lean/__main__.py`.
+- old module-level public re-export surface
+  - Disposition: delete
+  - Action: callers import their concrete owner; no package `__init__.py` facade
+    or compatibility forwarding surface exists.
+- Nat discharge knowledge used during theorem application
+  - Disposition: move/inject
+  - Owner after cleanup: `lean/corpus.py` owns the data and passes it explicitly
+    into proof rendering, avoiding a proof-to-corpus dependency cycle.
+- checked-in Lean output path
+  - Disposition: keep/rebase
+  - Owner after cleanup: `lean/corpus.py` resolves the repository-level
+    `lean_export/ColdStart.lean` path from the deeper package location.
+
+Red evidence:
+
+- Error: `uv run pytest -o addopts= -q tests\test_lean.py`
+  - collection failed because `cold_start.lean` was still a module, so
+    `cold_start.lean.corpus` did not exist.
+
+Green evidence:
+
+- Pass: complete Lean suite after the ownership split
+  - 43 passed in 16.44 seconds, including foreign-kernel compilation.
+- Pass: `uv run python -m cold_start.lean`
+  - wrote the canonical corpus path; the checked-in generated file has no diff.
+- Pass: scoped Ruff
+  - all checks passed after mechanical import sorting and formatting.
+- Pass: scoped Pyright
+  - 0 errors, 0 warnings, 0 informations.
+- Pass: ownership searches
+  - `cold_start/lean.py` and `cold_start/lean/__init__.py` are both absent;
+    no old combined-surface imports remain in production or tests.
+
+Commit:
+
+- pending Iteration 3 commit
+
+Next slice:
+
+- Iteration 4 - general codec owner
