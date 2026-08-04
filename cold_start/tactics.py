@@ -181,7 +181,13 @@ class Rule:
                 raise TacticError(f"a match must bind names to terms, got {name!r} -> {term!r}")
         if not self.vars:
             return self.proof
-        sorts = dict(self.eq.free_var_sorts())
+        sorts: dict = {}
+        for name, sort in self.eq.free_var_sorts():
+            if sorts.setdefault(name, sort) != sort:
+                raise TacticError(
+                    f"variable {name!r} is used at two sorts ({sorts[name]!r} and {sort!r}) "
+                    f"in {self.eq!r}"
+                )
         avoid = set(self.eq.free_vars())
         for t in sigma.values():
             avoid |= set(t.free_vars())
@@ -290,7 +296,8 @@ def _under_context(term: Term, path: tuple, new_sub: Term, sub_pf: Pf) -> tuple[
     spine: list[tuple[Fun, int]] = []
     node = term
     for i in path:
-        assert type(node) is Fun  # only a Fun has arguments, so only it has a path
+        if type(node) is not Fun:  # only a Fun has arguments, so only it has a path
+            raise TacticError(f"cannot descend to argument {i} of {node!r}: not an application")
         spine.append((node, i))
         node = node.args[i]
     new, pf = new_sub, sub_pf

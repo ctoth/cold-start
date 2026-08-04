@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 import cold_start.tactics
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
-from cold_start.proof import Assume, Axiom, Inst
+from cold_start.proof import Assume, Axiom, Inst, Refl
 from cold_start.proofs import (
     ADD_ASSOC,
     ADD_COMM,
@@ -31,6 +31,7 @@ from cold_start.syntax import Eq, Fun, Implies, Var
 from cold_start.tactics import (
     Rule,
     TacticError,
+    _under_context,
     axiom_rule,
     by_induction,
     hypothesis_rule,
@@ -203,6 +204,17 @@ def test_a_hypothesis_rule_is_ground_and_keeps_its_hypothesis():
     assert seq.hyps == frozenset({eq})
 
 
+def test_a_rule_rejects_an_equation_using_one_variable_at_two_sorts():
+    # `instance` reads the holes' sorts out of the equation. A dict() over the
+    # pairs would silently keep the last one and instantiate at the wrong sort;
+    # such an equation fails sort_check anyway, so this is belt-and-braces.
+    eq = Eq(Fun("f", (Var("v", "M"),)), Fun("f", (Var("v", "X"),)))
+    rule = Rule(eq, Axiom(eq), frozenset({"v"}))
+    with pytest.raises(TacticError) as excinfo:
+        rule.instance({})
+    assert "v" in str(excinfo.value)
+
+
 def test_a_rule_rejects_a_non_equation():
     with pytest.raises(TacticError):
         Rule(Implies(Eq(x, y), Eq(y, x)), Axiom(ADD_ZERO_F), frozenset())  # pyright: ignore[reportArgumentType]
@@ -278,6 +290,15 @@ def test_rewrite_step_is_leftmost_outermost():
     step = rewrite_step(add(add(x, ZERO), ZERO), ADD_RULES)
     assert step is not None
     assert step[0] == add(x, ZERO)
+
+
+def test_lifting_a_proof_along_an_impossible_path_raises():
+    # Only a Fun has arguments, so only a Fun can have a path descend through
+    # it. `_find_redex` never produces a path that violates that -- this guards
+    # the internal contract, and it is a raise rather than an `assert` because
+    # `python -O` strips asserts and would leave the tower silently malformed.
+    with pytest.raises(TacticError):
+        _under_context(x, (0,), ZERO, Refl(x))
 
 
 def test_rewrite_step_returns_none_when_nothing_matches():
