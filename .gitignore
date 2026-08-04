@@ -17,3 +17,6 @@ temp/
 htmlcov/
 papers/**/pngs/
 papers/**/*.pdf
+
+# agent worktrees (live checkouts of other sessions; never scan or commit)
+.claude/worktrees/
