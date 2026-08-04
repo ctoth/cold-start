@@ -49,6 +49,32 @@ Worktree: `.claude/worktrees/agent-a38bd5b3ad1cb886b`, branch tip 4a49306. Basel
      next rungs for T3/T4 but each needs the classical case-split plumbing.
 
 ## Progress log
+- 9e57a12 divides_one landed (a|1 → a=1, 811 nodes, PEANO-checked:
+  `|- ((exists. *(a, #0) = S(0)) -> a = S(0))`), `15 passed`
+  test_divisibility_proofs.py, ruff+pyright clean. U0 unit branch now
+  fully paid (with unit_case_forces_unit_divisors).
+- Report updated: U0 marked PAID, divides_one row added to the landed table.
+- Remaining wrap-up: fix report's remaining-items list (item 1 references
+  divides_one as next — update), amend the "sixteen leaves" phrasing if
+  needed (now seventeen), commit report tweak, run final full gate, write
+  final summary. No blockers.
+- 693ba3e stretch chain landed: add_eq_zero (248 nodes, PRESBURGER),
+  divides_step (681), divides_add_cancel (1073) — all checked. Full suite
+  `1237 passed in 99.59s`, ruff+pyright clean.
+- 51777f1 reports/formula2-bridge-debts.md committed: ledger honesty
+  (empty-target debts unpayable by soundness), positivity requirement
+  (Φ(0,0,c) true for all c≥1 in N ⇒ uniqueness false unrelativized), full
+  lemma DAG (T1–T4, U0–U4, hard parts H1 Euclid / H2 order kit / H3 congruence
+  solvability, none β-function grade), landed table with node counts + commits,
+  path recommendation (compose into PEANO, relativize δ = positivity).
+- Proof sizes measured: coprime_one_* ~5k, unit_case_unit 7067,
+  product_divides_both 7520, crt_key_identity 16400, totality point 8061.
+- NOW: extra leaf divides_one (a|1 → a=1) — red test edits to
+  test_divisibility_proofs.py in progress (imports added, test body next).
+  Plan: eigen k!, case k! zero/succ; succ arm cases a zero/succ; a=S(m!) arm:
+  ADD_SUCC exposes S(a·j!+m!)=S(0), SUCC_INJ + add_eq_zero force m!=0.
+  If smooth, consider divides_antisym (uses divides_one at witness product).
+- No blockers.
 - 45531e2 proofs: robinson_divisibility_proofs.py landed (9 leaf theorems +
   totality point), full suite `1234 passed in 109.87s`.
 - Stretch chain in flight (T3 quotient extraction): red tests added for

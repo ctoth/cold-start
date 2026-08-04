@@ -87,7 +87,7 @@ TOTALITY (open)
 UNIQUENESS (open)
 ├─ U0  unit branch: unit_case(a,b,c) → a=b=c=1
 │   ├─ UNIT_CASE_FORCES_UNIT_DIVISORS: → a|1 ∧ b|1 ∧ c|1           [PAID]
-│   └─ divides_one: a|1 → a=1                                      [OPEN, payable next]
+│   └─ divides_one: a|1 → a=1                                      [PAID]
 ├─ U1  choose admissible x,y (coprime to a,b,c and each other)     [OPEN: H1/H3]
 ├─ U2  arbitrarily large admissible m: solve by ≡ −1 (mod S(ax))
 │      — linear congruence solvability, i.e. Bézout                [OPEN: H3]
@@ -138,6 +138,7 @@ Checked theorems (sequent ⊢ shown with implicit-universal free variables;
 | `divides_mul_left` | ⊢ pd(a,b) → pd(c·a, c·b) | PEANO | 2,590 | c1dd166 |
 | `divides_step` | ⊢ a·k = b+a → pd(a,b) | PEANO | 681 | 693ba3e |
 | `divides_add_cancel` | ⊢ pd(a, b+a·c) → pd(a,b) | PEANO | 1,073 | 693ba3e |
+| `divides_one` | ⊢ pd(a, 1) → a = 1 | PEANO | 811 | 9e57a12 |
 | `coprime_one_left` | ⊢ coprime⁽ᵖᵈ⁾(1, a) | PEANO | 5,027 | 45531e2 |
 | `coprime_one_right` | ⊢ coprime⁽ᵖᵈ⁾(a, 1) | PEANO | 5,008 | 45531e2 |
 | `lcm_one_left` | ⊢ lcm-graph⁽ᵖᵈ⁾(1, a, a) | PEANO | 2,546 | 45531e2 |
@@ -155,7 +156,7 @@ the extraction step that turns it into `m | abxy − 1`. Together they close
 T3 up to assembly. `totality_witness_at_unit` is one checked *point* of the
 totality graph — a point, not the debt.
 
-Gate at the tip: `1237 passed`, ruff clean, pyright `0 errors` on all touched
+Gate at the tip: `1238 passed`, ruff clean, pyright `0 errors` on all touched
 files. Every theorem above re-derives from inert proof terms through the
 trusted `check` in the tests
 (`tests/test_prop.py`, `tests/test_presburger.py`,
@@ -164,10 +165,11 @@ trusted `check` in the tests
 
 ## 4. What remains, in dependency order
 
-1. **`divides_one`** (`a|1 → a=1`): case split on the witness plus
-   `mul_eq_one`; payable with the now-landed `zero_or_succ`/`or_elim`/
-   `add_eq_zero` plumbing. Unlocks U0 and antisymmetry.
-2. **`divides_antisym`** (`a|b ∧ b|a → a=b`) and lcm-graph functionality (U4).
+1. **`divides_antisym`** (`a|b ∧ b|a → a=b`) and lcm-graph functionality
+   (U4): compose the witnesses to `a·(k·l) = a`, split on `a`, and use the
+   now-landed `divides_one` at the witness product (`k | 1` with witness `l`).
+2. **U0 assembly**: `unit_case(a,b,c) → a=1 ∧ b=1 ∧ c=1` is now one
+   composition of two paid theorems.
 3. **T3c/T4 assembly** of the general disjunct at `c := ab` — pure plumbing
    over paid leaves, but large (the formula's ∀x,y,m block must be opened and
    each of seven conjuncts consumed).
