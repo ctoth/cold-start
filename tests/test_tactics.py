@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 import cold_start.tactics
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
-from cold_start.proof import Axiom, Inst
+from cold_start.proof import Assume, Axiom, Inst
 from cold_start.proofs import (
     ADD_ASSOC,
     ADD_COMM,
@@ -34,6 +34,7 @@ from cold_start.tactics import (
     axiom_rule,
     by_induction,
     hypothesis_rule,
+    lemma_rule,
     match,
     normalize,
     prove_eq,
@@ -159,6 +160,38 @@ def test_firing_a_rule_yields_the_rewritten_term_and_its_proof_together():
     new, pf = axiom_rule(ADD_SUCC_F).fire({"x": ZERO, "y": n})
     assert new == S(add(ZERO, n))
     assert check(pf, PRESBURGER).concl == Eq(add(ZERO, S(n)), new)
+
+
+def test_a_lemma_rule_over_a_real_lemma_instantiates_hypothesis_free():
+    # The documented contract, met: the lemma's own proof has no hypotheses, so
+    # instances of it do not either, and a theorem built on the lemma comes back
+    # from `check` with an empty context.
+    rule = lemma_rule(LEFT_IDENTITY, left_identity())
+    seq = check(rule.instance({"n": S(ZERO)}), PRESBURGER)
+    assert seq.concl == Eq(add(ZERO, S(ZERO)), S(ZERO))
+    assert seq.hyps == frozenset()
+
+
+def test_a_lemma_rule_over_an_assumption_surfaces_the_hypothesis():
+    """The precondition is documented, not enforced -- tactics has no theory to
+    check against. Pinning what a violation actually costs: the assumption rides
+    along into the checked sequent, so the result is a CONDITIONAL theorem. The
+    lie never becomes an unconditional one; `check` still tells the truth."""
+    lie = Eq(ZERO, S(ZERO))  # 0 = 1
+    rule = lemma_rule(lie, Assume(lie))
+    seq = check(rule.instance({}), PRESBURGER)
+    assert seq.concl == lie
+    assert seq.hyps == frozenset({lie})  # NOT empty: the claim is `lie |- lie`
+
+
+def test_a_lemma_rule_over_an_assumption_with_holes_is_refused_by_the_checker():
+    # And if the lie carries a variable, it cannot even be instantiated: `Inst`
+    # refuses to substitute a variable that is free in a hypothesis, so the
+    # proof term the tactic emits is rejected outright.
+    lie = Eq(add(x, ZERO), S(x))  # false for every x
+    rule = lemma_rule(lie, Assume(lie))
+    with pytest.raises(ValueError):
+        check(rule.instance({"x": ZERO}), PRESBURGER)
 
 
 def test_a_hypothesis_rule_is_ground_and_keeps_its_hypothesis():

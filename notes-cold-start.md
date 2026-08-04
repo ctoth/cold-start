@@ -1035,3 +1035,48 @@ Findings -> dispatched to fixes-coder as fix list:
   depth (iterative claim HOLDS, round-trip clean at 500).
 Also: ruff format --check would reformat 18 files repo-wide (pre-existing;
 project gates on ruff check only — leave alone).
+
+## 2026-08-03 pt2: analyst findings in the tactics layer (7 items)
+Baseline on merged main (7148bbc): 389 passed. Items, priority order:
+1 MAJOR one-shot iterable of rules exhausted in _find_redex -> DONE = 5bad4ea
+  (tuple(rules) at normalize/prove_eq/by_induction/rewrite_step; 4 red tests first).
+2 budget off-by-one (range(budget) spends one iteration detecting the fixpoint;
+  budget=0 on a normal form raises) -> IN PROGRESS, 2 red tests written.
+3 Rule input garbage -> TypeError/AttributeError from deep inside; add cheap
+  __post_init__ + sigma validation raising TacticError.
+4 lemma_rule precondition unenforced -> sharpen docstring + pin both behaviours.
+  DECISION: NOT adding the bare-Assume structural guard -- it catches exactly one
+  spelling (Trans(Assume(lie),Refl(..)) walks straight past), so it would make the
+  "unenforced" docstring self-contradictory and read as enforcement it isn't.
+  Report this to the lead.
+5 _under_context bare assert -> explicit raise; Rule.instance dict(free_var_sorts())
+  silently collapses a var used at two sorts -> raise TacticError naming it.
+6 tests only: `!`-suffixed var name in a rule equation (plan: lemma_rule over
+  Inst(Axiom(ADD_SUCC_F),"y",Var("x!")) -- a real hypothesis-free lemma with free
+  vars {x, x!}); many-sorted run over algebra.MONOID_ACTION (ACT_ID/ACT_COMP).
+7 separate commit: add_proof/mul_proof/robinson_add_proof recurse per unit of b
+  -> convert to loops building from the base upward, identical proof terms.
+Do NOT touch: cold_start/lean.py, tests/test_lean.py, lean_export/.
+
+LEAN-CODER DONE (worktree branch worktree-agent-ad5a787c7340c95ed, 6 commits):
+cold_start/lean.py + tests/test_lean.py (43 tests) + lean_export/ColdStart.lean.
+THE RESULT: corpus COMPILED under Lean 4.32.2, exit 0, zero emitter fixes
+needed; negative control (corrupt an induction base) fails compile -> the
+check has teeth. 395 passed in its tree, zero skips, ruff+pyright clean.
+Design: Inst emits nothing (substitution env threaded through rendering, so
+instantiation is independent of Inst nesting); conditional theorems (axioms
+as hypotheses, never `axiom`); Robinson stays conditional deliberately
+(succ a ≠ 1 false at 0, ℕ not a model); Presburger/Peano get ℕ epilogue.
+Version-gated probe: elan shim first, choco lean 3.4.2 skipped on version.
+MERGE ON HOLD until fixes-coder (analyst findings, working in main checkout)
+reports — avoid git-index contention. Then: merge lean branch, full gates,
+one-line lean.py mentions in README/ARCHITECTURE (lean-coder left docs to
+us), final wrap. This notes edit deliberately uncommitted until main is free.
+- Items 2,3 DONE = c2ac121 (budget counts applied steps; while-loop charges only on
+  apply), 030b705 (Rule.__post_init__ + sigma check at top of instance, before the
+  ground-rule early exit; fire computes instance FIRST so _subst_all never sees junk).
+- Item 4 DONE (docstring + 3 characterization tests; NO behaviour change -- they pass
+  on write, which is the point of pinning). Found a third failure mode worth pinning:
+  a lemma_rule lie WITH free variables cannot even be instantiated, because Inst
+  refuses to substitute a variable free in a hypothesis -> check rejects outright.
+  Still declining the bare-Assume guard for the reason logged above.

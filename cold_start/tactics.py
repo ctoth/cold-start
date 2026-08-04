@@ -221,9 +221,20 @@ def axiom_rule(eq: Formula) -> Rule:
 
 
 def lemma_rule(eq: Formula, proof: Pf) -> Rule:
-    """Rewrite by an already-proved lemma. `proof` must derive `eq` with no
+    """Rewrite by an already-proved lemma. `proof` should derive `eq` with no
     hypotheses -- then instances stay hypothesis-free too, so a theorem built on
-    lemmas comes back from `check` with an empty context."""
+    lemmas comes back from `check` with an empty context.
+
+    That precondition is NOT enforced, and cannot be here: deciding it means
+    running `check` against a theory, which this module deliberately has no
+    access to. Nothing is lost by that. If you pass a proof that leans on an
+    assumption, the assumption rides along into every instance and surfaces in
+    the sequent `check` returns -- you get a CONDITIONAL theorem where the name
+    of this function promised an unconditional one, which is a disappointment,
+    not a false theorem. (And if the assumed equation has free variables, `Inst`
+    refuses to instantiate them at all -- it may not touch a variable free in a
+    hypothesis -- so the proof term is rejected outright.) Both failure modes
+    are pinned in tests/test_tactics.py."""
     e = _equation(eq)
     return Rule(e, proof, e.free_vars())
 
