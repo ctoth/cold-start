@@ -24,6 +24,7 @@ from cold_start.proofs import (
     SUCC_ADD,
     add_assoc,
     add_comm,
+    add_kit,
     left_identity,
     left_identity_proof,
     succ_add,
@@ -574,13 +575,24 @@ def test_an_ordered_rule_fires_under_a_congruence():
     assert normalize(S(add(y, x)), (comm,))[0] == S(add(x, y))
 
 
-def test_an_ordered_rule_orders_by_structure_not_just_by_name():
-    # `S(x) + x` is already sorted (a taller argument comes first), while
-    # `x + S(x)` is not -- the order is lexicographic on the pre-order symbol
-    # sequence, so the function symbol beats the variable.
+def test_an_ordered_rule_orders_by_size_before_name():
+    # The order is size-first, so the taller argument sorts LAST: `S(x) + x`
+    # swaps and `x + S(x)` is the fixpoint. Size-first is what keeps the order
+    # agreeing with a directed associativity rule in the same rule set.
     comm = lemma_rule(ADD_COMM, add_comm(), ordered=True)
-    assert normalize(add(x, S(x)), (comm,))[0] == add(S(x), x)
-    assert normalize(add(S(x), x), (comm,))[0] == add(S(x), x)
+    assert normalize(add(S(x), x), (comm,))[0] == add(x, S(x))
+    assert normalize(add(x, S(x)), (comm,))[0] == add(x, S(x))
+
+
+def test_ordered_commutativity_and_directed_associativity_do_not_fight():
+    # The bug this order exists to prevent: under a flat symbol-sequence order,
+    # right-nesting `(x+y)+z -> x+(y+z)` goes UP while sorting goes DOWN, and the
+    # two rules cycle forever. Here `(S(x) + y) + x` instead reaches a normal
+    # form -- successor floated out, summands sorted, right-nested.
+    term = add(add(S(x), y), x)
+    nf, pf = normalize(term, add_kit())
+    assert nf == S(add(x, add(x, y)))
+    assert check(pf, PRESBURGER).concl == Eq(term, nf)
 
 
 def test_a_non_permutative_rule_may_not_be_ordered():

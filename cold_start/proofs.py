@@ -187,13 +187,22 @@ def add_left_comm() -> Pf:
     )
 
 
-def ac_add_rules() -> tuple:
-    """Associativity, commutativity and left-commutativity of `+` as a rewrite
-    kit: sums right-nest and their summands sort. The two permutative rules are
-    `ordered`, so the kit terminates; together they put every sum into one
-    canonical arrangement, which is what lets `prove_eq` decide goals that
-    differ only by how their additions are bracketed and ordered."""
+def add_kit() -> tuple:
+    """Everything proved about `+` so far, as one rewrite kit.
+
+    The two recursion axioms and their two mirror images reduce a sum whose
+    second OR first argument is a zero or a successor; associativity right-nests
+    it; commutativity and left-commutativity, both `ordered`, sort the summands.
+    The result is a canonical arrangement -- so `prove_eq` decides any goal whose
+    sides differ only in how their additions are bracketed and ordered, which is
+    what every rung of the multiplication ladder above needs.
+
+    The zero laws have to travel WITH the sorting rules: the order puts `0`
+    first, so `x*y + 0` sorts to `0 + x*y`, and only `0 + n = n` finishes it."""
     return (
+        *ADD_RULES,
+        lemma_rule(LEFT_IDENTITY, left_identity()),
+        lemma_rule(SUCC_ADD, succ_add()),
         lemma_rule(ADD_ASSOC, add_assoc()),
         lemma_rule(ADD_COMM, add_comm(), ordered=True),
         lemma_rule(ADD_LEFT_COMM, add_left_comm(), ordered=True),
@@ -237,7 +246,7 @@ def mul_succ_left() -> Pf:
     """S(x) * y = x*y + y, by induction on y: the recursion law for the FIRST
     argument. The step leaves `(x*y + y) + x` against `(x*y + x) + y`, which is
     a pure rearrangement -- hence the addition kit."""
-    rules = (*ADD_RULES, *MUL_RULES, *ac_add_rules())
+    rules = (*add_kit(), *MUL_RULES)
     return by_induction("y", MUL_SUCC_LEFT, rules)
 
 
@@ -257,7 +266,7 @@ def mul_comm() -> Pf:
 def distrib_left() -> Pf:
     """x*(y + z) = x*y + x*z, by induction on z. The one law that ties the two
     operations together -- and the reason arithmetic stops being decidable."""
-    rules = (*ADD_RULES, *MUL_RULES, *ac_add_rules())
+    rules = (*add_kit(), *MUL_RULES)
     return by_induction("z", DISTRIB_LEFT, rules)
 
 
@@ -265,7 +274,7 @@ def distrib_right() -> Pf:
     """(x + y)*z = x*z + y*z, by induction on z -- distributivity on the other
     side. Provable from `distrib_left` and commutativity, but the direct
     induction is shorter than the rearrangement would be."""
-    rules = (*ADD_RULES, *MUL_RULES, *ac_add_rules())
+    rules = (*add_kit(), *MUL_RULES)
     return by_induction("z", DISTRIB_RIGHT, rules)
 
 
@@ -274,9 +283,8 @@ def mul_assoc() -> Pf:
     right side becomes `x*(y*z + y)`, which only reduces once the product is
     pushed across the sum."""
     rules = (
-        *ADD_RULES,
+        *add_kit(),
         *MUL_RULES,
-        *ac_add_rules(),
         lemma_rule(DISTRIB_LEFT, distrib_left()),
     )
     return by_induction("z", MUL_ASSOC, rules)

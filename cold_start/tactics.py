@@ -125,28 +125,60 @@ def _subst_all(term: Term, sigma: dict) -> Term:
     return done[id(term)]
 
 
-def _serialize(term: Term) -> tuple:
-    """The pre-order symbol sequence of a term -- the key of the term order that
-    `ordered` rules are measured against.
-
-    Arity is part of every function symbol's entry, so the encoding is a prefix
-    code: no term's sequence is a proper prefix of another's. That is what makes
-    lexicographic comparison a TOTAL order on terms, and -- since two sequences
-    of the same length differ inside a spliced-in block -- one that is preserved
-    by putting a term into a context. Both facts are what the ordered-rewriting
-    termination argument leans on."""
-    out: list = []
+def _walk(term: Term) -> list:
+    """`term`'s nodes in post-order -- children before parents. The shared spine
+    of the two term measures below, both of which are folds up the tree."""
+    order: list = []
     stack: list = [term]
     while stack:
         t = stack.pop()
         if type(t) is Var:
-            out.append(("v", t.name, t.sort))
+            order.append(t)
         elif type(t) is Fun:
-            out.append(("f", t.name, len(t.args)))
-            stack.extend(reversed(t.args))
+            order.append(t)
+            stack.extend(t.args)
         else:
-            raise TacticError(f"an ordered rule compares terms; {t!r} is not one")
-    return tuple(out)
+            raise TacticError(f"an ordered rule measures terms; {t!r} is not one")
+    order.reverse()
+    return order
+
+
+def _symbols(term: Term) -> tuple:
+    """The multiset of symbols in `term`, as a sorted tuple. Two terms with the
+    same one are the same size -- which is what makes an equation between them
+    *permutative*, the only kind ordered rewriting can tame."""
+    out: list = []
+    for t in _walk(term):
+        if type(t) is Var:
+            out.append(("v", t.name, t.sort))
+        else:  # a Fun; `_walk` admits nothing else
+            out.append(("f", t.name))
+    return tuple(sorted(out))
+
+
+def _order_key(term: Term) -> tuple:
+    """The key of the term order `ordered` rules are measured against: SIZE
+    first, then the head symbol, then the arguments left to right.
+
+    Size first is what makes the order agree with the directed rules it shares a
+    rule set with. Associativity read as `(x*y)*z -> x*(y*z)` keeps the size and
+    moves the bigger argument to the right, so it goes downhill here -- under a
+    plain lexicographic reading of the symbols it would go UP, and re-nesting
+    would fight argument-sorting forever. (It did; that is why this is a fold
+    and not a flat comparison.)
+
+    The order is total, and it survives being put into a context: a step that
+    shrinks a subterm shrinks the whole, and a size-preserving one is compared
+    at exactly the argument where it happened. Those two facts, plus finitely
+    many terms of a given size, are the termination argument."""
+    keys: dict = {}
+    for t in _walk(term):
+        if type(t) is Var:
+            keys[id(t)] = (1, "v", t.name, t.sort)
+        else:  # a Fun; `_walk` admits nothing else
+            sub = tuple(keys[id(a)] for a in t.args)
+            keys[id(t)] = (1 + sum(k[0] for k in sub), "f", t.name, sub)
+    return keys[id(term)]
 
 
 @dataclass(frozen=True)
@@ -162,8 +194,8 @@ class Rule:
     two sides carry the same multiset of symbols. Read naively such a rule never
     stops, because its own right-hand side matches it again. An ordered rule
     instead fires only where it takes the term strictly DOWNHILL in the term
-    order `_serialize` induces, which both terminates (a permutative step keeps
-    the length, so each step strictly lowers a well-founded key) and canonises:
+    order `_order_key` induces, which both terminates (a permutative step keeps
+    the size, so each step strictly lowers a well-founded key) and canonises:
     a sum reaches the one arrangement of its summands no rule can lower. This is
     a restriction on the SEARCH only -- the proof term is the same instance of
     the same lemma, and `check` remains the only judge of it."""
@@ -188,7 +220,7 @@ class Rule:
         for v in self.vars:
             if type(v) is not str:
                 raise TacticError(f"a rule's holes must be variable names, got {v!r}")
-        if self.ordered and sorted(_serialize(self.lhs)) != sorted(_serialize(self.rhs)):
+        if self.ordered and _symbols(self.lhs) != _symbols(self.rhs):
             raise TacticError(
                 f"only a permutative equation may be ordered; {self.eq!r} does not "
                 f"carry the same symbols on both sides"
@@ -213,7 +245,7 @@ class Rule:
         order, which is what stops a permutative rule from cycling."""
         if not self.ordered:
             return True
-        return _serialize(_subst_all(self.rhs, sigma)) < _serialize(target)
+        return _order_key(_subst_all(self.rhs, sigma)) < _order_key(target)
 
     def instance(self, sigma: dict) -> Pf:
         """A `Pf` of `eq` with every hole replaced per `sigma`.
