@@ -36,6 +36,7 @@ from cold_start.lean.syntax import (
     universal_closure,
 )
 from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO, mul
+from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
@@ -47,9 +48,10 @@ from cold_start.presburger import (
     add,
     numeral,
 )
+from cold_start.presburger_proofs import add_proof, left_identity_proof
 from cold_start.proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Refl
-from cold_start.proofs import add_proof, left_identity_proof, mul_proof, robinson_add_proof
 from cold_start.robinson import ADD_ONE, ADD_SUCC, MUL_SUCC, ROBINSON_PEANO
+from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.syntax import (
     Bottom,
     Eq,

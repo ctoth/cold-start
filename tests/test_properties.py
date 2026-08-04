@@ -20,6 +20,7 @@ from cold_start.codec import (
     encode_term,
 )
 from cold_start.peano import PEANO, mul
+from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
@@ -28,9 +29,9 @@ from cold_start.presburger import (
     induction,
     numeral,
 )
-from cold_start.proofs import add_proof as prove_add
-from cold_start.proofs import mul_proof, robinson_add_proof
+from cold_start.presburger_proofs import add_proof as prove_add
 from cold_start.robinson import ROBINSON_PEANO, bridge
+from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.syntax import (
     Bottom,
     BVar,
@@ -379,8 +380,6 @@ def test_alpha_equivalence_is_structural_equality(body):
     fa = forall("Q1", "", body.subst("x", Var("Q1")))
     fb = forall("Q2", "", body.subst("x", Var("Q2")))
     assert fa == fb
-
-
 
 
 # --- the sound generator: the checker must agree with arithmetic ----------

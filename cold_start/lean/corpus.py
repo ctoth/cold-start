@@ -7,14 +7,9 @@ from pathlib import Path
 from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
-from ..proofs import (
-    add_proof,
-    left_identity_proof,
-    mul_cancel_right_succ,
-    mul_proof,
-    robinson_add_proof,
-)
-from ..robinson_proofs import bridge_converse_positive
+from ..peano_proofs import mul_cancel_right_succ, mul_proof
+from ..presburger_proofs import add_proof, left_identity_proof
+from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
 from .proof import _Export
 
 # ---------------------------------------------------------------------------

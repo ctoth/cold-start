@@ -16,8 +16,7 @@ import cold_start.tactics
 from cold_start.algebra import ACT_COMP, ACT_ID, MONOID_ACTION, E, act, mul
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
-from cold_start.proof import Assume, Axiom, Inst, Refl
-from cold_start.proofs import (
+from cold_start.presburger_proofs import (
     ADD_ASSOC,
     ADD_COMM,
     LEFT_IDENTITY,
@@ -29,6 +28,7 @@ from cold_start.proofs import (
     left_identity_proof,
     succ_add,
 )
+from cold_start.proof import Assume, Axiom, Inst, Refl
 from cold_start.syntax import Eq, Fun, Implies, Var
 from cold_start.tactics import (
     Rule,
@@ -78,9 +78,10 @@ def test_the_trusted_core_does_not_import_the_tactics():
 
 
 def test_the_import_direction_check_can_actually_see_an_import():
-    # proofs.py DOES use the tactics -- which is what makes the negative result
-    # above evidence rather than a vacuous pass.
-    assert _imports_tactics("proofs")
+    # The theory-owned proof libraries DO use the tactics -- which is what makes
+    # the negative result above evidence rather than a vacuous pass.
+    for name in ("presburger_proofs", "peano_proofs"):
+        assert _imports_tactics(name)
 
 
 # --- first-order matching -------------------------------------------------

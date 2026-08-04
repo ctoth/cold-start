@@ -10,7 +10,28 @@ PEANO.
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
+from .peano_proofs import (
+    DISTRIB_LEFT,
+    MUL_ASSOC,
+    MUL_COMM,
+    MUL_RULES,
+    MUL_ZERO_LEFT,
+    distrib_left,
+    mul_assoc,
+    mul_comm,
+    mul_zero_left,
+)
 from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, add, induction
+from .presburger_proofs import (
+    ADD_ASSOC,
+    ADD_RULES,
+    LEFT_IDENTITY,
+    add_assoc,
+    add_cancel_right,
+    add_eq_zero,
+    left_identity,
+    zero_or_succ,
+)
 from .proof import (
     MP,
     Assume,
@@ -25,25 +46,6 @@ from .proof import (
     Refl,
     Sym,
     Trans,
-)
-from .proofs import (
-    ADD_ASSOC,
-    ADD_RULES,
-    DISTRIB_LEFT,
-    LEFT_IDENTITY,
-    MUL_ASSOC,
-    MUL_COMM,
-    MUL_RULES,
-    MUL_ZERO_LEFT,
-    add_assoc,
-    add_cancel_right,
-    add_eq_zero,
-    distrib_left,
-    left_identity,
-    mul_assoc,
-    mul_comm,
-    mul_zero_left,
-    zero_or_succ,
 )
 from .prop import and_left, and_right, or_elim
 from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate

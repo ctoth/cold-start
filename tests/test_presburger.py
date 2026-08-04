@@ -14,8 +14,9 @@ import pytest
 import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO, mul
+from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import PRESBURGER, ZERO, S, add, numeral
-from cold_start.proofs import (
+from cold_start.presburger_proofs import (
     ADD_CANCEL_LEFT,
     ADD_CANCEL_RIGHT,
     ADD_EQ_ZERO,
@@ -24,7 +25,6 @@ from cold_start.proofs import (
     add_cancel_right,
     add_eq_zero,
     left_identity_proof,
-    mul_proof,
     zero_or_succ,
 )
 from cold_start.prop import And, Or

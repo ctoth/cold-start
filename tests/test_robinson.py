@@ -22,7 +22,6 @@ import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import PEANO
 from cold_start.presburger import S, add, numeral
-from cold_start.proofs import robinson_add_proof
 from cold_start.robinson import (
     ADD_ONE,
     ADD_SUCC,
@@ -43,6 +42,7 @@ from cold_start.robinson_proofs import (
     bridge_residual,
     bridge_theorem,
     robinson_add_one,
+    robinson_add_proof,
     robinson_add_succ_positive,
     robinson_mul_succ,
 )

@@ -32,10 +32,7 @@ unguarded Peano version remains false at `c=0`, as documented at the bottom.
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
-from .presburger import ADD_SUCC_F, SUCC_INJ, S, add
-from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Sym, Trans
-from .proofs import (
-    ADD_ASSOC,
+from .peano_proofs import (
     DISTRIB_LEFT,
     DISTRIB_RIGHT,
     MUL_ASSOC,
@@ -43,9 +40,6 @@ from .proofs import (
     MUL_LEFT_COMM,
     MUL_SUCC_LEFT,
     MUL_ZERO_LEFT,
-    add_assoc,
-    add_cancel_right,
-    add_kit,
     distrib_left,
     distrib_right,
     mul_assoc,
@@ -55,7 +49,10 @@ from .proofs import (
     mul_succ_left,
     mul_zero_left,
 )
-from .robinson import ONE, bridge
+from .presburger import ADD_SUCC_F, SUCC_INJ, S, add, numeral
+from .presburger_proofs import ADD_ASSOC, add_assoc, add_cancel_right, add_kit
+from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Sym, Trans
+from .robinson import ADD_ONE, ADD_SUCC, ONE, bridge
 from .syntax import Eq, Formula, Implies, Var
 from .tactics import (
     axiom_rule,
@@ -67,6 +64,33 @@ from .tactics import (
 )
 
 _a, _b, _c = Var("a"), Var("b"), Var("c")
+
+
+def robinson_add_proof(a: int, b: int) -> Pf:
+    """Proof term for  bridge(numeral(a), numeral(b), numeral(a+b))  in the
+    (1, S, ·) theory -- addition computed with no `+` symbol anywhere.
+
+    Climbs the second argument through Robinson's own §2 recursion laws: A4'
+    (`a + 1 = S a`) is the base, and A5' (`a + b = c -> a + S b = S c`) is
+    instantiated at the concrete numerals and discharged by modus ponens, one
+    rung per unit of `b`. Both arguments must be positive -- Robinson's domain
+    is the positive integers, and the bridge is the graph of addition only for
+    c > 0. Iterative, for the reason given on `add_proof`.
+    """
+    if a < 1 or b < 1:
+        raise ValueError(f"Robinson's domain is the positive integers, got a={a}, b={b}")
+    big_a = numeral(a)
+    pf: Pf = Inst(Axiom(ADD_ONE), "a", big_a)  # a + 1 = S a
+    for k in range(2, b + 1):
+        #  a + (k-1) = a+k-1  ->  a + S(k-1) = S(a+k-1),  i.e.  a + k = a+k
+        succ_step = Inst(
+            Inst(Inst(Axiom(ADD_SUCC), "a", big_a), "b", numeral(k - 1)),
+            "c",
+            numeral(a + k - 1),
+        )
+        pf = MP(succ_step, pf)
+    return pf
+
 
 BRIDGE_SUM: Formula = bridge(_a, _b, add(_a, _b))
 """Robinson's bridge at `c := a + b` -- the claim that his definition of
@@ -103,7 +127,7 @@ variables, so its normal form is eight monomials wide."""
 
 
 def poly_kit() -> tuple:
-    """Every law of `+` and `·` proved in `cold_start.proofs`, as one rewrite
+    """Every law of `+` and `·` proved in the theory-owned libraries, as one rewrite
     kit that normalises a term to a canonical polynomial.
 
     Three groups do three jobs. The recursion laws (both axioms and both of
@@ -161,9 +185,7 @@ def bridge_residual() -> Pf:
     injective = Inst(Inst(Axiom(SUCC_INJ), "x", left), "y", right)
     peeled = MP(injective, normalized)
 
-    reassociate = lemma_rule(ADD_ASSOC, add_assoc()).instance(
-        {"x": ac, "y": bc, "z": common}
-    )
+    reassociate = lemma_rule(ADD_ASSOC, add_assoc()).instance({"x": ac, "y": bc, "z": common})
     cancellable = Trans(reassociate, peeled)
     cancel = Inst(
         Inst(

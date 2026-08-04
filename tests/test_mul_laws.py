@@ -1,6 +1,6 @@
 """The multiplication ladder in PEANO, built by the untrusted tactics.
 
-Every lemma here is *stated* in `cold_start.proofs` and searched for by the
+Every lemma here is stated in its theory-owned proof library and searched for by the
 rewriting engine; `check(_, PEANO)` is what decides whether the resulting term
 is a proof. So each test is the same two assertions -- the checker re-derived
 exactly the sequent we asked for, and it needed no hypotheses to do it.
@@ -19,8 +19,7 @@ from semantics import Model, evaluate
 
 from cold_start.checker import check
 from cold_start.peano import PEANO
-from cold_start.proofs import (
-    ADD_LEFT_COMM,
+from cold_start.peano_proofs import (
     DISTRIB_LEFT,
     DISTRIB_RIGHT,
     MUL_ASSOC,
@@ -29,7 +28,6 @@ from cold_start.proofs import (
     MUL_LEFT_COMM,
     MUL_SUCC_LEFT,
     MUL_ZERO_LEFT,
-    add_left_comm,
     distrib_left,
     distrib_right,
     mul_assoc,
@@ -39,6 +37,7 @@ from cold_start.proofs import (
     mul_succ_left,
     mul_zero_left,
 )
+from cold_start.presburger_proofs import ADD_LEFT_COMM, add_left_comm
 
 # PEANO's standard model, used only to double-check that the STATEMENTS say what
 # their names claim. The proofs are checked by `check`; this is a guard against

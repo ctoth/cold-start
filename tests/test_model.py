@@ -22,7 +22,7 @@ import cold_start.proof as P
 from cold_start.checker import Theory, check
 from cold_start.peano import PEANO
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, numeral
-from cold_start.proofs import add_proof
+from cold_start.presburger_proofs import add_proof
 from cold_start.syntax import (
     Bottom,
     Eq,
@@ -341,12 +341,11 @@ def test_induction_principle_holds_in_N(pred, x, bound, env):
             Implies(
                 pred.subst(x, numeral(k)),
                 pred.subst(x, numeral(k + 1)),
-            ), N,
+            ),
+            N,
             env,
         )
         for k in range(bound)
     )
     assume(base_ok and step_ok)
-    assert all(
-        evaluate(pred.subst(x, numeral(k)), N, env) for k in range(bound + 1)
-    )
+    assert all(evaluate(pred.subst(x, numeral(k)), N, env) for k in range(bound + 1))

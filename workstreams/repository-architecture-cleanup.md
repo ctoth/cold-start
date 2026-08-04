@@ -933,8 +933,70 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 4 commit
+- `2ea3473 refactor: centralize untrusted wire codec`
 
 Next slice:
 
 - Iteration 5 - theory-owned proof libraries
+
+### Iteration 5 - Theory-Owned Proof Libraries - Complete
+
+Surfaces:
+
+- generic `cold_start/proofs.py` theorem bucket
+  - Disposition: delete/split
+  - Owners after cleanup: Presburger builders in `presburger_proofs.py`, Peano
+    builders in `peano_proofs.py`, and Robinson-specific builders consolidated in
+    `robinson_proofs.py`.
+- addition/induction/cancellation and zero-case lemmas
+  - Disposition: move
+  - Owner after cleanup: `presburger_proofs.py`, matching the smallest complete
+    theory under which every recipe checks.
+- multiplication laws, distributivity, associativity, and positive cancellation
+  - Disposition: move
+  - Owner after cleanup: `peano_proofs.py`, importing the proved Presburger kit
+    it genuinely depends on.
+- Robinson numeral addition recipe
+  - Disposition: move/consolidate
+  - Owner after cleanup: `robinson_proofs.py` beside the bridge-derived results.
+- production, test, and Lean corpus imports
+  - Disposition: rewrite directly
+  - Action: each caller imports the theory owner that supplies the builder; no
+    generic facade or aliases preserve `cold_start.proofs`.
+
+Red evidence:
+
+- Error: owner-focused test collection
+  - `peano_proofs` and `presburger_proofs` did not exist, and
+    `robinson_proofs` did not yet expose `robinson_add_proof`.
+- Error: first post-split collection
+  - Peano theorem constants referenced `_n` from the old shared module.
+  - Resolution: the Peano owner defines its own private theorem variables.
+- Fail: first broader gate
+  - 1 failed, 322 passed because an architecture test still opened deleted
+    `proofs.py` to prove its import scanner was non-vacuous.
+  - Resolution: the scanner now proves both concrete theory libraries import the
+    untrusted tactics while the trusted core does not.
+
+Green evidence:
+
+- Pass: primary Presburger/Peano/Robinson files
+  - 321 passed in 5.92 seconds.
+- Pass: complete planned theory/tactic/model/sort/Lean slice
+  - 464 passed in 47.19 seconds, including generated-corpus foreign-kernel
+    compilation.
+- Pass: `uv run python -m cold_start.lean`
+  - generated the canonical corpus with no checked-in file diff.
+- Pass: full scoped Ruff and configured Pyright
+  - Ruff all checks passed; Pyright 0 errors, 0 warnings, 0 informations.
+- Pass: ownership searches
+  - `cold_start/proofs.py` is absent and old generic imports have zero Python
+    hits.
+
+Commit:
+
+- pending Iteration 5 commit
+
+Next slice:
+
+- Iteration 6 - verifier CLI contract

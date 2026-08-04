@@ -20,7 +20,8 @@ from cold_start.presburger import (
     S,
     add,
 )
-from cold_start.proofs import left_identity_proof, robinson_add_proof
+from cold_start.presburger_proofs import left_identity_proof
+from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
