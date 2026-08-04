@@ -1145,8 +1145,62 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 8 commit
+- `3dc5cd6 ci: enforce the owned repository gate`
 
 Next slice:
 
 - Iteration 9 - documentation and historical hygiene
+
+### Iteration 9 - Documentation and Historical Hygiene - Complete
+
+Surfaces:
+
+- stale README and Architecture ownership claims
+  - Disposition: rewrite
+  - Action: durable docs now name the single codec, shared emitter, theory-owned
+    proof libraries, Lean package owners, complete trusted checking path, `Rel`,
+    current verifier/CI commands, and locked runtime/development dependencies.
+- stale Lean working report
+  - Disposition: rewrite
+  - Owner after cleanup: `reports/lean-export-notes.md` now contains only current
+    ownership, soundness, reproduction steps, failure shields, and dated evidence.
+- `NOTES.md`, `notes-cold-start.md`, and `notes-formula2.md`
+  - Disposition: delete after harvest
+  - Action: durable architecture and research/reproducibility reports retain the
+    unique rationale; Git history retains chronology and old gate counts.
+- completed notation formatter workstream
+  - Disposition: delete
+  - Action: current code, architecture, notation tests, and Git history own its
+    completed invariant and execution record.
+- live untracked campaign notes and registered secondary worktrees
+  - Disposition: preserve
+  - Action: three untracked `notes-*.md` files and both clean registered worktrees
+    were inspected but not staged, modified, or removed.
+
+Red evidence:
+
+- Fail: documentation/hygiene contract tests
+  - 2 failed because durable docs named deleted owners and all four superseded
+    tracked history files still existed.
+
+Green evidence:
+
+- Pass: documentation and hygiene tests
+  - 8 passed in 0.23 seconds.
+- Pass: stale/current owner searches
+  - no dependency-free claim, deleted module owner, or old byte API remains in
+    README, Architecture, working rules, or the Lean report; `Rel` is documented.
+- Pass: complete owned repository gate
+  - 1,268 passed in 98.27 seconds, Ruff all checks passed, Pyright basic reported
+    0 errors and 0 warnings, and the gate printed `GATE GREEN`.
+- Pass: worktree inventory
+  - main plus the same two registered secondary worktrees; no cleanup action was
+    taken because deletion requires separate explicit authorization.
+
+Commit:
+
+- pending Iteration 9 commit
+
+Next slice:
+
+- final fixed-point audit

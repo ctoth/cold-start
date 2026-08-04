@@ -83,3 +83,38 @@ def test_type_checking_mode_is_named_consistently():
     assert '"typeCheckingMode": "basic"' in config
     assert "pyright (basic)" in gate
     assert "strict" not in gate.lower()
+
+
+def test_durable_docs_name_current_architecture_owners():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    architecture = (REPO_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    working_rules = (REPO_ROOT / "cold_start" / "CLAUDE.md").read_text(encoding="utf-8")
+    durable = "\n".join((readme, architecture, working_rules))
+
+    for stale in (
+        "cold_start/lean.py",
+        "cold_start/proofs.py",
+        "`proofs.robinson_add_proof",
+        "to_bytes/from_bytes",
+        "dependency-free",
+    ):
+        assert stale not in durable
+
+    for current in (
+        "cold_start/codec.py",
+        "cold_start/presburger_proofs.py",
+        "cold_start/peano_proofs.py",
+        "cold_start/lean/corpus.py",
+    ):
+        assert current in readme
+    assert "`Rel`" in architecture
+
+
+def test_superseded_chronological_docs_are_deleted():
+    for relative in (
+        "NOTES.md",
+        "notes-cold-start.md",
+        "notes-formula2.md",
+        "workstreams/notation-formatter-deletion-first.md",
+    ):
+        assert not (REPO_ROOT / relative).exists()

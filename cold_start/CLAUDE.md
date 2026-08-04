@@ -5,8 +5,9 @@ proof terms are inert, serializable data that claim nothing; one small *trusted*
 `check(proof, theory)` re-derives the sequent. Trust is the checking code -- the
 exact-type gates plus the `_validate`/`derive`/`sort_check` methods they guard
 (in `syntax.py`, `proof.py`, `sequent.py`) driven by `checker.py` -- plus each
-theory's axioms. `verify.py` re-checks proofs from hamblin bytes in a fresh process,
-trusting nothing but that checking code and the theory.
+theory's axioms. `codec.py` owns Hamblin bytes; `verify.py` decodes through it and
+re-checks proofs in a fresh process, trusting nothing but that checking code and
+the theory.
 
 ## Design rules
 - **Polymorphism over type-switches.** Operations over the syntax/proof tree are
@@ -26,7 +27,8 @@ trusting nothing but that checking code and the theory.
   `validate_proof` must reject hostile *subclasses* (a `Var` with a lying `__eq__`, a
   `str` subclass, a forged mutable-args `Fun`). A method can be overridden by exactly
   the subclass it must reject -- so the gate is a one-line **exact-type check**
-  (`type(x) in _CANONICAL` / `_PROOF_TYPES`, reject-default) placed *in front of* the
+  (`type(x) in CANONICAL_NODE_TYPES` / `CANONICAL_PROOF_TYPES`, reject-default)
+  placed *in front of* the
   node's own `_validate` method. The per-type field checks stay polymorphic methods
   (`node._validate(depth)`, `pf._validate()`); the gate just confirms the exact type
   is canonical before any method runs, then each method recurses through the same

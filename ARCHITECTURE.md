@@ -7,23 +7,26 @@ how such a thing works by building the smallest honest one.
 The design is the **De Bruijn criterion**: separate an untrusted, possibly-large
 *prover* from a tiny, trusted *checker*.
 
-- A **proof term** (`proof.py`) is inert, serializable data — a recipe. Building one
+- A **proof term** (`proof.py`) is inert structural data — a recipe. Building one
   asserts nothing; it may be nonsense.
 - `check(proof, theory)` (`checker.py`) re-derives the `Sequent` the proof proves,
-  or raises. It is the only trusted code. A `Sequent(hyps, concl)` is plain data you
+  or raises. A `Sequent(hyps, concl)` is plain data you
   can fabricate freely; its authority is `check()` *returning* it, never the value.
-- `verify.py` re-checks a proof from hamblin bytes in a fresh process, trusting only the
-  checker module and the theory's axioms — the payoff of inert proof terms.
+- `codec.py` is the single untrusted Hamblin boundary; `verify.py` decodes through
+  it and re-checks the proof in a fresh process.
 
-Trust = `checker.py` + each theory's axioms. Everything else (syntax, serialization,
-notation, the prover) is untrusted and may be as clever as it likes.
+Trust = the exact-type gates and the structural/rule/sort-checking methods they
+guard in `syntax.py`, `proof.py`, and `sequent.py`, driven by `checker.py`, plus
+each theory's axioms and induction structure. Syntax/proof *values*, the codec,
+notation, emitters, tactics, proof libraries, and Lean export are untrusted.
 
 ## The object language (`syntax.py`)
 One `Node` root. Two thin markers under it, `Term` and `Formula` (kept so tests can
 enumerate concrete subclasses), and the concrete frozen-dataclass nodes:
 
 - terms: `Var(name, sort)`, `Fun(name, args)`, `BVar(index)`
-- formulas: `Eq`, `Implies`, `Bottom`, `Forall(sort, body)`, `Exists(sort, body)`
+- formulas: `Eq`, `Rel`, `Implies`, `Bottom`, `Forall(sort, body)`,
+  `Exists(sort, body)`
 
 **Binders are locally nameless.** A bound variable is a de Bruijn index `BVar(i)`
 (0 = nearest enclosing binder); the binder records only the sort, not a name. So
@@ -57,7 +60,8 @@ sorted formulas; this unifies them.)
 *subclasses* — a `Var` subtype with a lying `__eq__`, a `str` subtype, a forged `Fun`
 with mutable args — before any `==` is trusted. A polymorphic method *could* be
 overridden by exactly such a subclass, so each gate is a one-line **exact-type
-check** (`type(x) in _CANONICAL` / `_PROOF_TYPES`, reject-default) placed *in front
+check** (`type(x) in CANONICAL_NODE_TYPES` / `CANONICAL_PROOF_TYPES`,
+reject-default) placed *in front
 of* the node's own `_validate` method. The per-type field checks stay polymorphic
 methods; the gate only confirms the exact type is canonical before any method runs,
 and each method recurses through the same gate. It runs first; downstream code then
@@ -88,14 +92,31 @@ call stack, so a proof or term nested far past Python's recursion limit is check
 or cleanly rejected without a `RecursionError`. The only bound is memory, which
 already held the input.
 
-## The independent kernel (`lean.py`)
+## External adapters (`codec.py`, `emitter.py`, and `notation.py`)
+
+Serialization is not a syntax/proof responsibility. `codec.py` builds its registries
+from the canonical owner sets and exposes explicit `encode_term`/`decode_term`,
+`encode_formula`/`decode_formula`, and `encode_proof`/`decode_proof` boundaries.
+Decoded structures are exact-root checked and validated before they can reach the
+checker; the trusted core never imports the codec.
+
+Human notation and Lean rendering are external tree interpretations. `emitter.py`
+provides their one iterative mechanism: metadata-only `@case` declarations become
+an immutable exact-type case table at class creation, with missing, duplicate, and
+unexpected cases rejected. Adapter-specific precedence, binder scope, names, and
+error policy remain in `notation.py` and `lean/*`; no visitor method or presentation
+state is placed on the canonical data classes.
+
+## The independent kernel (`lean/`)
 The De Bruijn criterion's second promise is that the checker is small enough to be
-*re-checked from outside*. `lean.py` (untrusted) renders each checked proof as a
+*re-checked from outside*. `lean/syntax.py` and `lean/proof.py` (untrusted) render
+each checked proof as a
 **conditional Lean 4 theorem**: the theory's function symbols and axioms become
 explicit hypotheses (never a Lean `axiom`), induction becomes an `ind` hypothesis,
 and the proof term maps rule-for-rule onto Lean primitives (`Eq.trans`, `congrArg`,
 application, lambda, `Nat.rec` at the ℕ instantiation). `lean_export/ColdStart.lean`
-carries the corpus plus an epilogue instantiating Presburger/Peano at ℕ — and it
+carries the `lean/corpus.py` corpus plus an epilogue instantiating
+Presburger/Peano at ℕ — and it
 compiles under Lean 4, so a foreign kernel re-derives what our checker accepted.
 Robinson stays conditional on purpose (`S a ≠ 1` fails at 0, so ℕ is not a model of
 the positive-integer axioms). Importing Lean *proofs* is out of scope (that would
@@ -106,6 +127,10 @@ mean swallowing CIC); only the emitted statement fragment parses back.
   arithmetic**, complete and decidable.
 - `peano.py` — `PEANO = PRESBURGER + {x·0=0, x·S(y)=x·y+x}`. Multiplication defined
   recursively from addition; with induction this is where incompleteness begins.
+- `presburger_proofs.py` — addition, induction, cancellation, and zero-case proof
+  builders whose smallest complete checking theory is Presburger.
+- `peano_proofs.py` — multiplication laws and positive cancellation, consuming the
+  proved Presburger kit.
 - `algebra.py` — monoids, rings (incl. non-commutative models), and a many-sorted
   monoid action `M ↷ X` (the shape that points toward modules/Clifford).
 - `robinson.py` — Robinson's `(1, S, ·)` arithmetic experiment: addition
@@ -130,7 +155,7 @@ We keep `+`-primitive with recursive `×` as the trusted base, because it is sma
 readable — Robinson herself called the eliminated-`+` axioms "complicated and
 artificial." But we *exhibit* the Robinson basis (`robinson.py` + the `(S,·)` Peano
 axioms), and concrete instances of her bridge are **derived theorems**: for positive
-`a, b`, `proofs.robinson_add_proof(a, b)` chains Robinson's own §2 recursion laws
+`a, b`, `robinson_proofs.robinson_add_proof(a, b)` chains Robinson's own §2 recursion laws
 (A4' `a + 1 = S a`, A5' `a + b = c → a + S b = S c`) into a proof of
 `bridge(a, b, a+b)`, which the trusted checker re-derives to a hypothesis-free
 sequent — so `2 + 3 = 5` arrives as an identity in `S` and `·` with no `+` symbol in
@@ -141,7 +166,8 @@ Half of Robinson's general definability theorem is now derived too, for **all** 
 at once rather than per instance: `robinson_proofs.bridge_theorem()` proves
 `PEANO ⊢ bridge(a, b, a+b)`. At `c := a+b` the bridge is a pure semiring identity —
 both sides multiply out to `ab(a+b)² + (a+b)² + 1` — so it falls to normalising both
-sides to one canonical polynomial over the multiplication laws in `proofs.py`, and it
+sides to one canonical polynomial over the multiplication laws in
+`peano_proofs.py`, and it
 needs no positivity: `a = b = 0` is covered like everything else. The **converse is
 now derived as well** on precisely Robinson's domain:
 `PEANO ⊢ bridge(a,b,S(c)) → a+b=S(c)`. Normalization first extracts

@@ -1,71 +1,78 @@
-# lean.py export — working notes
+# Lean export reproducibility report
 
-## State
-- Step 1 DONE + committed (01b825e): `cold_start/lean.py` renders terms/formulas/statements
-  to Lean 4 text. `render_statement` ∀-closes free vars in **lexicographic** order, keeping
-  the original variable names (readability + lets the proof body use σ = identity).
-- Step 2 DONE (green, 25 tests; ruff+pyright clean; about to commit): iterative Pratt parser
-  for the emitted statement fragment (mirrors `notation._Parser`), round-trip tests incl. a
-  hypothesis property test. Gotchas hit and fixed:
-  * application must bind tighter than `=`: `_P_APP` had to be 4 (above `_P_EQ`+1=3), else
-    `zero = succ zero` parsed `succ` with no argument.
-  * a shadowing binder (`∀ x, ∀ x, ...`) would make `forall()` steal the outer binder's
-    occurrences -> rejected explicitly (we never emit shadowing names).
-- Step 3 GREEN (37 tests pass, ruff clean); eyeballed the four exported theorems and they
-  look right. Remaining before commit: 11 pyright errors, all "substitute() returns Node,
-  Formula expected" -> fix by making `substitute` generic (TypeVar bound=Node).
-- Step 3 detail: proof export written (`export_theorem`, `_Export` dataclass with one
-  handler method per rule, dispatched through a dict — presentation stays out of proof.py,
-  mirroring notation.py's `_emit`). Tests written (red), implementation just typed in,
-  not yet run. Coordinator confirmed the Lean 3.4.2-only finding.
-- Step 3 COMMITTED as 1f07e98 (full suite green, ruff+pyright clean). Fixed pyright by making
-  `substitute` generic over a `_N = TypeVar(bound=Node)`.
-- Step 4 GREEN: 42 tests in tests/test_lean.py (41 pass, 1 skip = the Lean compile probe,
-  whose skip message reads "no Lean 4 toolchain on PATH (found: Lean (version 3.4.2, ...))").
-  `lean_export/ColdStart.lean` generated via `uv run python -m cold_start.lean`; a test
-  asserts the committed file equals `export_corpus()`. ruff + pyright clean.
-  NOTE for the report: the corpus was NOT kernel-checked here (Lean 3 only, no elan).
-- Step 4 implementation typed in (`_Style` for the Nat re-render, `export_corpus`,
-  `write_corpus`, `nat_example`, header/epilogue text); about to run the tests and add the
-  `__main__` block. Not yet green.
-- Step 4 earlier (red): corpus tests written (incl. an "is the committed file up to date"
-  test and the Lean-4-only compile probe). Implementation next: `export_corpus`,
-  `write_corpus`, `CORPUS_PATH`, `CORPUS_NAMES`, `__main__`, and a `_Style` (symbol map +
-  carrier name) so the Nat epilogue can re-render the same statements with Nat.add/Nat.succ.
-- Step 4 was: corpus emitter + `python -m cold_start.lean` + golden tests + Lean compile test.
+## Current owners
 
-## Key design decisions (settled)
-- Proof rendering threads a **substitution env σ: name -> Term** downward. `Inst(sub, var, t)`
-  = re-render `sub` under σ[var := t[σ]]. That makes `Axiom f` render as
-  `ax_name σ(v1) ... σ(vk)` with v1..vk = sorted free vars of the axiom — instantiation order
-  therefore must match `render_statement`'s lexicographic ∀-closure. Pin with a test.
-- `Induct(var, pred, base, step)` -> `ind (fun n => pred[var:=n]) <base@σ[var:=zero]>
-  (fun n ih => <step@σ[var:=n]> ih) σ(var)`.
-- Cong: 1 arg -> `congrArg f h`; n args -> `congr (congrArg f h1) h2 ...`.
-- Hypothesis env keyed by the σ-substituted Formula -> Lean binder name (Assume/ImpIntro).
-- Everything iterative: emitters push `("emit", node, prec, scope)` items, scope carried
-  by value, fresh names from a monotonic supply so no scope ever needs restoring.
-- Robinson theorems stay conditional: A1 (`S a ≠ 1`) is FALSE over Nat at a := 0
-  (Robinson's domain is the positive integers), so only Presburger/Peano get the ℕ epilogue.
+The Lean adapter is deliberately split by responsibility:
 
-## Environment finding (important for the final report)
-- `lean --version` => **Lean (version 3.4.2)** at /c/ProgramData/chocolatey/bin/lean.
-  `elan` is NOT installed. That is Lean **3**, which cannot compile a Lean 4 file.
-  => The compile test must detect the major version and `pytest.skip` unless Lean 4.
-  => Final report must say: Lean 4 NOT available; the corpus was NOT kernel-checked here.
+- `cold_start/lean/syntax.py` owns Lean names, substitution, statement rendering,
+  parsing, and universal closure.
+- `cold_start/lean/proof.py` owns checked proof-term rendering.
+- `cold_start/lean/corpus.py` owns corpus entries, Nat discharge data, generated
+  headers, and `lean_export/ColdStart.lean`.
+- `cold_start/lean/__main__.py` owns `python -m cold_start.lean`.
 
-## LEAN 4 VERDICT (supersedes the Lean 3 note above)
-Coordinator installed Lean 4 mid-task. Probe now prefers `elan which lean` and
-`%LOCALAPPDATA%\Microsoft\WinGet\Links\lean.exe` over bare `lean` (still Lean 3.4.2 on PATH).
-**`lean_export/ColdStart.lean` COMPILES: Lean 4.32.2, exit code 0, no warnings** (warnings
-were unused-binder ones; silenced with `set_option linter.unusedVariables false` + comment,
-because every theorem takes its theory's whole axiom set). Added a negative control test:
-corrupting an induction base makes Lean exit non-zero, so the passing compile has teeth.
-Committed 50d0115. Full suite 395 passed, ruff + pyright clean.
+There is no `cold_start/lean.py` compatibility module and no package initializer
+that re-exports the deleted combined surface.
 
-## Remaining
-REFACTOR pass (mandatory third TDD step): drop the duplicated `symbol_name` in favour of
-`_Style.symbol`, replace the magic `params[:4]` slice, drop redundant theory imports.
+## Soundness contract
 
-## Blockers
-None.
+Every emitted theorem is conditional. Object-language function symbols, theory
+axioms, and (when used) induction are Lean theorem parameters; the exporter never
+creates a Lean `axiom`, `sorry`, or tactic escape. The Presburger and Peano
+epilogue instantiates those hypotheses at Lean's `Nat` using core lemmas.
+Robinson remains conditional because its positive-integer axiom
+`succ a != 1` is false in `Nat` at `a = 0`.
+
+Proof instantiation is rendered through a substitution environment, so axiom
+arguments follow the statement closure order independently of the nesting order of
+`Inst` nodes. Congruence, implication, quantifiers, classical rules, and induction
+map to explicit Lean proof terms.
+
+## Reproduce
+
+The repository pins Lean in `lean-toolchain`. Regenerate and compare the corpus:
+
+```powershell
+uv run python -m cold_start.lean
+git diff --exit-code -- lean_export/ColdStart.lean
+```
+
+Compile it with the selected Lean 4 toolchain:
+
+```powershell
+lean lean_export/ColdStart.lean
+```
+
+The repository gate runs all Python tests, Ruff, and Pyright basic:
+
+```powershell
+pwsh -File tools/gate.ps1
+```
+
+CI performs the same lockfile-backed gate, regenerates and diffs the corpus, and
+compiles it with the pinned Lean release.
+
+## Failure shields
+
+`tests/test_lean.py` keeps both required foreign-kernel executions:
+
+1. the complete generated corpus must compile;
+2. a deliberately corrupted induction base must be rejected.
+
+The same file checks byte-for-byte corpus freshness, absence of asserted axioms and
+placeholders, statement round-trips, exact theorem parameters, Nat instantiation,
+and conditional Robinson export. Immutable proof/corpus setup is shared across
+assertions, but neither kernel execution is skipped or replaced by string checks.
+
+## Verified execution
+
+On 2026-08-04, after the repository architecture cleanup:
+
+- the full owned gate passed 1,266 tests in 97.27 seconds with zero skips;
+- Ruff passed;
+- Pyright basic reported 0 errors and 0 warnings;
+- corpus regeneration produced no Git diff;
+- Lean 4.32.2 compiled `lean_export/ColdStart.lean` with exit code 0.
+
+Historical development chronology remains available in Git history; this report owns
+only the current reproducibility contract and evidence.

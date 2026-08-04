@@ -3,7 +3,8 @@
 Number theory from nothing — built so that *nothing is trusted but a small
 checker re-deriving proofs from inert data*.
 
-This is a proof system in plain, dependency-free Python, organised around the
+This is a proof system in a small Python package with locked dependencies,
+organised around the
 **De Bruijn criterion**: an (untrusted, possibly buggy or hostile) prover emits
 a serializable *proof term*; one tiny trusted `check()` re-derives the
 conclusion from scratch. You never have to trust that some object "is really a
@@ -29,15 +30,16 @@ The code is the `cold_start/` package (flat, no src-layout):
 
 - **`cold_start/syntax.py`** — the object language: terms (`Var`/`Fun`/`BVar`),
   formulas (`Eq`/`Rel`/`Implies`/`Bottom`/`Forall`/`Exists`, with `Not` as sugar),
-  free-vars/substitution, exact-type `validate_*`, and hamblin byte ser/deser.
+  free-vars/substitution, and exact-type validation.
   *Not trusted* — a formula is a claim, not a proof.
 - **`cold_start/proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`,
   `Trans`, `Cong`, `MP`, `ImpIntro`, `Inst`, `Induct`, classical rules, and
-  quantifier rules): the inert recipe a prover emits. Serializable to hamblin
-  bytes. *Not trusted.*
-- **`cold_start/checker.py`** — **THE TRUSTED CORE.** `validate_proof` (one
-  exact-type structural gate), `check(proof, theory) -> Sequent`, and the
-  trusted proof-rule methods it calls. A `Sequent` deliberately has no
+  quantifier rules): the inert recipe a prover emits. *Not trusted as data; its
+  guarded rule methods are part of checking.*
+- **`cold_start/checker.py`** — drives the **trusted checking path**:
+  `validate_proof`, `check(proof, theory) -> Sequent`, and the guarded structural,
+  rule, sequent, and sort-checking methods in `syntax.py`, `proof.py`, and
+  `sequent.py`. A `Sequent` deliberately has no
   construction guard: holding one proves nothing; only `check()` returning it is
   authority.
 - **`cold_start/presburger.py`** — Presburger arithmetic: signature (`0`, `S`,
@@ -48,6 +50,15 @@ The code is the `cold_start/` package (flat, no src-layout):
   implication, letting `P(n):=n=0`, x:=1 derive `1 = 0`). The rule keeps the
   step quantified correctly and enforces *var not free in the hypotheses*. The
   exploit is a permanent regression test.
+- **`cold_start/codec.py`** — the single untrusted Hamblin wire boundary. It owns
+  registries and explicit term/formula/proof encode/decode APIs, validates exact
+  roots and complete decoded structures, and is imported by `verify.py`, never by
+  the trusted core.
+- **`cold_start/emitter.py`** — one exact-type, iterative external-text emission
+  mechanism used by notation and Lean adapters. Its metadata-only `@case`
+  declarations are checked for complete canonical coverage at class creation.
+- **`cold_start/notation.py`** — untrusted human parser/formatter ownership for
+  terms and formulas; presentation state stays outside syntax nodes.
 - **`cold_start/peano.py`** — Peano arithmetic: Presburger plus recursive
   multiplication axioms.
 - **`cold_start/tactics.py`** — the **untrusted prover** half of the split: a
@@ -58,11 +69,12 @@ The code is the `cold_start/` package (flat, no src-layout):
   clever, because it has no authority: a bug here yields a proof `check()`
   rejects, never a false theorem. Nothing in the trusted core imports it, and a
   test enforces that direction.
-- **`cold_start/proofs.py`** — worked proofs, in two styles: built by hand
-  (`left_identity_proof`) and built by tactics (`left_identity`, `succ_add`,
-  `add_comm`, `add_assoc`, then the multiplication ladder up through
-  `mul_comm`, `distrib_left`/`distrib_right` and `mul_assoc`). Both face the
-  same `check()`, which cannot tell them apart.
+- **`cold_start/presburger_proofs.py`** — hand-built examples and tactic-built
+  addition, induction, cancellation, and zero-case theorems that check in the
+  Presburger fragment.
+- **`cold_start/peano_proofs.py`** — multiplication examples and the ladder through
+  commutativity, distributivity, associativity, and positive cancellation; it
+  consumes the proved Presburger kit rather than a generic theorem bucket.
 - **`cold_start/robinson_proofs.py`** — Robinson's bridge proved in PEANO:
   `PEANO ⊢ S(a·(a+b))·S(b·(a+b)) = S(((a+b)·(a+b))·S(a·b))`, i.e. her definition
   of addition is *correct*, for all `a, b` at once. The converse is a checked
@@ -106,11 +118,11 @@ The code is the `cold_start/` package (flat, no src-layout):
   exactly its two deep debts exposed: totality and uniqueness.
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
-- **`cold_start/lean.py`** — untrusted **Lean 4 compat layer**: renders checked
-  proofs as *conditional* Lean theorems (axioms become ∀-hypotheses — never
-  `axiom`), parses back the statement fragment it emits, and writes
-  `lean_export/ColdStart.lean`, which compiles under Lean 4 — an **independent
-  kernel** re-checking our proofs, the other half of the De Bruijn promise.
+- **`cold_start/lean/syntax.py`**, **`cold_start/lean/proof.py`**, and
+  **`cold_start/lean/corpus.py`** — untrusted Lean 4 statement, proof-export, and
+  corpus owners. Checked proofs become *conditional* Lean theorems (axioms become
+  hypotheses, never Lean `axiom` declarations); `python -m cold_start.lean`
+  writes `lean_export/ColdStart.lean`, which a pinned Lean 4 kernel compiles.
 - **`tests/test_checker.py`** — example tests: rules, the soundness attacks,
   serialization round-trip, cross-process verification.
 - **`tests/test_properties.py`** — Hypothesis property tests: round-trips, checker
@@ -127,14 +139,16 @@ The code is the `cold_start/` package (flat, no src-layout):
 Managed with [uv](https://docs.astral.sh/uv/) — isolated `.venv`, locked deps.
 
 ```sh
-uv run pytest                          # the whole suite
-uv run python -m cold_start.proofs     # prints:  |- +(0, n) = n
-uv run ruff check . && uv run pyright  # lint + type-check
+pwsh -File tools/gate.ps1              # pytest, Ruff, Pyright basic
+uv run python -m cold_start.lean       # regenerate the checked-in Lean corpus
 
 # verify a hamblin-encoded proof in a fresh process, end to end:
-# tests/test_checker.py covers the exact to_bytes(...) -> verify stdin path.
+# cold_start.codec.encode_proof(...) produces the wire bytes.
 uv run python -m cold_start.verify proof.hmb
 ```
+
+The same lockfile-backed gate, generated-file check, and Lean compilation run in
+`.github/workflows/ci.yml` on pushes and pull requests.
 
 ## Design commitments (v0)
 
