@@ -29,6 +29,8 @@ from .proof import (
     Axiom,
     Cong,
     ExFalso,
+    ExistsElim,
+    ExistsIntro,
     ForallElim,
     ForallIntro,
     ImpIntro,
@@ -38,8 +40,9 @@ from .proof import (
     Sym,
     Trans,
 )
+from .prop import And, Or, and_intro, or_elim, or_left, or_right
 from .robinson import ADD_ONE, ADD_SUCC
-from .syntax import Eq, Formula, Implies, Term, Var, forall
+from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import axiom_rule, by_induction, lemma_rule, normalize_equality
 
 
@@ -482,6 +485,63 @@ def mul_cancel_right_succ() -> Pf:
     step = ImpIntro(pred, ForallIntro("y", "", nested_induction))
     all_x = induction("x", pred, base, step)
     return ForallElim(all_x, y)
+
+
+ZERO_OR_SUCC: Formula = Or(  # n = 0  or  exists m, n = S(m)
+    Eq(_n, ZERO),
+    exists("m", "", Eq(_n, S(Var("m")))),
+)
+
+
+def zero_or_succ() -> Pf:
+    """Every number is zero or a successor -- the case-split principle.
+
+    Induction on ``n`` where neither case needs its hypothesis: at zero the
+    left disjunct is reflexivity, and at ``S(n)`` the right disjunct holds
+    with witness ``n``. A Presburger theorem; classical only through the
+    disjunction encoding itself."""
+    ex_zero = exists("m", "", Eq(ZERO, S(Var("m"))))
+    base = or_left(Eq(ZERO, ZERO), ex_zero, Refl(ZERO))
+
+    ex_succ = exists("m", "", Eq(S(_n), S(Var("m"))))
+    witness = ExistsIntro(ex_succ, _n, Refl(S(_n)))
+    step = ImpIntro(ZERO_OR_SUCC, or_right(Eq(S(_n), ZERO), ex_succ, witness))
+
+    return induction("n", ZERO_OR_SUCC, base, step)
+
+
+ADD_EQ_ZERO: Formula = Implies(  # x + y = 0  ->  x = 0 and y = 0
+    Eq(add(_x, _y), ZERO),
+    And(Eq(_x, ZERO), Eq(_y, ZERO)),
+)
+
+
+def add_eq_zero() -> Pf:
+    """A zero sum has zero summands -- by cases on ``y`` via ``zero_or_succ``.
+
+    When ``y = 0`` the hypothesis collapses to ``x = 0`` through the zero
+    axiom; when ``y = S(m)`` the sum is a successor, and a successor is never
+    zero. The corner every subtraction-free divisibility argument hits."""
+    hyp = Eq(add(_x, _y), ZERO)
+    goal = And(Eq(_x, ZERO), Eq(_y, ZERO))
+    y_zero = Eq(_y, ZERO)
+    ex_succ = exists("m", "", Eq(_y, S(Var("m"))))
+
+    x_plus_zero = Inst(Axiom(ADD_ZERO_F), "x", _x)  # x + 0 = x
+    shift = Cong("+", (Refl(_x), Assume(y_zero)))  # x + y = x + 0
+    x_zero = Trans(Trans(Sym(x_plus_zero), Sym(shift)), Assume(hyp))  # x = 0
+    zero_arm = ImpIntro(y_zero, and_intro(Eq(_x, ZERO), y_zero, x_zero, Assume(y_zero)))
+
+    m = Var("m!")
+    y_succ = Eq(_y, S(m))
+    unfold = Inst(Inst(Axiom(ADD_SUCC_F), "x", _x), "y", m)  # x + S(m!) = S(x + m!)
+    shift_succ = Cong("+", (Refl(_x), Assume(y_succ)))  # x + y = x + S(m!)
+    succ_is_zero = Trans(Trans(Sym(unfold), Sym(shift_succ)), Assume(hyp))  # S(x+m!) = 0
+    boom = MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", add(_x, m)), succ_is_zero)
+    succ_arm = ImpIntro(ex_succ, ExistsElim("m!", Assume(ex_succ), ExFalso(boom, goal)))
+
+    cases = or_elim(y_zero, ex_succ, goal, Inst(zero_or_succ(), "n", _y), zero_arm, succ_arm)
+    return ImpIntro(hyp, cases)
 
 
 if __name__ == "__main__":

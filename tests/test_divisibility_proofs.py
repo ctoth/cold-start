@@ -6,24 +6,34 @@ from semantics import Model, evaluate
 
 from cold_start.checker import check
 from cold_start.divisibility import (
+    DIVIDES_ADD,
+    DIVIDES_ADD_CANCEL,
     DIVIDES_FACTOR,
+    DIVIDES_MUL_LEFT,
+    DIVIDES_ONE,
     DIVIDES_PRODUCT,
     DIVIDES_PRODUCT_RIGHT,
     DIVIDES_REFL,
+    DIVIDES_STEP,
     DIVIDES_TRANS,
     DIVIDES_ZERO,
     ONE_DIVIDES,
+    divides_add,
+    divides_add_cancel,
     divides_factor,
+    divides_mul_left,
+    divides_one,
     divides_product,
     divides_product_right,
     divides_refl,
+    divides_step,
     divides_trans,
     divides_zero,
     one_divides,
     peano_divides,
 )
 from cold_start.peano import PEANO, mul
-from cold_start.presburger import ZERO, S
+from cold_start.presburger import ZERO, S, add
 from cold_start.syntax import Eq, Implies, Var, exists
 
 ONE = S(ZERO)
@@ -85,6 +95,63 @@ def test_a_divisor_still_divides_after_multiplication():
 
     assert not seq.hyps
     assert seq.concl == DIVIDES_PRODUCT
+
+
+def test_a_common_divisor_divides_a_sum_in_peano():
+    a, b, c = Var("a"), Var("b"), Var("c")
+    seq = check(divides_add(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_ADD
+    assert DIVIDES_ADD == Implies(
+        peano_divides(a, b),
+        Implies(peano_divides(a, c), peano_divides(a, add(b, c))),
+    )
+
+
+def test_divisibility_is_preserved_by_a_common_left_factor_in_peano():
+    a, b, c = Var("a"), Var("b"), Var("c")
+    seq = check(divides_mul_left(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_MUL_LEFT
+    assert DIVIDES_MUL_LEFT == Implies(
+        peano_divides(a, b),
+        peano_divides(mul(c, a), mul(c, b)),
+    )
+
+
+def test_one_peeled_factor_still_leaves_a_multiple_in_peano():
+    a, b, k = Var("a"), Var("b"), Var("k")
+    seq = check(divides_step(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_STEP
+    assert DIVIDES_STEP == Implies(
+        Eq(mul(a, k), add(b, a)),
+        peano_divides(a, b),
+    )
+
+
+def test_a_divisor_of_a_shifted_sum_divides_the_remainder_in_peano():
+    a, b, c = Var("a"), Var("b"), Var("c")
+    seq = check(divides_add_cancel(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_ADD_CANCEL
+    assert DIVIDES_ADD_CANCEL == Implies(
+        peano_divides(a, add(b, mul(a, c))),
+        peano_divides(a, b),
+    )
+
+
+def test_only_one_divides_one_in_peano():
+    a = Var("a")
+    seq = check(divides_one(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_ONE
+    assert DIVIDES_ONE == Implies(peano_divides(a, ONE), Eq(a, ONE))
 
 
 def test_transitivity_formula_has_the_expected_mathematical_shape():

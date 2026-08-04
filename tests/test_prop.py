@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from cold_start.checker import check
 from cold_start.presburger import PRESBURGER, ZERO, S
-from cold_start.proof import Assume, Refl
-from cold_start.prop import And, and_intro, and_left, and_right
+from cold_start.proof import Assume, ImpIntro, Refl
+from cold_start.prop import And, Or, and_intro, and_left, and_right, or_elim, or_left, or_right
 from cold_start.syntax import Eq, Implies, Not, Var
 
 _x, _y = Var("x"), Var("y")
@@ -49,3 +49,38 @@ def test_eliminations_recover_an_assumed_conjunction() -> None:
     left = check(and_left(A, B, packed), PRESBURGER)
     assert left.hyps == frozenset({And(A, B)})
     assert left.concl == A
+
+
+def test_or_is_the_classical_encoding() -> None:
+    assert Or(A, B) == Implies(Not(A), B)
+
+
+def test_or_left_and_right_inject_a_theorem() -> None:
+    left = check(or_left(A, B, Refl(_x)), PRESBURGER)
+    right = check(or_right(A, B, Refl(S(_y))), PRESBURGER)
+    assert not left.hyps and left.concl == Or(A, B)
+    assert not right.hyps and right.concl == Or(A, B)
+
+
+def test_or_injections_carry_hypotheses_honestly() -> None:
+    ha = Eq(_x, ZERO)
+    seq = check(or_left(ha, B, Assume(ha)), PRESBURGER)
+    assert seq.hyps == frozenset({ha})
+    assert seq.concl == Or(ha, B)
+
+
+def test_or_elim_reasons_by_cases() -> None:
+    # From an assumed disjunction and one proof of C per arm, conclude C.
+    goal = Eq(ZERO, ZERO)
+    packed = Assume(Or(A, B))
+    by_cases = or_elim(
+        A,
+        B,
+        goal,
+        packed,
+        ImpIntro(A, Refl(ZERO)),
+        ImpIntro(B, Refl(ZERO)),
+    )
+    seq = check(by_cases, PRESBURGER)
+    assert seq.hyps == frozenset({Or(A, B)})
+    assert seq.concl == goal
