@@ -1043,8 +1043,54 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 6 commit
+- `170c11c refactor: make verifier CLI failures explicit`
 
 Next slice:
 
 - Iteration 7 - test runtime without coverage loss
+
+### Iteration 7 - Test Runtime Without Coverage Loss - Complete
+
+Surfaces:
+
+- repeated construction of identical immutable Lean proof examples
+  - Disposition: consolidate
+  - Owner after cleanup: module constants are built once and reused by independent
+    export assertions.
+- repeated generated corpus construction
+  - Disposition: consolidate
+  - Owner after cleanup: one module-scoped `corpus_text` fixture supplies corpus
+    content assertions and both foreign-kernel inputs; `write_corpus` still has
+    its own independent write-contract test.
+- repeated Lean toolchain discovery
+  - Disposition: consolidate
+  - Owner after cleanup: one module-scoped `lean4` fixture probes the toolchain
+    once and supplies both the positive compile and corrupted-export rejection.
+- model, sort, property, and foreign-kernel behavioral coverage
+  - Disposition: keep
+  - Action: Hypothesis counts, soundness checks, the positive Lean run, and the
+    negative Lean run are unchanged.
+
+Measured evidence:
+
+- Before this slice: 1,263 passed in 117.14 seconds.
+  - Slow Lean calls included corrupted export at 8.41 seconds, positive corpus
+    compile at 5.63 seconds, corpus write at 2.26 seconds, and repeated corpus
+    construction assertions around 1.04 seconds each.
+- Focused Lean file after fixture sharing:
+  - 43 passed in 10.08 seconds; both kernel calls remained and each took about
+    3.6 seconds.
+- After this slice: 1,263 passed in 98.48 seconds.
+  - Improvement: 18.66 seconds (15.9 percent) against the same expanded suite.
+  - This is also 4.91 seconds faster than the 103.39-second execution preflight,
+    despite the suite growing from 1,242 to 1,263 tests.
+- Pass: scoped Ruff and configured Pyright
+  - Ruff all checks passed; Pyright 0 errors, 0 warnings, 0 informations.
+
+Commit:
+
+- pending Iteration 7 commit
+
+Next slice:
+
+- Iteration 8 - CI and typing truth
