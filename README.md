@@ -50,7 +50,17 @@ The code is the `cold_start/` package (flat, no src-layout):
   exploit is a permanent regression test.
 - **`cold_start/peano.py`** — Peano arithmetic: Presburger plus recursive
   multiplication axioms.
-- **`cold_start/proofs.py`** — worked proofs. Currently `0 + n = n` by induction.
+- **`cold_start/tactics.py`** — the **untrusted prover** half of the split: a
+  small equational engine (first-order matching, directed rewrite rules,
+  leftmost-outermost rewriting under a `Cong` tower, normalization to a fixpoint,
+  `prove_eq`, `by_induction`) that *emits* proof terms. It may be arbitrarily
+  clever, because it has no authority: a bug here yields a proof `check()`
+  rejects, never a false theorem. Nothing in the trusted core imports it, and a
+  test enforces that direction.
+- **`cold_start/proofs.py`** — worked proofs, in two styles: built by hand
+  (`left_identity_proof`) and built by tactics (`left_identity`, `succ_add`,
+  `add_comm`, `add_assoc` — commutativity and associativity of addition). Both
+  face the same `check()`, which cannot tell them apart.
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`tests/test_checker.py`** — example tests: rules, the soundness attacks,
