@@ -116,6 +116,18 @@ The code is the `cold_start/` package (flat, no src-layout):
   interpretation is a 6-node bridge with seven laws fully paid (9,953 proof
   nodes). Robinson's full formula (2) is a 331-node multiplication bridge with
   exactly its two deep debts exposed: totality and uniqueness.
+- **`cold_start/parity.py`** — the 2-adic kit in PEANO: every number is `m·2`
+  or `S(m·2)`, even never equals odd, cancellation by 2, and **Euclid's lemma
+  at the prime 2** (`¬2|d → d|x·2 → d|x`) — carried by parity alone, no order
+  kit, no Bézout. The first rung of the formula (2) H1 debt.
+- **`cold_start/skolem.py`** — **Presburger interpreted into multiplication
+  alone** (Mostowski's embedding into Skolem arithmetic): `0 ↦ 1`,
+  `S(x) ↦ x·2`, `+ ↦ ·`, relativized to the powers of two, defined by
+  divisibility only (`every divisor ≠ 1 is even`). A 16-node bridge into
+  PEANO, ten of eleven obligations paid (toll: 64,281); `totality:+` (product
+  closure) ledgered open pending an order kit.
+- **`cold_start/ledger.py`** — the bridge ledger: every landed artifact
+  re-verified and measured in one table (`uv run python -m cold_start.ledger`).
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`cold_start/lean/syntax.py`**, **`cold_start/lean/proof.py`**, and
@@ -178,9 +190,14 @@ The same lockfile-backed gate, generated-file check, and Lean compilation run in
 - [x] Interpretations between theories as first-class checked artifacts
       (`cold_start.interp`), with Robinson's §2 landed as two measured bridges
       (`cold_start.bridges`) — one fully paid into PEANO's positives
-- [ ] Ordering (`<=`) and primality; divisibility foundations are now checked
-- [ ] Pay Robinson Theorem 1.2's totality/uniqueness debts (the CRT/prime step);
-      then Quine 1946 concatenation theory and Skolem arithmetic
+- [x] Skolem arithmetic: Presburger interpreted into multiplication on the
+      powers of two (`cold_start.skolem`), riding Euclid's lemma at 2
+      (`cold_start.parity`); `totality:+` ledgered open
+- [ ] Ordering (`<=`) and primality; divisibility foundations and Euclid at 2
+      are now checked
+- [ ] Pay Robinson Theorem 1.2's totality/uniqueness debts (the CRT/prime step)
+      and the Skolem bridge's product closure — both wait on the order kit;
+      then Quine 1946 concatenation theory
 - [ ] A proof-term pretty-printer (proof trees / step listings)
 - [x] A *non-trusted* tactics layer that emits proof terms — including ordered
       rewriting, so commutativity can be a rule without looping
