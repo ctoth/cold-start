@@ -231,7 +231,10 @@ def _find_redex(term: Term, rules) -> tuple | None:
     search is a pre-order DFS pushing children right-to-left, so a node is tried
     before its arguments and an earlier argument before a later one; within one
     position the rules are tried in the order given. Deterministic, and the
-    reason the tactics' output is reproducible."""
+    reason the tactics' output is reproducible.
+
+    `rules` is re-read at every position visited, so it must be a re-iterable
+    sequence; the public entry points materialize it before calling in."""
     stack: list = [((), term)]
     while stack:
         path, t = stack.pop()
@@ -272,7 +275,7 @@ def rewrite_step(term: Term, rules) -> tuple | None:
 
     The rule proves only the redex's own equation; `_under_context` lifts that
     to the whole term."""
-    found = _find_redex(term, rules)
+    found = _find_redex(term, tuple(rules))
     if found is None:
         return None
     path, rule, sigma = found
@@ -286,6 +289,7 @@ def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
     Steps are joined with `Trans`; a term already in normal form gets `Refl`.
     `budget` bounds the number of steps -- a non-terminating rule set (say, an
     equation used right-to-left) raises `TacticError` instead of hanging."""
+    rules = tuple(rules)
     pf: Pf = Refl(term)
     current = term
     for _ in range(budget):
@@ -309,6 +313,7 @@ def prove_eq(goal: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
     the goal is `Trans(l = nf, Sym(r = nf))`. Otherwise the rule set does not
     decide this goal and we raise, naming both normal forms -- which is the
     single most useful thing to see when a tactic fails."""
+    rules = tuple(rules)
     eq = _equation(goal)
     left_nf, left_pf = normalize(eq.lhs, rules, budget)
     right_nf, right_pf = normalize(eq.rhs, rules, budget)
@@ -329,6 +334,7 @@ def by_induction(var: str, pred: Formula, rules, budget: int = DEFAULT_BUDGET) -
     assumption, which is what lets `Induct` accept the result: its side
     condition forbids `var` free in any surviving hypothesis, and after the
     discharge there are none."""
+    rules = tuple(rules)
     eq = _equation(pred)
 
     def case(label: str, goal: Formula, case_rules) -> Pf:

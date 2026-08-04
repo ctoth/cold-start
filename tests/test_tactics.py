@@ -234,6 +234,41 @@ def test_normalize_evaluates_closed_numeral_addition():
     assert check(pf, PRESBURGER).concl == Eq(add(numeral(2), numeral(3)), numeral(5))
 
 
+def test_normalize_accepts_a_one_shot_iterable_of_rules():
+    """`_find_redex` re-reads `rules` at every position it visits, so a
+    generator would be exhausted after the first one and every later position
+    would see an empty rule set -- normalize would return a NON-normal form
+    with an honest proof of only the partial rewrite. The entry points
+    materialize the rules once so the answer cannot depend on the container."""
+    term = add(numeral(2), numeral(2))
+    expected = normalize(term, ADD_RULES)[0]
+    assert expected == numeral(4)
+    nf, pf = normalize(term, (r for r in ADD_RULES))
+    assert nf == expected
+    assert check(pf, PRESBURGER).concl == Eq(term, expected)
+
+
+def test_prove_eq_accepts_a_one_shot_iterable_of_rules():
+    goal = Eq(add(numeral(2), numeral(2)), numeral(4))
+    assert check(prove_eq(goal, (r for r in ADD_RULES)), PRESBURGER).concl == goal
+
+
+def test_by_induction_accepts_a_one_shot_iterable_of_rules():
+    pred = Eq(add(ZERO, n), n)
+    seq = check(by_induction("n", pred, (r for r in ADD_RULES)), PRESBURGER)
+    assert seq.concl == pred
+    assert seq.hyps == frozenset()
+
+
+def test_rewrite_step_accepts_a_one_shot_iterable_of_rules():
+    # The redex is under a congruence, so the walk visits the root first and
+    # only finds the rule at a later position -- exactly where exhaustion bites.
+    term = S(add(x, ZERO))
+    step = rewrite_step(term, (r for r in ADD_RULES))
+    assert step is not None
+    assert step[0] == S(x)
+
+
 def test_normalize_raises_instead_of_hanging_on_a_looping_rule_set():
     looping = (axiom_rule(ADD_ZERO_F).flipped,)  # x -> x + 0, forever
     with pytest.raises(TacticError):
