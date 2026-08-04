@@ -82,8 +82,13 @@ def test_translate_rejects_binders_in_the_source() -> None:
 # --- obligations ----------------------------------------------------------
 
 
+def _bare(source, **kw):
+    """An Interpretation with no payments -- obligations only need the shape."""
+    return Interpretation(name="probe", source=source, target=ROBINSON_PEANO, symbols=(PLUS,), **kw)
+
+
 def test_obligations_cover_axioms_and_definedness() -> None:
-    obs = obligations(ROBINSON_PEANO, (PLUS,))  # any theory works as a source
+    obs = obligations(_bare(ROBINSON_PEANO))  # any theory works as a source
     labels = {o.label for o in obs}
     assert "totality:+" in labels
     assert "uniqueness:+" in labels
@@ -91,13 +96,67 @@ def test_obligations_cover_axioms_and_definedness() -> None:
 
 
 def test_definedness_formulas_have_the_graph_shape() -> None:
-    obs = {o.label: o.formula for o in obligations(ROBINSON_PEANO, (PLUS,))}
+    obs = {o.label: o.formula for o in obligations(_bare(ROBINSON_PEANO))}
     x, y = Var("x!0"), Var("x!1")
     c, d = Var("c!"), Var("d!")
     assert obs["totality:+"] == exists("c!", "", bridge(x, y, Var("c!")))
     assert obs["uniqueness:+"] == Implies(
         bridge(x, y, c), Implies(bridge(x, y, d), Eq(c, d))
     )
+
+
+# --- relativization -------------------------------------------------------
+
+
+def _delta(t):
+    return exists("k", "", Eq(t, S(Var("k"))))
+
+
+def test_relativized_axiom_guards_free_vars_and_hoists() -> None:
+    # a + S(b) = S(a + b) relativized: δ guards the free variables outermost
+    # (sorted) and the hoisted quantifier ranges over the domain.
+    p4 = Eq(add(_a, S(_b)), S(add(_a, _b)))
+    from cold_start.interp import translate_axiom
+
+    got = translate_axiom(p4, (PLUS,), _delta)
+    want = Implies(
+        _delta(_a),
+        Implies(
+            _delta(_b),
+            forall(
+                "c",
+                "",
+                Implies(_delta(_c), Implies(bridge(_a, _b, _c), bridge(_a, S(_b), S(_c)))),
+            ),
+        ),
+    )
+    assert got == want
+
+
+def test_relativized_obligations_add_domain_debts() -> None:
+    from cold_start.presburger import ZERO
+
+    one = S(ZERO)
+    interp = _bare(
+        ROBINSON_PEANO,
+        domain=_delta,
+        retained_funs=(("S", 1),),
+        retained_consts=(one,),
+    )
+    obs = {o.label: o.formula for o in obligations(interp)}
+    assert "domain:nonempty" in obs
+    assert obs["closure:S"] == Implies(_delta(Var("x!0")), _delta(S(Var("x!0"))))
+    assert obs[f"closure:{one!r}"] == _delta(one)
+
+    # Guarded totality packs domain membership with the graph via And.
+    from cold_start.prop import And
+
+    x, y, c = Var("x!0"), Var("x!1"), Var("c!")
+    want_tot = Implies(
+        _delta(x),
+        Implies(_delta(y), exists("c!", "", And(_delta(c), bridge(x, y, c)))),
+    )
+    assert obs["totality:+"] == want_tot
 
 
 # --- verification ---------------------------------------------------------

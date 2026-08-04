@@ -39,6 +39,7 @@ from dataclasses import dataclass
 
 from .checker import Theory, check
 from .proof import Pf
+from .prop import And
 from .syntax import (
     Bottom,
     Eq,
@@ -126,6 +127,17 @@ class Interpretation:
     symbols: tuple[GraphSymbol, ...]
     payments: tuple[tuple[str, Pf], ...] = ()
 
+    # Relativization: when `domain` is set, the interpretation lands on the
+    # δ-elements of the target, not all of it. Translated axioms guard their
+    # (implicitly universal) free variables and their hoisted quantifiers with
+    # δ, and the artifact owes more: δ must be nonempty, closed under each
+    # retained function symbol, and hold of each retained constant -- else the
+    # "domain" is not a structure at all. `retained_funs` lists (symbol, arity)
+    # pairs that cross verbatim; `retained_consts` lists constant terms.
+    domain: Callable[[Term], Formula] | None = None
+    retained_funs: tuple[tuple[str, int], ...] = ()
+    retained_consts: tuple[Term, ...] = ()
+
 
 # ---------------------------------------------------------------------------
 # The translator
@@ -191,7 +203,7 @@ def _fresh(avoid: set) -> str:
     return name
 
 
-def _translate_eq(eq: Eq, names: dict) -> Formula:
+def _translate_eq(eq: Eq, names: dict, domain: Callable[[Term], Formula] | None) -> Formula:
     """One atom. Hoist nested relational applications out of both sides through
     ∀-guards; if what remains on the left is a bare relational application, the
     atom is the graph itself (the witness form), else it stays an equality."""
@@ -219,11 +231,18 @@ def _translate_eq(eq: Eq, names: dict) -> Formula:
             break
         lhs = hoist(lhs)
     for name, guard in reversed(guards):
-        atom = forall(name, "", Implies(guard, atom))
+        body = Implies(guard, atom)
+        if domain is not None:  # a hoisted variable ranges over the domain only
+            body = Implies(domain(Var(name)), body)
+        atom = forall(name, "", body)
     return atom
 
 
-def translate(f: Formula, symbols: tuple[GraphSymbol, ...]) -> Formula:
+def translate(
+    f: Formula,
+    symbols: tuple[GraphSymbol, ...],
+    domain: Callable[[Term], Formula] | None = None,
+) -> Formula:
     """Translate a quantifier-free source formula through the graph symbols.
     Structure is preserved; only atoms change. Source axioms are shallow by
     nature, so the structural recursion here is harmless."""
@@ -235,7 +254,7 @@ def translate(f: Formula, symbols: tuple[GraphSymbol, ...]) -> Formula:
         if type(g) is Bottom:
             return g
         if type(g) is Eq:
-            return _translate_eq(g, names)
+            return _translate_eq(g, names, domain)
         raise InterpError(
             f"cannot translate {type(g).__name__}: source formulas must be quantifier-free"
         )
@@ -243,28 +262,60 @@ def translate(f: Formula, symbols: tuple[GraphSymbol, ...]) -> Formula:
     return tr(f)
 
 
+def translate_axiom(
+    f: Formula,
+    symbols: tuple[GraphSymbol, ...],
+    domain: Callable[[Term], Formula] | None = None,
+) -> Formula:
+    """A source axiom's full obligation: its translation, with the implicitly
+    universal free variables guarded into the domain when relativizing."""
+    out = translate(f, symbols, domain)
+    if domain is not None:
+        for name in sorted(f.free_vars(), reverse=True):
+            out = Implies(domain(Var(name)), out)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Obligations and verification
 # ---------------------------------------------------------------------------
 
 
-def obligations(source: Theory, symbols: tuple[GraphSymbol, ...]) -> tuple[Obligation, ...]:
-    """Everything the interpretation owes: translated axioms, then totality and
-    uniqueness per relational symbol. Labels are stable (the axiom's repr), so
-    payments can be prepared independently of iteration order."""
+def obligations(interp: Interpretation) -> tuple[Obligation, ...]:
+    """Everything the interpretation owes: translated axioms, totality and
+    uniqueness per relational symbol, and -- when relativized -- the domain
+    obligations (nonempty, closed under retained symbols, holding of retained
+    constants). Labels are stable (the axiom's repr), so payments can be
+    prepared independently of iteration order."""
+    symbols, dom = interp.symbols, interp.domain
     obs: list[Obligation] = []
-    for ax in sorted(source.axioms, key=repr):
-        obs.append(Obligation(f"axiom:{ax!r}", translate(ax, symbols)))
+    for ax in sorted(interp.source.axioms, key=repr):
+        obs.append(Obligation(f"axiom:{ax!r}", translate_axiom(ax, symbols, dom)))
     for s in symbols:
         args = s._args()
         c, d = Var("c!"), Var("d!")
-        obs.append(Obligation(f"totality:{s.fun}", exists("c!", "", s.graph(args, c))))
-        obs.append(
-            Obligation(
-                f"uniqueness:{s.fun}",
-                Implies(s.graph(args, c), Implies(s.graph(args, d), Eq(c, d))),
-            )
-        )
+        if dom is None:
+            tot: Formula = exists("c!", "", s.graph(args, c))
+            uniq: Formula = Implies(s.graph(args, c), Implies(s.graph(args, d), Eq(c, d)))
+        else:
+            tot = exists("c!", "", And(dom(c), s.graph(args, c)))
+            for t in reversed(args):
+                tot = Implies(dom(t), tot)
+            uniq = Implies(s.graph(args, c), Implies(s.graph(args, d), Eq(c, d)))
+            for t in reversed((*args, c, d)):
+                uniq = Implies(dom(t), uniq)
+        obs.append(Obligation(f"totality:{s.fun}", tot))
+        obs.append(Obligation(f"uniqueness:{s.fun}", uniq))
+    if dom is not None:
+        obs.append(Obligation("domain:nonempty", exists("x!", "", dom(Var("x!")))))
+        for fun, arity in interp.retained_funs:
+            fargs = tuple(Var(f"x!{i}") for i in range(arity))
+            closed: Formula = dom(Fun(fun, fargs))
+            for t in reversed(fargs):
+                closed = Implies(dom(t), closed)
+            obs.append(Obligation(f"closure:{fun}", closed))
+        for const in interp.retained_consts:
+            obs.append(Obligation(f"closure:{const!r}", dom(const)))
     return tuple(obs)
 
 
@@ -273,7 +324,7 @@ def verify(interp: Interpretation) -> BridgeReport:
     bridge. A payment must derive EXACTLY its obligation, with no hypotheses,
     in the TARGET theory; anything else raises `InterpError`. Unpaid
     obligations are reported open, not failed -- the report says so."""
-    obs = obligations(interp.source, interp.symbols)
+    obs = obligations(interp)
     known = {o.label for o in obs}
     payments = dict(interp.payments)
     for label in payments:
@@ -312,5 +363,6 @@ __all__ = [
     "ObligationStatus",
     "obligations",
     "translate",
+    "translate_axiom",
     "verify",
 ]

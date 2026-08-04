@@ -58,3 +58,18 @@ def test_robinson_bridge_report() -> None:
     # the aesthetic headline -- all of addition crosses on 19 nodes of S and ·.
     assert report.bridge_size == 19
     assert report.total_toll > 0
+
+
+def test_robinson_into_peano_positives_is_fully_paid() -> None:
+    # The same 19-node bridge landing in PEANO relativized to the positives:
+    # EVERY obligation paid -- uniqueness by last wave's converse theorem, the
+    # recursion axiom by guarded A5', totality by the bridge theorem. No open
+    # ledger: base-1 Presburger is interpreted in PEANO's positive domain.
+    from cold_start.bridges import robinson_into_peano
+
+    report = verify(robinson_into_peano())
+    assert report.complete
+    assert report.open_labels() == ()
+    assert report.bridge_size == 19
+    assert len(report.statuses) == 9  # 4 axioms + 2 definedness + 3 domain debts
+    assert all(s.paid for s in report.statuses)
