@@ -595,7 +595,7 @@ def instantiate(binder: Formula, repl: Term) -> Formula:
 # is the GATE in front of them: it confirms `type(node)` is exactly a canonical
 # class before calling the method. That ordering is the whole security argument -- a
 # hostile subclass could override `_validate`, but it never runs, because its exact
-# type is absent from `_CANONICAL` and the gate rejects it first.
+# type is absent from `CANONICAL_NODE_TYPES` and the gate rejects it first.
 
 
 def _check_str(s: object, what: str) -> None:
@@ -603,7 +603,7 @@ def _check_str(s: object, what: str) -> None:
         raise TypeError(f"{what} must be a genuine str, got {type(s).__name__}")
 
 
-_CANONICAL: frozenset[type] = frozenset(
+CANONICAL_NODE_TYPES: frozenset[type] = frozenset(
     {Var, BVar, Fun, Eq, Rel, Implies, Bottom, Forall, Exists}
 )
 
@@ -611,7 +611,7 @@ _CANONICAL: frozenset[type] = frozenset(
 def validate(node: object, depth: int = 0) -> None:
     """Exact-type well-formedness for any term or formula. The trust gate: a
     hostile __eq__-overriding subclass is rejected because its exact type is not in
-    `_CANONICAL`, so its `_validate` never runs. `depth` counts enclosing binders; a
+    `CANONICAL_NODE_TYPES`, so its `_validate` never runs. `depth` counts enclosing binders; a
     BVar is well-formed only if its index is below it (local closure: no dangling
     bound variable).
 
@@ -622,7 +622,7 @@ def validate(node: object, depth: int = 0) -> None:
     stack: list = [(node, depth)]
     while stack:
         n, d = stack.pop()
-        if type(n) not in _CANONICAL:
+        if type(n) not in CANONICAL_NODE_TYPES:
             raise TypeError(f"non-canonical node: {type(n).__name__}")
         stack.extend(cast(Node, n)._validate(d))
 

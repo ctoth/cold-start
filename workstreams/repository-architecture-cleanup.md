@@ -769,8 +769,65 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 1 commit
+- `6e6d542 tools: isolate mutation and report honest gates`
 
 Next slice:
 
 - Iteration 2 - exact iterative emitter
+
+### Iteration 2 - Exact Iterative Emitter - Complete
+
+Surfaces:
+
+- repeated adapter worklist loops
+  - Disposition: consolidate
+  - Owner after cleanup: `cold_start/emitter.py`
+  - Action: `Visit`, metadata-only `@case`, immutable class-built exact dispatch,
+    tuple-piece validation, and iterative emit-and-join now form the only external
+    text-emission machine.
+- notation type switch, mutable binder scope, and `pop` action
+  - Disposition: delete/rewrite
+  - Owner after cleanup: notation-owned decorated cases with immutable scope in
+    `_FormatContext`.
+- Lean syntax type switch
+  - Disposition: delete/rewrite
+  - Owner after cleanup: decorated Lean syntax cases; `Rel` is an explicit rejection.
+- Lean proof `_handlers()` and mutable output/worklist handlers
+  - Disposition: delete/rewrite
+  - Owner after cleanup: all canonical proof rules are decorated cases returning
+    pieces with `_ProofContext` carrying substitutions and hypotheses.
+- canonical type metadata
+  - Disposition: consolidate/keep
+  - Owner after cleanup: `CANONICAL_NODE_TYPES` in `syntax.py` and
+    `CANONICAL_PROOF_TYPES` in `proof.py`.
+
+Red evidence:
+
+- Error: `uv run pytest -o addopts= -q tests\test_emitter.py`
+  - collection failed because `cold_start.emitter` did not exist.
+
+Green evidence:
+
+- Pass: direct emitter contract tests
+  - 6 passed in 0.04 seconds
+- Pass: emitter, notation, and complete Lean test files
+  - 63 passed in 17.78 seconds
+- Pass: deep/iterative/repr property slice
+  - 22 passed, 2 deselected in 18.72 seconds
+- Pass: scoped Ruff
+  - all checks passed
+- Pass: `uv run pyright`
+  - 0 errors, 0 warnings, 0 informations
+- Pass: old surface search
+  - zero `_handlers(`, `def _push`, or `def _emit(` hits in notation/Lean production
+- Reviewed: remaining `accept` hits are the notation parser's token-consumption
+  method and `Theory.accepts`, not object visitor dispatch; parsers were explicitly
+  outside the emitter replacement.
+
+Commit:
+
+- pending Iteration 2 commit
+
+Next slice:
+
+- Iteration 3 - Lean ownership package

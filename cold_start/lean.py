@@ -48,7 +48,9 @@ from . import peano as _peano
 from . import presburger as _presburger
 from . import robinson as _robinson
 from .checker import Theory, check
+from .emitter import Emitter, Visit, case
 from .proof import (
+    CANONICAL_PROOF_TYPES,
     MP,
     RAA,
     Assume,
@@ -77,6 +79,7 @@ from .proofs import (
 from .robinson_proofs import bridge_converse_positive
 from .sequent import Sequent
 from .syntax import (
+    CANONICAL_NODE_TYPES,
     Bottom,
     BVar,
     Eq,
@@ -87,6 +90,7 @@ from .syntax import (
     Implies,
     Node,
     Not,
+    Rel,
     Term,
     Var,
     children,
@@ -284,85 +288,92 @@ def _free_names(node: Node) -> set:
 
 
 def _render(node: Node, supply: _Names, prec: int, style: _Style = _ABSTRACT) -> str:
-    """Emit `node` as Lean text, ITERATIVELY and in O(tree size): a pre-order walk
-    pushes `("emit", node, prec, scope)` and `("lit", text)` items and appends
-    fragments left-to-right into `out`, joined once at the end. `scope` is the
-    tuple of enclosing binder names (nearest last), carried *by value* on each
-    item -- so a binder needs no matching "pop" continuation and a `BVar(i)`
-    reads `scope[-1 - i]`."""
-    out: list[str] = []
-    stack: list = [("emit", node, prec, ())]
-    while stack:
-        item = stack.pop()
-        if item[0] == "lit":
-            out.append(item[1])
-        else:
-            _emit(item[1], supply, item[2], item[3], style, out, stack)
-    return "".join(out)
+    """Emit `node` as Lean text iteratively through exact external cases."""
+    return _LeanSyntaxEmitter(supply, style).render(node, _LeanSyntaxContext(prec))
 
 
-def _push(stack: list, pieces: list) -> None:
-    """Push `pieces` (forward order) so they pop left-to-right."""
-    stack.extend(reversed(pieces))
+@dataclass(frozen=True, slots=True)
+class _LeanSyntaxContext:
+    prec: int
+    scope: tuple[str, ...] = ()
 
 
-def _wrapped(level: int, prec: int, pieces: list) -> list:
-    return [("lit", "("), *pieces, ("lit", ")")] if level < prec else pieces
+def _wrapped(level: int, prec: int, pieces: list[object]) -> tuple[object, ...]:
+    return ("(", *pieces, ")") if level < prec else tuple(pieces)
 
 
-def _emit(node, supply: _Names, prec: int, scope: tuple, style: _Style, out, stack) -> None:
-    kind = type(node)
-    if kind is Var:
+class _LeanSyntaxEmitter(
+    Emitter[Node, _LeanSyntaxContext],
+    covers=CANONICAL_NODE_TYPES,
+):
+    __slots__ = ("style", "supply")
+
+    def __init__(self, supply: _Names, style: _Style) -> None:
+        self.supply = supply
+        self.style = style
+
+    def unsupported(self, value: object, context: object) -> tuple[object, ...]:
+        raise LeanError(f"cannot render {type(value).__name__} in Lean")
+
+    @case(Var)
+    def var(self, node: Var, context: _LeanSyntaxContext) -> tuple[object, ...]:
         if node.sort:
             raise LeanError(f"sorted variable {node!r}: the export has one carrier {CARRIER}")
-        out.append(lean_name(node.name))
-        return
-    if kind is BVar:
-        if not 0 <= node.index < len(scope):
+        return (lean_name(node.name),)
+
+    @case(BVar)
+    def bvar(self, node: BVar, context: _LeanSyntaxContext) -> tuple[object, ...]:
+        if not 0 <= node.index < len(context.scope):
             raise LeanError("dangling bound variable outside its binder")
-        out.append(scope[-1 - node.index])
-        return
-    if kind is Fun:
-        name = style.symbol(node.name)
+        return (context.scope[-1 - node.index],)
+
+    @case(Fun)
+    def fun(self, node: Fun, context: _LeanSyntaxContext) -> tuple[object, ...]:
+        name = self.style.symbol(node.name)
         if not node.args:
-            out.append(name)
-            return
-        pieces: list = [("lit", name)]
+            return (name,)
+        pieces: list[object] = [name]
         for arg in node.args:
-            pieces += [("lit", " "), ("emit", arg, _L_ATOM, scope)]
-        _push(stack, _wrapped(_L_APP, prec, pieces))
-        return
-    if kind is Bottom:
-        out.append("False")
-        return
-    if kind is Eq:
+            pieces += [" ", Visit(arg, _LeanSyntaxContext(_L_ATOM, context.scope))]
+        return _wrapped(_L_APP, context.prec, pieces)
+
+    @case(Bottom)
+    def bottom(self, node: Bottom, context: _LeanSyntaxContext) -> tuple[object, ...]:
+        return ("False",)
+
+    @case(Eq)
+    def eq(self, node: Eq, context: _LeanSyntaxContext) -> tuple[object, ...]:
         pieces = [
-            ("emit", node.lhs, _L_EQ, scope),
-            ("lit", " = "),
-            ("emit", node.rhs, _L_EQ, scope),
+            Visit(node.lhs, _LeanSyntaxContext(_L_EQ, context.scope)),
+            " = ",
+            Visit(node.rhs, _LeanSyntaxContext(_L_EQ, context.scope)),
         ]
-        _push(stack, _wrapped(_L_EQ, prec, pieces))
-        return
-    if kind is Implies:
+        return _wrapped(_L_EQ, context.prec, pieces)
+
+    @case(Implies)
+    def implies(self, node: Implies, context: _LeanSyntaxContext) -> tuple[object, ...]:
         pieces = [
-            ("emit", node.ant, _L_IMPL + 1, scope),
-            ("lit", " → "),
-            ("emit", node.con, _L_IMPL, scope),
+            Visit(node.ant, _LeanSyntaxContext(_L_IMPL + 1, context.scope)),
+            " → ",
+            Visit(node.con, _LeanSyntaxContext(_L_IMPL, context.scope)),
         ]
-        _push(stack, _wrapped(_L_IMPL, prec, pieces))
-        return
-    if kind is Forall or kind is Exists:
+        return _wrapped(_L_IMPL, context.prec, pieces)
+
+    @case(Forall, Exists)
+    def binder(self, node: Forall | Exists, context: _LeanSyntaxContext) -> tuple[object, ...]:
         if node.sort:
             raise LeanError(f"sorted binder :{node.sort}: the export has one carrier {CARRIER}")
-        name = supply.fresh(_binder_base(supply))
-        symbol = "∀" if kind is Forall else "∃"
+        name = self.supply.fresh(_binder_base(self.supply))
+        symbol = "∀" if type(node) is Forall else "∃"
         pieces = [
-            ("lit", f"{symbol} {name} : {style.carrier}, "),
-            ("emit", node.body, _L_IMPL, (*scope, name)),
+            f"{symbol} {name} : {self.style.carrier}, ",
+            Visit(node.body, _LeanSyntaxContext(_L_IMPL, (*context.scope, name))),
         ]
-        _push(stack, _wrapped(_L_IMPL, prec, pieces))
-        return
-    raise LeanError(f"cannot render {kind.__name__} in Lean")
+        return _wrapped(_L_IMPL, context.prec, pieces)
+
+    @case(Rel)
+    def relation(self, node: Rel, context: _LeanSyntaxContext) -> tuple[object, ...]:
+        raise LeanError(f"cannot render {type(node).__name__} in Lean")
 
 
 def _binder_base(supply: _Names) -> str:
@@ -697,8 +708,17 @@ def _fun_type(arity: int) -> str:
     return " → ".join([CARRIER] * (arity + 1))
 
 
+@dataclass(frozen=True, slots=True)
+class _ProofContext:
+    sigma: dict
+    env: dict
+
+
 @dataclass(slots=True)
-class _Export:
+class _Export(
+    Emitter[Pf, _ProofContext],
+    covers=CANONICAL_PROOF_TYPES,
+):
     """One theorem's worth of export state: the naming decisions, then the
     emitters that consume them.
 
@@ -829,213 +849,167 @@ class _Export:
     # --- the proof term -----------------------------------------------------
 
     def proof_text(self, pf: object, sigma: dict, env: dict) -> str:
-        """Render a proof term as a Lean 4 term-mode proof, ITERATIVELY: the work
-        stack holds `("lit", text)` and `("pf", proof, sigma, env)` items, and the
-        environments travel *on* the items rather than in a mutable scope -- so no
-        item needs a matching "pop", and fresh names come from a supply that never
-        reuses one."""
-        out: list[str] = []
-        stack: list = [("pf", pf, sigma, env)]
-        while stack:
-            item = stack.pop()
-            if item[0] == "lit":
-                out.append(item[1])
-            else:
-                self._emit_proof(item[1], item[2], item[3], out, stack)
-        return "".join(out)
+        """Render a proof iteratively with environments carried on each visit."""
+        return self.render(cast(Pf, pf), _ProofContext(sigma, env))
 
-    def _emit_proof(self, pf, sigma: dict, env: dict, out: list, stack: list) -> None:
-        handler = self._handlers().get(type(pf))
-        if handler is None:
-            raise LeanError(f"cannot export the rule {type(pf).__name__}")
-        handler(pf, sigma, env, out, stack)
+    def unsupported(self, value: object, context: object) -> tuple[object, ...]:
+        raise LeanError(f"cannot export the rule {type(value).__name__}")
 
-    def _handlers(self) -> dict:
-        return {
-            Axiom: self._axiom,
-            Assume: self._assume,
-            Refl: self._refl,
-            Sym: self._sym,
-            Trans: self._trans,
-            Cong: self._cong,
-            MP: self._mp,
-            ImpIntro: self._imp_intro,
-            Inst: self._inst,
-            Induct: self._induct,
-            ExFalso: self._ex_falso,
-            RAA: self._raa,
-            ForallElim: self._forall_elim,
-            ForallIntro: self._forall_intro,
-            ExistsIntro: self._exists_intro,
-            ExistsElim: self._exists_elim,
-        }
-
-    # Each handler appends finished text to `out` and/or pushes further work.
-
-    def _axiom(self, pf, sigma, env, out, stack) -> None:
+    @case(Axiom)
+    def _axiom(self, pf: Axiom, context: _ProofContext) -> tuple[object, ...]:
         name = self.axiom_names.get(pf.formula)
         if name is None:
             raise LeanError(f"not an axiom of the exported theory: {pf.formula!r}")
         args = [
-            self.term_text(substitute(Var(v), sigma), _L_ATOM) for v in closure_names(pf.formula)
+            self.term_text(substitute(Var(v), context.sigma), _L_ATOM)
+            for v in closure_names(pf.formula)
         ]
-        out.append(f"({name} {' '.join(args)})" if args else name)
+        return (f"({name} {' '.join(args)})" if args else name,)
 
-    def _assume(self, pf, sigma, env, out, stack) -> None:
-        key = substitute(pf.formula, sigma)
-        name = env.get(key) or self.open_names.get(key)
+    @case(Assume)
+    def _assume(self, pf: Assume, context: _ProofContext) -> tuple[object, ...]:
+        key = substitute(pf.formula, context.sigma)
+        name = context.env.get(key) or self.open_names.get(key)
         if name is None:
             raise LeanError(f"no hypothesis in scope for {key!r}")
-        out.append(name)
+        return (name,)
 
-    def _refl(self, pf, sigma, env, out, stack) -> None:
-        out.append(f"(Eq.refl {self.term_text(substitute(pf.term, sigma))})")
+    @case(Refl)
+    def _refl(self, pf: Refl, context: _ProofContext) -> tuple[object, ...]:
+        return (f"(Eq.refl {self.term_text(substitute(pf.term, context.sigma))})",)
 
-    def _sym(self, pf, sigma, env, out, stack) -> None:
-        _push(stack, [("lit", "(Eq.symm "), ("pf", pf.sub, sigma, env), ("lit", ")")])
+    @case(Sym)
+    def _sym(self, pf: Sym, context: _ProofContext) -> tuple[object, ...]:
+        return ("(Eq.symm ", Visit(pf.sub, context), ")")
 
-    def _trans(self, pf, sigma, env, out, stack) -> None:
-        _push(
-            stack,
-            [
-                ("lit", "(Eq.trans "),
-                ("pf", pf.left, sigma, env),
-                ("lit", " "),
-                ("pf", pf.right, sigma, env),
-                ("lit", ")"),
-            ],
+    @case(Trans)
+    def _trans(self, pf: Trans, context: _ProofContext) -> tuple[object, ...]:
+        return (
+            "(Eq.trans ",
+            Visit(pf.left, context),
+            " ",
+            Visit(pf.right, context),
+            ")",
         )
 
-    def _cong(self, pf, sigma, env, out, stack) -> None:
+    @case(Cong)
+    def _cong(self, pf: Cong, context: _ProofContext) -> tuple[object, ...]:
         """`congrArg f h₁` gives `f a₁ = f b₁` (partially applied for an n-ary f);
         each further argument is folded on with `congr : f = g → a = b → f a = g b`."""
         name = _ABSTRACT.symbol(pf.fun)
         if not pf.args:
-            out.append(f"(Eq.refl {name})")
-            return
-        pieces: list = [("lit", "(congr " * (len(pf.args) - 1))]
-        pieces += [("lit", f"(congrArg {name} "), ("pf", pf.args[0], sigma, env), ("lit", ")")]
+            return (f"(Eq.refl {name})",)
+        pieces: list[object] = ["(congr " * (len(pf.args) - 1)]
+        pieces += [f"(congrArg {name} ", Visit(pf.args[0], context), ")"]
         for sub in pf.args[1:]:
-            pieces += [("lit", " "), ("pf", sub, sigma, env), ("lit", ")")]
-        _push(stack, pieces)
+            pieces += [" ", Visit(sub, context), ")"]
+        return tuple(pieces)
 
-    def _mp(self, pf, sigma, env, out, stack) -> None:
-        _push(
-            stack,
-            [
-                ("lit", "("),
-                ("pf", pf.imp, sigma, env),
-                ("lit", " "),
-                ("pf", pf.ant, sigma, env),
-                ("lit", ")"),
-            ],
-        )
+    @case(MP)
+    def _mp(self, pf: MP, context: _ProofContext) -> tuple[object, ...]:
+        return ("(", Visit(pf.imp, context), " ", Visit(pf.ant, context), ")")
 
-    def _imp_intro(self, pf, sigma, env, out, stack) -> None:
-        hyp = substitute(pf.hyp, sigma)
+    @case(ImpIntro)
+    def _imp_intro(self, pf: ImpIntro, context: _ProofContext) -> tuple[object, ...]:
+        hyp = substitute(pf.hyp, context.sigma)
         name = self.supply.fresh("h")
-        _push(
-            stack,
-            [
-                ("lit", f"(fun {name} : {render_formula(hyp)} => "),
-                ("pf", pf.body, sigma, {**env, hyp: name}),
-                ("lit", ")"),
-            ],
+        return (
+            f"(fun {name} : {render_formula(hyp)} => ",
+            Visit(pf.body, _ProofContext(context.sigma, {**context.env, hyp: name})),
+            ")",
         )
 
-    def _inst(self, pf, sigma, env, out, stack) -> None:
+    @case(Inst)
+    def _inst(self, pf: Inst, context: _ProofContext) -> tuple[object, ...]:
         """Instantiation emits nothing: it re-renders the sub-proof under an
         extended environment, so the variable is already gone by the time any
         axiom or hypothesis is printed."""
-        stack.append(("pf", pf.sub, {**sigma, pf.var: substitute(pf.term, sigma)}, env))
+        sigma = {**context.sigma, pf.var: substitute(pf.term, context.sigma)}
+        return (Visit(pf.sub, _ProofContext(sigma, context.env)),)
 
-    def _induct(self, pf, sigma, env, out, stack) -> None:
+    @case(Induct)
+    def _induct(self, pf: Induct, context: _ProofContext) -> tuple[object, ...]:
         """`ind (fun n => P n) <base at zero> (fun n => <step at n>) <the variable>`.
         Our `Induct` proves `pred` with `var` still free -- read as universally
         quantified -- so the Lean term applies the principle back to `var`'s
         current image, and base/step render under `var := zero` / `var := n`."""
         base_var = self.supply.fresh(pf.var)
         step_var = self.supply.fresh(pf.var)
-        motive = render_formula(substitute(pf.pred, {**sigma, pf.var: Var(base_var)}))
-        arg = self.term_text(substitute(Var(pf.var), sigma))
-        _push(
-            stack,
-            [
-                ("lit", f"(ind (fun {base_var} : {CARRIER} => {motive}) "),
-                ("pf", pf.base, {**sigma, pf.var: self.theory.zero}, env),
-                ("lit", f" (fun {step_var} : {CARRIER} => "),
-                ("pf", pf.step, {**sigma, pf.var: Var(step_var)}, env),
-                ("lit", f") {arg})"),
-            ],
+        motive = render_formula(
+            substitute(pf.pred, {**context.sigma, pf.var: Var(base_var)})
+        )
+        arg = self.term_text(substitute(Var(pf.var), context.sigma))
+        return (
+            f"(ind (fun {base_var} : {CARRIER} => {motive}) ",
+            Visit(
+                pf.base,
+                _ProofContext({**context.sigma, pf.var: self.theory.zero}, context.env),
+            ),
+            f" (fun {step_var} : {CARRIER} => ",
+            Visit(
+                pf.step,
+                _ProofContext({**context.sigma, pf.var: Var(step_var)}, context.env),
+            ),
+            f") {arg})",
         )
 
-    def _ex_falso(self, pf, sigma, env, out, stack) -> None:
-        concl = render_formula(substitute(pf.concl, sigma))
-        _push(
-            stack,
-            [("lit", "(False.elim "), ("pf", pf.sub, sigma, env), ("lit", f" : {concl})")],
-        )
+    @case(ExFalso)
+    def _ex_falso(self, pf: ExFalso, context: _ProofContext) -> tuple[object, ...]:
+        concl = render_formula(substitute(pf.concl, context.sigma))
+        return ("(False.elim ", Visit(pf.sub, context), f" : {concl})")
 
-    def _raa(self, pf, sigma, env, out, stack) -> None:
-        goal = substitute(pf.goal, sigma)
+    @case(RAA)
+    def _raa(self, pf: RAA, context: _ProofContext) -> tuple[object, ...]:
+        goal = substitute(pf.goal, context.sigma)
         negated = Not(goal)
         name = self.supply.fresh("h")
-        _push(
-            stack,
-            [
-                ("lit", f"(Classical.byContradiction (fun {name} : {render_formula(negated)} => "),
-                ("pf", pf.sub, sigma, {**env, negated: name}),
-                ("lit", f") : {render_formula(goal)})"),
-            ],
+        return (
+            f"(Classical.byContradiction (fun {name} : {render_formula(negated)} => ",
+            Visit(pf.sub, _ProofContext(context.sigma, {**context.env, negated: name})),
+            f") : {render_formula(goal)})",
         )
 
-    def _forall_elim(self, pf, sigma, env, out, stack) -> None:
-        arg = self.term_text(substitute(pf.term, sigma))
-        _push(stack, [("lit", "("), ("pf", pf.sub, sigma, env), ("lit", f" {arg})")])
+    @case(ForallElim)
+    def _forall_elim(self, pf: ForallElim, context: _ProofContext) -> tuple[object, ...]:
+        arg = self.term_text(substitute(pf.term, context.sigma))
+        return ("(", Visit(pf.sub, context), f" {arg})")
 
-    def _forall_intro(self, pf, sigma, env, out, stack) -> None:
+    @case(ForallIntro)
+    def _forall_intro(self, pf: ForallIntro, context: _ProofContext) -> tuple[object, ...]:
         if pf.sort:
             raise LeanError(f"sorted generalization :{pf.sort} is out of scope")
         name = self.supply.fresh(pf.var)
-        _push(
-            stack,
-            [
-                ("lit", f"(fun {name} : {CARRIER} => "),
-                ("pf", pf.sub, {**sigma, pf.var: Var(name)}, env),
-                ("lit", ")"),
-            ],
+        return (
+            f"(fun {name} : {CARRIER} => ",
+            Visit(
+                pf.sub,
+                _ProofContext({**context.sigma, pf.var: Var(name)}, context.env),
+            ),
+            ")",
         )
 
-    def _exists_intro(self, pf, sigma, env, out, stack) -> None:
-        claim = render_formula(substitute(pf.claim, sigma))
-        witness = self.term_text(substitute(pf.witness, sigma))
-        _push(
-            stack,
-            [
-                ("lit", f"(Exists.intro {witness} "),
-                ("pf", pf.sub, sigma, env),
-                ("lit", f" : {claim})"),
-            ],
-        )
+    @case(ExistsIntro)
+    def _exists_intro(self, pf: ExistsIntro, context: _ProofContext) -> tuple[object, ...]:
+        claim = render_formula(substitute(pf.claim, context.sigma))
+        witness = self.term_text(substitute(pf.witness, context.sigma))
+        return (f"(Exists.intro {witness} ", Visit(pf.sub, context), f" : {claim})")
 
-    def _exists_elim(self, pf, sigma, env, out, stack) -> None:
+    @case(ExistsElim)
+    def _exists_elim(self, pf: ExistsElim, context: _ProofContext) -> tuple[object, ...]:
         ex = self.conclusion(pf.sub_ex)
         if type(ex) is not Exists:
             raise LeanError(f"exists-elim needs an existential, got {ex!r}")
         name = self.supply.fresh(pf.eigenvar)
-        inner = {**sigma, pf.eigenvar: Var(name)}
+        inner = {**context.sigma, pf.eigenvar: Var(name)}
         instance = substitute(instantiate(ex, Var(pf.eigenvar)), inner)
         hyp = self.supply.fresh("h")
         phi = render_formula(substitute(self.conclusion(pf.sub_use), inner))
-        _push(
-            stack,
-            [
-                ("lit", "(Exists.elim "),
-                ("pf", pf.sub_ex, sigma, env),
-                ("lit", f" (fun {name} : {CARRIER} => fun {hyp} : {render_formula(instance)} => "),
-                ("pf", pf.sub_use, inner, {**env, instance: hyp}),
-                ("lit", f") : {phi})"),
-            ],
+        return (
+            "(Exists.elim ",
+            Visit(pf.sub_ex, context),
+            f" (fun {name} : {CARRIER} => fun {hyp} : {render_formula(instance)} => ",
+            Visit(pf.sub_use, _ProofContext(inner, {**context.env, instance: hyp})),
+            f") : {phi})",
         )
 
 

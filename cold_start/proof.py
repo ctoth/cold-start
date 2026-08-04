@@ -450,7 +450,7 @@ class ExistsElim(Pf):
 # The trust gate
 # ---------------------------------------------------------------------------
 
-_PROOF_TYPES: frozenset[type] = frozenset(
+CANONICAL_PROOF_TYPES: frozenset[type] = frozenset(
     {
         Axiom, Assume, Refl, Sym, Trans, Cong, MP, ImpIntro, Inst, Induct,
         ExFalso, RAA, ForallElim, ForallIntro, ExistsIntro, ExistsElim,
@@ -472,7 +472,7 @@ def validate_proof(pf: object) -> None:
     stack: list = [pf]
     while stack:
         p = stack.pop()
-        if type(p) not in _PROOF_TYPES:
+        if type(p) not in CANONICAL_PROOF_TYPES:
             raise TypeError(f"not a proof term: {p!r}")
         stack.extend(cast(Pf, p)._validate())
 
@@ -488,7 +488,7 @@ def validate_proof(pf: object) -> None:
 # constructs only known shapes and is then re-derived or rejected.
 _PROOF_REGISTRY = {
     **SYNTAX_REGISTRY,
-    **{c.__name__: c for c in _PROOF_TYPES},
+    **{c.__name__: c for c in CANONICAL_PROOF_TYPES},
 }
 
 

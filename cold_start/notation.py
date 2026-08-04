@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
+from .emitter import Emitter, Visit, case
 from .syntax import (
+    CANONICAL_NODE_TYPES,
     Bottom,
     BVar,
     Eq,
@@ -405,7 +407,6 @@ class _Printer:
 
     constants: frozenset[str]
     free: frozenset[str] = frozenset()  # free var names of the whole formula
-    scope: list[tuple[str, str]] = field(default_factory=list)  # (name, sort) of enclosing binders
     _names: list[str] = field(default_factory=list)  # binder name by depth (cached)
     _raw_pos: int = 0  # cursor into the raw candidate sequence
 
@@ -429,127 +430,116 @@ class _Printer:
                 return cand
 
 
-def _format_node(node: Term | Formula, printer: _Printer, parent_prec: int = 0) -> str:
-    """Render `node` to surface text, ITERATIVELY and in O(tree size).
-
-    A pre-order walk emits string fragments left-to-right into `out`, joined once at
-    the end -- so the result is built in O(total length), never by re-wrapping a
-    growing accumulator (which would be O(n^2) in characters copied). The work stack
-    holds three kinds of item: `("emit", node, prec)` to expand a node, `("lit", s)`
-    to append a literal, and `("pop",)` to close a binder's scope after its body.
-    Parenthesisation is decided top-down from `prec`, so each node emits its own
-    brackets; bound variables read their binder's name from the scope stack."""
-    printer.free = node.free_vars()  # computed once: binder names avoid these
-    out: list[str] = []
-    stack: list = [("emit", node, parent_prec)]
-    while stack:
-        item = stack.pop()
-        tag = item[0]
-        if tag == "lit":
-            out.append(item[1])
-        elif tag == "pop":
-            printer.scope.pop()
-        else:  # ("emit", node, prec)
-            _emit(item[1], printer, item[2], out, stack)
-    return "".join(out)
+@dataclass(frozen=True, slots=True)
+class _FormatContext:
+    prec: int = 0
+    scope: tuple[tuple[str, str], ...] = ()
 
 
-def _push(stack: list, pieces: list) -> None:
-    """Push `pieces` (a forward-order list) so they pop left-to-right."""
-    stack.extend(reversed(pieces))
+def _wrapped(wrap: bool, pieces: list[object]) -> tuple[object, ...]:
+    return ("(", *pieces, ")") if wrap else tuple(pieces)
 
 
-def _emit(node: Term | Formula, printer: _Printer, prec: int, out: list, stack: list) -> None:
-    if type(node) is Var:  # free variable: render with its sort (bound occurrences are BVar)
-        name = printer.name(node.name)
-        out.append(f"{name}:{printer.name(node.sort)}" if node.sort else name)
-        return
-    if type(node) is BVar:  # bound occurrence: its binder's name, from the scope stack
-        if not 0 <= node.index < len(printer.scope):
+class _NotationEmitter(
+    Emitter[Term | Formula, _FormatContext],
+    covers=CANONICAL_NODE_TYPES,
+):
+    __slots__ = ("printer",)
+
+    def __init__(self, printer: _Printer) -> None:
+        self.printer = printer
+
+    @case(Var)
+    def var(self, node: Var, context: _FormatContext) -> tuple[object, ...]:
+        name = self.printer.name(node.name)
+        return (f"{name}:{self.printer.name(node.sort)}" if node.sort else name,)
+
+    @case(BVar)
+    def bvar(self, node: BVar, context: _FormatContext) -> tuple[object, ...]:
+        if not 0 <= node.index < len(context.scope):
             raise ValueError("cannot format a dangling bound variable outside a binder")
-        out.append(printer.name(printer.scope[-1 - node.index][0]))
-        return
-    if type(node) is Bottom:
-        out.append(node.symbol)
-        return
-    if type(node) is Fun:
-        _emit_fun(node, printer, prec, out, stack)
-        return
-    if type(node) is Eq:
-        wrap = 40 < prec
-        pieces: list = [("lit", "(")] if wrap else []
-        pieces += [("emit", node.lhs, 0), ("lit", f" {node.symbol} "), ("emit", node.rhs, 0)]
-        if wrap:
-            pieces.append(("lit", ")"))
-        _push(stack, pieces)
-        return
-    if type(node) is Rel:
+        return (self.printer.name(context.scope[-1 - node.index][0]),)
+
+    @case(Bottom)
+    def bottom(self, node: Bottom, context: _FormatContext) -> tuple[object, ...]:
+        return (node.symbol,)
+
+    @case(Fun)
+    def fun(self, node: Fun, context: _FormatContext) -> tuple[object, ...]:
+        infix = _INFIX_PRECEDENCE.get(node.name)
+        if infix is not None and len(node.args) == 2:
+            pieces: list[object] = [
+                Visit(node.args[0], _FormatContext(infix, context.scope)),
+                f" {node.name} ",
+                Visit(node.args[1], _FormatContext(infix + 1, context.scope)),
+            ]
+            return _wrapped(infix < context.prec, pieces)
+        name = self.printer.name(node.name)
+        if not node.args and (node.name in self.printer.constants or node.name.isdecimal()):
+            return (name,)
+        pieces = [name, "("]
+        for index, arg in enumerate(node.args):
+            if index:
+                pieces.append(", ")
+            pieces.append(Visit(arg, _FormatContext(0, context.scope)))
+        pieces.append(")")
+        return tuple(pieces)
+
+    @case(Eq)
+    def eq(self, node: Eq, context: _FormatContext) -> tuple[object, ...]:
+        return _wrapped(
+            40 < context.prec,
+            [
+                Visit(node.lhs, _FormatContext(0, context.scope)),
+                f" {node.symbol} ",
+                Visit(node.rhs, _FormatContext(0, context.scope)),
+            ],
+        )
+
+    @case(Rel)
+    def rel(self, node: Rel, context: _FormatContext) -> tuple[object, ...]:
         if node.name != "|" or len(node.args) != 2:
             raise ValueError(f"notation has no surface form for relation {node.name!r}")
-        wrap = 40 < prec
-        pieces = [("lit", "(")] if wrap else []
-        pieces += [("emit", node.args[0], 0), ("lit", " | "), ("emit", node.args[1], 0)]
-        if wrap:
-            pieces.append(("lit", ")"))
-        _push(stack, pieces)
-        return
-    if type(node) is Implies:
-        if type(node.con) is Bottom:  # Not(A) == Implies(A, Bottom): render as ¬A
-            wrap = 35 < prec
-            pieces = [("lit", "(")] if wrap else []
-            pieces += [("lit", "¬"), ("emit", node.ant, 35)]
-            if wrap:
-                pieces.append(("lit", ")"))
-            _push(stack, pieces)
-            return
-        wrap = 10 < prec
-        pieces = [("lit", "(")] if wrap else []
-        pieces += [("emit", node.ant, 11), ("lit", f" {node.symbol} "), ("emit", node.con, 10)]
-        if wrap:
-            pieces.append(("lit", ")"))
-        _push(stack, pieces)
-        return
-    if type(node) is Forall or type(node) is Exists:
-        name = printer.binder_name(len(printer.scope))  # O(1): avoids `free` + enclosing names
-        printer.scope.append((name, node.sort))
-        wrap = 5 < prec
-        sort = f":{printer.name(node.sort)}" if node.sort else ""
-        pieces = [("lit", "(")] if wrap else []
-        # the body keeps its BVars (no instantiate); `pop` closes the scope after it
-        pieces += [("lit", f"{node.symbol}{printer.name(name)}{sort}. "), ("emit", node.body, 0)]
-        pieces.append(("pop",))
-        if wrap:
-            pieces.append(("lit", ")"))
-        _push(stack, pieces)
-        return
-    raise TypeError(f"cannot format {type(node).__name__}")
+        return _wrapped(
+            40 < context.prec,
+            [
+                Visit(node.args[0], _FormatContext(0, context.scope)),
+                " | ",
+                Visit(node.args[1], _FormatContext(0, context.scope)),
+            ],
+        )
+
+    @case(Implies)
+    def implies(self, node: Implies, context: _FormatContext) -> tuple[object, ...]:
+        if type(node.con) is Bottom:
+            return _wrapped(
+                35 < context.prec,
+                ["¬", Visit(node.ant, _FormatContext(35, context.scope))],
+            )
+        return _wrapped(
+            10 < context.prec,
+            [
+                Visit(node.ant, _FormatContext(11, context.scope)),
+                f" {node.symbol} ",
+                Visit(node.con, _FormatContext(10, context.scope)),
+            ],
+        )
+
+    @case(Forall, Exists)
+    def binder(self, node: Forall | Exists, context: _FormatContext) -> tuple[object, ...]:
+        name = self.printer.binder_name(len(context.scope))
+        sort = f":{self.printer.name(node.sort)}" if node.sort else ""
+        body_context = _FormatContext(0, (*context.scope, (name, node.sort)))
+        return _wrapped(
+            5 < context.prec,
+            [f"{node.symbol}{self.printer.name(name)}{sort}. ", Visit(node.body, body_context)],
+        )
 
 
-def _emit_fun(node: Fun, printer: _Printer, prec: int, out: list, stack: list) -> None:
-    infix = _INFIX_PRECEDENCE.get(node.name)
-    if infix is not None and len(node.args) == 2:
-        wrap = infix < prec
-        pieces: list = [("lit", "(")] if wrap else []
-        pieces += [
-            ("emit", node.args[0], infix),
-            ("lit", f" {node.name} "),
-            ("emit", node.args[1], infix + 1),  # left-assoc: right binds tighter
-        ]
-        if wrap:
-            pieces.append(("lit", ")"))
-        _push(stack, pieces)
-        return
-    name = printer.name(node.name)
-    if not node.args and (node.name in printer.constants or node.name.isdecimal()):
-        out.append(name)  # a bare constant or numeral
-        return
-    pieces = [("lit", name), ("lit", "(")]
-    for k, arg in enumerate(node.args):
-        if k:
-            pieces.append(("lit", ", "))
-        pieces.append(("emit", arg, 0))
-    pieces.append(("lit", ")"))
-    _push(stack, pieces)
+def _format_node(node: Term | Formula, printer: _Printer, parent_prec: int = 0) -> str:
+    """Render surface notation iteratively with immutable binder context."""
+    printer.free = node.free_vars()
+    return _NotationEmitter(printer).render(node, _FormatContext(parent_prec))
 
 
 def _format_name(name: str) -> str:
