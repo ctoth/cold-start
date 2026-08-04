@@ -7,7 +7,7 @@ trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
 the verifier, not the object.
 
 ## Current state: DONE & GREEN
-- pytest: **317 passed**
+- pytest: **453 passed**
 - Regression coverage includes exact-type subclass attacks, mutable-args
   aliasing, deep non-recursive traversal, hamblin byte round-trips, cross-process
   verification, quantifier rules, classical rules, many-sorted checking, model
@@ -39,6 +39,10 @@ the verifier, not the object.
 - `proofs.py`  — worked proof constructors, by hand (left_identity_proof) and by
                  tactics (add_comm, add_assoc, ...).
 - `verify.py`  — CLI: checks a binary proof in a SEPARATE process.
+- `lean.py`    — untrusted Lean 4 compat layer: conditional-theorem export
+                 (axioms as hypotheses, never `axiom`), statement-fragment
+                 parser, lean_export/ColdStart.lean corpus — compiled by the
+                 Lean 4 kernel as an independent check.
 - `tests/`     — example/regression tests, property tests, model probes,
                  notation tests, quantifier/classical/sort/algebra coverage.
 - `pyproject.toml` (ruff/pytest), `pyrightconfig.json`.

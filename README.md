@@ -63,6 +63,11 @@ The code is the `cold_start/` package (flat, no src-layout):
   face the same `check()`, which cannot tell them apart.
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
+- **`cold_start/lean.py`** — untrusted **Lean 4 compat layer**: renders checked
+  proofs as *conditional* Lean theorems (axioms become ∀-hypotheses — never
+  `axiom`), parses back the statement fragment it emits, and writes
+  `lean_export/ColdStart.lean`, which compiles under Lean 4 — an **independent
+  kernel** re-checking our proofs, the other half of the De Bruijn promise.
 - **`tests/test_checker.py`** — example tests: rules, the soundness attacks,
   serialization round-trip, cross-process verification.
 - **`tests/test_properties.py`** — Hypothesis property tests: round-trips, checker

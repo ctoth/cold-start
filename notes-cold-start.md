@@ -1101,3 +1101,16 @@ us), final wrap. This notes edit deliberately uncommitted until main is free.
   at DEEP=1200 (recursion limit is exactly 1000; the recursive spelling was confirmed
   RecursionError at 1000/1100/1200) and checks end-to-end at 300/250. ~12s added,
   suite now 75s. check()'s own iterativeness is pinned separately at 6000 deep.
+
+WRAP-UP: fixes-coder landed all 7 analyst findings (5bad4ea..b049eed; its
+judgment calls accepted: no fake bare-Assume guard, deep-check at 1200
+build / 300 check for runtime sanity). My notes append rode along in
+b049eed, which made my later notes-commit a no-op and short-circuited the
+first lean merge attempt (&&-chain) — reran merge, clean, no conflicts.
+MERGED MAIN GATES: 453 passed in 73s, ruff clean, pyright 0/0/0 — includes
+the real Lean 4.32.2 kernel-compile tests (no skips). Docs one-liners
+added: README (lean.py entry), NOTES.md layout + count 317->453,
+ARCHITECTURE.md new "The independent kernel (lean.py)" section (NB file had
+drifted on disk — reports/lean-export-notes.md also arrived in merge).
+REMAINING: commit docs, verify worktree cleanup, final report to Q.
+Blockers: none.

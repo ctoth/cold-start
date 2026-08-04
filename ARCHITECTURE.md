@@ -88,6 +88,19 @@ call stack, so a proof or term nested far past Python's recursion limit is check
 or cleanly rejected without a `RecursionError`. The only bound is memory, which
 already held the input.
 
+## The independent kernel (`lean.py`)
+The De Bruijn criterion's second promise is that the checker is small enough to be
+*re-checked from outside*. `lean.py` (untrusted) renders each checked proof as a
+**conditional Lean 4 theorem**: the theory's function symbols and axioms become
+explicit hypotheses (never a Lean `axiom`), induction becomes an `ind` hypothesis,
+and the proof term maps rule-for-rule onto Lean primitives (`Eq.trans`, `congrArg`,
+application, lambda, `Nat.rec` at the ℕ instantiation). `lean_export/ColdStart.lean`
+carries the corpus plus an epilogue instantiating Presburger/Peano at ℕ — and it
+compiles under Lean 4, so a foreign kernel re-derives what our checker accepted.
+Robinson stays conditional on purpose (`S a ≠ 1` fails at 0, so ℕ is not a model of
+the positive-integer axioms). Importing Lean *proofs* is out of scope (that would
+mean swallowing CIC); only the emitted statement fragment parses back.
+
 ## The theories
 - `presburger.py` — the addition fragment `(0, S, +)` with induction: **Presburger
   arithmetic**, complete and decidable.
