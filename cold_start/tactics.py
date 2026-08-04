@@ -12,6 +12,7 @@ The layer is a small equational engine:
 
     match(pattern, target)         first-order matching, pattern Vars are holes
     Rule                           a directed equation + the Pf that justifies it
+    Rule(..., ordered=True)        a permutative rule, fired only downhill
     Rule.fire(sigma)               the rewritten term and its proof, together
     rewrite_step(term, rules)      rewrite the leftmost-outermost redex
     normalize(term, rules)         rewrite to a fixpoint, Trans-chained
@@ -124,6 +125,62 @@ def _subst_all(term: Term, sigma: dict) -> Term:
     return done[id(term)]
 
 
+def _walk(term: Term) -> list:
+    """`term`'s nodes in post-order -- children before parents. The shared spine
+    of the two term measures below, both of which are folds up the tree."""
+    order: list = []
+    stack: list = [term]
+    while stack:
+        t = stack.pop()
+        if type(t) is Var:
+            order.append(t)
+        elif type(t) is Fun:
+            order.append(t)
+            stack.extend(t.args)
+        else:
+            raise TacticError(f"an ordered rule measures terms; {t!r} is not one")
+    order.reverse()
+    return order
+
+
+def _symbols(term: Term) -> tuple:
+    """The multiset of symbols in `term`, as a sorted tuple. Two terms with the
+    same one are the same size -- which is what makes an equation between them
+    *permutative*, the only kind ordered rewriting can tame."""
+    out: list = []
+    for t in _walk(term):
+        if type(t) is Var:
+            out.append(("v", t.name, t.sort))
+        else:  # a Fun; `_walk` admits nothing else
+            out.append(("f", t.name))
+    return tuple(sorted(out))
+
+
+def _order_key(term: Term) -> tuple:
+    """The key of the term order `ordered` rules are measured against: SIZE
+    first, then the head symbol, then the arguments left to right.
+
+    Size first is what makes the order agree with the directed rules it shares a
+    rule set with. Associativity read as `(x*y)*z -> x*(y*z)` keeps the size and
+    moves the bigger argument to the right, so it goes downhill here -- under a
+    plain lexicographic reading of the symbols it would go UP, and re-nesting
+    would fight argument-sorting forever. (It did; that is why this is a fold
+    and not a flat comparison.)
+
+    The order is total, and it survives being put into a context: a step that
+    shrinks a subterm shrinks the whole, and a size-preserving one is compared
+    at exactly the argument where it happened. Those two facts, plus finitely
+    many terms of a given size, are the termination argument."""
+    keys: dict = {}
+    for t in _walk(term):
+        if type(t) is Var:
+            keys[id(t)] = (1, "v", t.name, t.sort)
+        else:  # a Fun; `_walk` admits nothing else
+            sub = tuple(keys[id(a)] for a in t.args)
+            keys[id(t)] = (1 + sum(k[0] for k in sub), "f", t.name, sub)
+    return keys[id(term)]
+
+
 @dataclass(frozen=True)
 class Rule:
     """A rewrite rule: read `eq` left-to-right, justified by `proof`.
@@ -132,11 +189,21 @@ class Rule:
     or under the single hypothesis `eq` for an assumption. `vars` are the names
     in `eq` that act as holes; every other variable is literal. `instance(sigma)`
     specialises the proof to a match.
-    """
+
+    `ordered` marks a PERMUTATIVE equation -- commutativity and friends, whose
+    two sides carry the same multiset of symbols. Read naively such a rule never
+    stops, because its own right-hand side matches it again. An ordered rule
+    instead fires only where it takes the term strictly DOWNHILL in the term
+    order `_order_key` induces, which both terminates (a permutative step keeps
+    the size, so each step strictly lowers a well-founded key) and canonises:
+    a sum reaches the one arrangement of its summands no rule can lower. This is
+    a restriction on the SEARCH only -- the proof term is the same instance of
+    the same lemma, and `check` remains the only judge of it."""
 
     eq: Eq
     proof: Pf
     vars: frozenset
+    ordered: bool = False
 
     def __post_init__(self) -> None:
         """Catch a malformed rule where it is built, not five frames deep.
@@ -153,6 +220,11 @@ class Rule:
         for v in self.vars:
             if type(v) is not str:
                 raise TacticError(f"a rule's holes must be variable names, got {v!r}")
+        if self.ordered and _symbols(self.lhs) != _symbols(self.rhs):
+            raise TacticError(
+                f"only a permutative equation may be ordered; {self.eq!r} does not "
+                f"carry the same symbols on both sides"
+            )
 
     @property
     def lhs(self) -> Term:
@@ -165,7 +237,15 @@ class Rule:
     @property
     def flipped(self) -> Rule:
         """The same equation used right-to-left; the proof gains a `Sym`."""
-        return Rule(Eq(self.rhs, self.lhs), Sym(self.proof), self.vars)
+        return Rule(Eq(self.rhs, self.lhs), Sym(self.proof), self.vars, self.ordered)
+
+    def permits(self, target: Term, sigma: dict) -> bool:
+        """May this rule fire at `target` under this match? Always, unless it is
+        ordered -- then only where the result is strictly lower in the term
+        order, which is what stops a permutative rule from cycling."""
+        if not self.ordered:
+            return True
+        return _order_key(_subst_all(self.rhs, sigma)) < _order_key(target)
 
     def instance(self, sigma: dict) -> Pf:
         """A `Pf` of `eq` with every hole replaced per `sigma`.
@@ -220,13 +300,13 @@ def _equation(f: Formula) -> Eq:
     return f
 
 
-def axiom_rule(eq: Formula) -> Rule:
+def axiom_rule(eq: Formula, ordered: bool = False) -> Rule:
     """Rewrite by a theory axiom; its free variables are the holes."""
     e = _equation(eq)
-    return Rule(e, Axiom(e), e.free_vars())
+    return Rule(e, Axiom(e), e.free_vars(), ordered)
 
 
-def lemma_rule(eq: Formula, proof: Pf) -> Rule:
+def lemma_rule(eq: Formula, proof: Pf, ordered: bool = False) -> Rule:
     """Rewrite by an already-proved lemma. `proof` should derive `eq` with no
     hypotheses -- then instances stay hypothesis-free too, so a theorem built on
     lemmas comes back from `check` with an empty context.
@@ -242,7 +322,7 @@ def lemma_rule(eq: Formula, proof: Pf) -> Rule:
     hypothesis -- so the proof term is rejected outright.) Both failure modes
     are pinned in tests/test_tactics.py."""
     e = _equation(eq)
-    return Rule(e, proof, e.free_vars())
+    return Rule(e, proof, e.free_vars(), ordered)
 
 
 def hypothesis_rule(eq: Formula) -> Rule:
@@ -277,7 +357,7 @@ def _find_redex(term: Term, rules) -> tuple | None:
         path, t = stack.pop()
         for rule in rules:
             sigma = match(rule.lhs, t, rule.vars)
-            if sigma is not None:
+            if sigma is not None and rule.permits(t, sigma):
                 return path, rule, sigma
         if type(t) is Fun:
             for i in reversed(range(len(t.args))):
