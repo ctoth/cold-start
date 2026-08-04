@@ -1114,3 +1114,30 @@ ARCHITECTURE.md new "The independent kernel (lean.py)" section (NB file had
 drifted on disk — reports/lean-export-notes.md also arrived in merge).
 REMAINING: commit docs, verify worktree cleanup, final report to Q.
 Blockers: none.
+
+## Session 2026-08-03: improving cold_start.robinson (theory brainstorm)
+- Q asked: how to improve robinson.py; modern extensions; "something actually cool".
+- STATE SURVEYED: robinson.py = 6 axioms over (1,S,·), bridge() = Robinson Thm 1.1
+  identity; robinson_add_proof climbs A4'/A5' for closed numerals. Notes list two
+  open follow-ups: mechanise Thm 1.2 (S,|) and a genuine induction proof in
+  ROBINSON_PEANO. proofs.py has add laws (comm/assoc) via tactics; NO mul laws yet
+  (README roadmap: `*` laws unchecked). Tactics = directed rewriting + by_induction.
+- FOUND: papers/Wehrung_2024 (arXiv 2405.08364, untracked) IS the modern extension:
+  brachymorphisms f(1+x)=1+f(x), f(xy)=f(x)f(y) between rings — is every one
+  additive? Open in general; positive for Artinian, 2x2 matrices, pi-regular, etc.
+- PDF was owner-password protected (like Robinson's); qpdf --decrypt to scratchpad
+  succeeded, qpdf reports "not encrypted", but the Read tool STILL refuses it
+  (current blocker; Robinson notes say the workaround was qpdf + magick -> PNGs).
+- CANDIDATE PROPOSALS (to pitch): (1) prove PEANO |- bridge(a,b,a+b) as a ring
+  identity — both sides ab(a+b)^2+(a+b)^2+1 — needs mul laws first, closes roadmap
+  item; then A4'/A5'/A7' as Peano theorems = interpretation soundness / relative
+  consistency. (2) Padoa's method as a test: prime-swap automorphism of (N,·)
+  preserves · but not + (2+2=4 vs 3+3=6≠9) — cheap, exactly Robinson's p.100 cite.
+  (3) Brachymorphism rigidity: axioms f(1)=1, f(Sx)=S(fx) |- ∀x f(x)=x by induction
+  — Wehrung tie-in. (4) big digs: full interpretation functor, Thm 1.2 (S,|).
+- DISPATCHED (Opus, worktree-isolated, background): (1) bridge-prover — mul laws
+  ladder, PEANO |- bridge(a,b,a+b), A4'/A7' (+A5' stretch); (2) padoa-tester —
+  prime-swap automorphism tests, tests/test_padoa.py; (3) wehrung-tester —
+  ROBINSON_PEANO induction rigidity f=id (+ multiplicativity bonus), Komatsu
+  brachynomial search tests, Wehrung notes.md. Each gates on pytest/ruff/pyright
+  and commits in its worktree; I merge + final-gate on completion.

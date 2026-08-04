@@ -1,0 +1,12 @@
+{
+  "title": "Is addition definable from multiplication and successor?",
+  "authors": [
+    "Friedrich Wehrung"
+  ],
+  "year": "2024",
+  "arxiv_id": "2405.08364",
+  "doi": "10.1515/forum-2024-0245",
+  "abstract": "A map $f\\colon R\\to S$ between (associative, unital, but not necessarily commutative) rings is a\\emph{brachymorphism} if $f(1+x)=1+f(x)$ and $f(xy)=f(x)f(y)$ whenever $x,y\\in R$. We tackle the problem whether every brachymorphism is additive (i.e., $f(x+y)=f(x)+f(y)$), showing that in many contexts, including the following, the answer is positive: $R$ is finite (or, more generally, $R$ is left or right Artinian); $R$ is any ring of $2\\times2$ matrices over a commutative ring; $R$ is Engelian; every element of $R$ is a sum of $π$-regular and central elements (this applies to $π$-regular rings, Banach algebras, and power series rings); $R$ is the full matrix ring of order greater than $1$ over any ring; $R$ is the monoid ring $K[M]$ for a commutative ring $K$ and a $π$-regular monoid $M$; $R$ is the Weyl algebra $A_1(K)$ over a commutative ring $K$ with positive characteristic; $f$ is the power function $x\\mapsto x^n$ over any ring; $f$ is the determinant function over any ring $R$ of $n\\times n$ matrices, with $n\\geq3$, over a commutative ring, such that if $n>3$ then $R$ contains $n$ scalar matrices with non zero divisor differences.",
+  "url": "http://arxiv.org/abs/2405.08364v3",
+  "pdf_url": "https://arxiv.org/pdf/2405.08364v3"
+}
