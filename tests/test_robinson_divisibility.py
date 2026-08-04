@@ -6,9 +6,9 @@ from itertools import product
 
 from semantics import Model, evaluate
 
-from cold_start.logic import And, Iff, Or
 from cold_start.notation import format_formula
 from cold_start.presburger import S
+from cold_start.prop import And, Iff, Or
 from cold_start.robinson_divisibility import (
     coprime,
     divides,

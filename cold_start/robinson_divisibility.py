@@ -13,8 +13,8 @@ checker.
 
 from __future__ import annotations
 
-from .logic import And, Iff, Or
 from .presburger import S
+from .prop import And, Iff, Or
 from .syntax import Eq, Formula, Implies, Rel, Term, Var, exists, forall
 
 

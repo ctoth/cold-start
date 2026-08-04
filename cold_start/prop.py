@@ -11,8 +11,9 @@ here is trusted: each combinator emits an inert `Pf`, and `checker.check`
 remains the only judge. A combinator's hypotheses flow through honestly -- pack
 two assumptions and both surface in the sequent.
 
-Disjunction (`Or(A,B) := ¬A → B`) belongs here too when a theorem first needs
-it; it is deliberately absent until then."""
+Disjunction and biconditional use their standard classical encodings too. The
+constructors accept n-ary And/Or calls for readable source transcriptions; the
+binary proof combinators remain the small derived kernel used by proofs."""
 
 from __future__ import annotations
 
@@ -20,9 +21,27 @@ from .proof import MP, RAA, Assume, ExFalso, ImpIntro, Pf
 from .syntax import Formula, Implies, Not
 
 
-def And(a: Formula, b: Formula) -> Formula:  # noqa: N802 -- reads as the connective
-    """The classical conjunction: ¬(A → ¬B)."""
-    return Not(Implies(a, Not(b)))
+def And(first: Formula, *rest: Formula) -> Formula:  # noqa: N802 -- connective
+    """Classical conjunction, right-associated for three or more operands."""
+    operands = (first, *rest)
+    result = operands[-1]
+    for formula in reversed(operands[:-1]):
+        result = Not(Implies(formula, Not(result)))
+    return result
+
+
+def Or(first: Formula, *rest: Formula) -> Formula:  # noqa: N802 -- connective
+    """Classical disjunction, right-associated for three or more operands."""
+    operands = (first, *rest)
+    result = operands[-1]
+    for formula in reversed(operands[:-1]):
+        result = Implies(Not(formula), result)
+    return result
+
+
+def Iff(left: Formula, right: Formula) -> Formula:  # noqa: N802 -- connective
+    """Biconditional as the conjunction of its two implications."""
+    return And(Implies(left, right), Implies(right, left))
 
 
 def and_intro(a: Formula, b: Formula, pa: Pf, pb: Pf) -> Pf:
@@ -47,4 +66,4 @@ def and_right(a: Formula, b: Formula, pab: Pf) -> Pf:
     return RAA(b, MP(pab, constant))
 
 
-__all__ = ["And", "and_intro", "and_left", "and_right"]
+__all__ = ["And", "Iff", "Or", "and_intro", "and_left", "and_right"]
