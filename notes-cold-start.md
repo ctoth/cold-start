@@ -1148,3 +1148,22 @@ Blockers: none.
   Merged worktrees/branches removed. REMAINING: bridge-prover still running
   (diagnostics show ordered-rewriting work in tactics.py + robinson_proofs.py —
   the mul-laws ladder and bridge theorem in progress).
+- bridge-prover DONE, all 4 levels: mul ladder (0n, Sxy, comm, distrib LR, assoc),
+  PEANO |- bridge(a,b,a+b) via new ORDERED (permutative) rewriting in tactics.py +
+  poly_kit canonical-polynomial normalization; A4'/A7' derived on the nose; A5'
+  REFUTED — false in N at c=0 (vacuous hypothesis, conclusion forces a+b=0), the
+  precise job of Robinson's positive-integer domain, pinned by a test. Its gates:
+  552 passed, ruff/pyright clean. Commits 25e7948..8a0d69d.
+- MERGING now: conflicts in README.md (module list, resolved: both-additive — mul
+  ladder + robinson_proofs.py + rigidity.py entries) and Robinson notes.md
+  (resolved: keep Padoa section + bridge-theorem section). One stray >>>>>>> marker
+  left in notes.md to remove; then verify Open follow-ups list, commit merge, run
+  full gate (pytest tests, ruff --exclude .claude — bridge worktree still present
+  until cleanup — pyright), then remove last worktree/branch.
+- No blockers.
+- bridge-prover MERGED (c3732bd): README/notes.md conflicts resolved both-additive;
+  ticked the ROBINSON_PEANO-induction follow-up (rigidity.py) in Robinson notes.
+  FINAL GATE on merged main: 1154 passed in 101s, ruff clean, pyright 0/0/0.
+  All three worktrees/branches removed. Campaign complete: bridge theorem + mul
+  ladder + ordered rewriting; A5' refutation; Padoa tests; rigidity + Komatsu;
+  Wehrung paper notes. Suite 453 -> 1154.
