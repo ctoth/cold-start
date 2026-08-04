@@ -114,6 +114,17 @@ the integers, kills those automorphisms, and lets `+` be defined.
 We keep `+`-primitive with recursive `×` as the trusted base, because it is small and
 readable — Robinson herself called the eliminated-`+` axioms "complicated and
 artificial." But we *exhibit* the Robinson basis (`robinson.py` + the `(S,·)` Peano
-axioms) and make her bridge a **checked theorem**, so the `+`/`×` entanglement is on
-display, paid for in a derivation rather than buried in an axiom. See
+axioms), and concrete instances of her bridge are **derived theorems**: for positive
+`a, b`, `proofs.robinson_add_proof(a, b)` chains Robinson's own §2 recursion laws
+(A4' `a + 1 = S a`, A5' `a + b = c → a + S b = S c`) into a proof of
+`bridge(a, b, a+b)`, which the trusted checker re-derives to a hypothesis-free
+sequent — so `2 + 3 = 5` arrives as an identity in `S` and `·` with no `+` symbol in
+it. `tests/test_robinson.py` checks that for every `a, b` in 1..5, and `verify.py
+--theory robinson` re-checks it in a fresh process.
+
+What is *not* derived here is Robinson's general definability theorem — that the
+bridge defines addition for **all** `a, b, c`. That is a statement about the standard
+model, and `tests/test_robinson.py` only model-checks it over a finite range rather
+than proving it. What the checker gives us is the entanglement of `+` and `×` on
+display, paid for per instance in a derivation rather than buried in an axiom. See
 `papers/Robinson_1949_DefinabilityArithmetic/`.

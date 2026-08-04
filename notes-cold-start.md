@@ -903,3 +903,22 @@ so the false formula can never be cited as an axiom.
 
 ## Blockers
 None.
+
+## 2026-08-03: verify theory registry + derived Robinson addition (in progress)
+Task: (1) register presburger + robinson in verify.THEORIES; (2) proofs.robinson_add_proof(a,b)
+deriving bridge(a,b,a+b) from ADD_ONE/ADD_SUCC by MP recursion; (3) ARCHITECTURE.md honesty
+paragraph. Read: verify.py (_load_theories only has peano), robinson.py (ADD_ONE=bridge(a,1,Sa),
+ADD_SUCC=Implies(bridge(a,b,c),bridge(a,Sb,Sc)), free vars "a","b","c"), proof.Inst(sub,var,term),
+proof.MP(imp,ant), proofs.add_proof pattern. No blocker yet.
+- TASK 1 DONE = 62e1d72: verify.THEORIES now has peano/presburger/robinson; 3 new
+  cross-process tests in test_checker.py (_run_verify takes *args now).
+- TASK 2 DONE = 52eeaf8: proofs.robinson_add_proof(a,b) = Inst(Axiom(ADD_ONE),"a",N a)
+  at b==1, else MP(Inst^3(Axiom(ADD_SUCC), a/b/c := N a, N(b-1), N(a+b-1)),
+  robinson_add_proof(a,b-1)). ValueError for a<1 or b<1 (positive-integer domain).
+  30 new tests in test_robinson.py. 352 passed, ruff clean (on cold_start+tests),
+  pyright 0. NOTE: `uv run ruff check .` also descends into .claude/worktrees/
+  agent-*/ (another agent's tactics work) and reports 3 F401 there -- not ours.
+- TASK 3 IN PROGRESS: ARCHITECTURE.md last paragraph rewrote "make her bridge a
+  checked theorem" -> concrete instances are DERIVED (cites robinson_add_proof +
+  tests), with an explicit note that the general definability theorem is NOT derived.
+  No blocker.
