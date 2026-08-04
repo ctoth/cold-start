@@ -12,7 +12,16 @@ from __future__ import annotations
 from .peano import mul
 from .presburger import ZERO, S
 from .proof import Assume, Cong, ExistsElim, ExistsIntro, ImpIntro, Pf, Refl, Sym, Trans
-from .proofs import ADD_RULES, LEFT_IDENTITY, MUL_ASSOC, MUL_RULES, left_identity, mul_assoc
+from .proofs import (
+    ADD_RULES,
+    LEFT_IDENTITY,
+    MUL_ASSOC,
+    MUL_COMM,
+    MUL_RULES,
+    left_identity,
+    mul_assoc,
+    mul_comm,
+)
 from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
 from .tactics import lemma_rule, prove_eq
 
@@ -40,24 +49,44 @@ _a, _b, _c = Var("a"), Var("b"), Var("c")
 
 DIVIDES_REFL: Formula = peano_divides(_a, _a)
 DIVIDES_FACTOR: Formula = peano_divides(_a, mul(_a, _b))
+DIVIDES_ZERO: Formula = peano_divides(_a, ZERO)
+ONE_DIVIDES: Formula = peano_divides(ONE, _a)
 DIVIDES_TRANS: Formula = Implies(
     peano_divides(_a, _b),
     Implies(peano_divides(_b, _c), peano_divides(_a, _c)),
 )
 
 
-def divides_refl() -> Pf:
-    """PEANO proves ``a | a``; the witness is 1."""
-    mul_one = prove_eq(
-        Eq(mul(_a, ONE), _a),
+def _mul_one(term: Term) -> Pf:
+    return prove_eq(
+        Eq(mul(term, ONE), term),
         (*ADD_RULES, *MUL_RULES, lemma_rule(LEFT_IDENTITY, left_identity())),
     )
-    return ExistsIntro(DIVIDES_REFL, ONE, mul_one)
+
+
+def divides_refl() -> Pf:
+    """PEANO proves ``a | a``; the witness is 1."""
+    return ExistsIntro(DIVIDES_REFL, ONE, _mul_one(_a))
 
 
 def divides_factor() -> Pf:
     """PEANO proves ``a | a*b``; the witness is ``b``."""
     return ExistsIntro(DIVIDES_FACTOR, _b, Refl(mul(_a, _b)))
+
+
+def divides_zero() -> Pf:
+    """PEANO proves ``a | 0``; the witness is 0."""
+    zero_product = prove_eq(Eq(mul(_a, ZERO), ZERO), MUL_RULES)
+    return ExistsIntro(DIVIDES_ZERO, ZERO, zero_product)
+
+
+def one_divides() -> Pf:
+    """PEANO proves ``1 | a``; the witness is ``a``."""
+    one_times_a = Trans(
+        lemma_rule(MUL_COMM, mul_comm()).instance({"x": ONE, "y": _a}),
+        _mul_one(_a),
+    )
+    return ExistsIntro(ONE_DIVIDES, _a, one_times_a)
 
 
 def divides_trans() -> Pf:
@@ -85,8 +114,12 @@ __all__ = [
     "DIVIDES_FACTOR",
     "DIVIDES_REFL",
     "DIVIDES_TRANS",
+    "DIVIDES_ZERO",
+    "ONE_DIVIDES",
     "divides_factor",
     "divides_refl",
     "divides_trans",
+    "divides_zero",
+    "one_divides",
     "peano_divides",
 ]

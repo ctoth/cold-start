@@ -9,9 +9,13 @@ from cold_start.divisibility import (
     DIVIDES_FACTOR,
     DIVIDES_REFL,
     DIVIDES_TRANS,
+    DIVIDES_ZERO,
+    ONE_DIVIDES,
     divides_factor,
     divides_refl,
     divides_trans,
+    divides_zero,
+    one_divides,
     peano_divides,
 )
 from cold_start.peano import PEANO, mul
@@ -47,6 +51,20 @@ def test_divisibility_transitivity_is_checked_in_peano():
 
     assert not seq.hyps
     assert seq.concl == DIVIDES_TRANS
+
+
+def test_every_number_divides_zero_is_checked_in_peano():
+    seq = check(divides_zero(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_ZERO
+
+
+def test_one_divides_every_number_is_checked_in_peano():
+    seq = check(one_divides(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == ONE_DIVIDES
 
 
 def test_transitivity_formula_has_the_expected_mathematical_shape():
