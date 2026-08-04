@@ -26,9 +26,38 @@ gives `(a+b)c = c²`, true (for `c > 0`) iff `a + b = c`. This is `bridge(a,b,c)
 `robinson.py`, and `test_bridge_is_the_graph_of_addition` verifies it in the model N.
 
 **Theorem 1.2 (p. 101–102).** `+` and `·` are both definable from `S` and
-divisibility `|`, using coprimality `a ⊥ b` and lcm `a ○ b` (a Chinese-remainder
-argument: `ax ≡ −1`, `by ≡ −1 (mod m)` ⟹ `abxy ≡ +1`). So `(ℕ, S, |)` alone
-reconstructs all of arithmetic. (Not mechanised here — heavier and uses `|`.)
+divisibility `|`. The exact abbreviations, recovered from the locally rendered
+page images (`qpdf --decrypt`, then ImageMagick), are
+$$
+a\perp b \iff \forall x\,[(x\mid a\land x\mid b)\to\forall y\,x\mid y],
+$$
+and
+$$
+c=a\mathbin\circ b \iff
+\forall x\,[(a\mid x\land b\mid x)\leftrightarrow c\mid x].
+$$
+With `○` denoting lcm, Robinson's formula (2) is
+$$
+\begin{aligned}
+ab=c\iff{}&[\forall x\,(a\mid x\land b\mid x\land c\mid x)]\\
+&\lor\ \forall x,y,m\,\{[a\perp x\land b\perp y\land c\perp x\land c\perp y
+\land x\perp y\\
+&\qquad\land m\mid S(a\mathbin\circ x)\land m\mid S(b\mathbin\circ y)]\\
+&\qquad\to\exists u\,[m\mid u\land Su=c\mathbin\circ(x\mathbin\circ y)]\}.
+\end{aligned}
+$$
+The first disjunct isolates `a=b=c=1`; the second is the Chinese-remainder
+argument (`ax ≡ −1`, `by ≡ −1 (mod m)` gives `abxy ≡ 1`). Thus `(ℕ⁺, S, |)`
+reconstructs multiplication, and Theorem 1.1 then reconstructs addition.
+
+**Mechanised status.** `robinson_divisibility.py` expands every `⊥` and `○`
+abbreviation hygienically, including existential lcm witnesses, into a 331-node
+formula containing only `S`, atomic `|`, equality, and logic. Relation atoms,
+serialization, notation, sorting, and predicate interpretations are checked.
+Seven elementary divisibility laws are proved in PEANO through the 6-node graph
+`a|b := ∃k. a·k=b` (9,953 proof nodes). The full bridge report names exactly two
+open debts, `totality:*` and `uniqueness:*`; paying them is the remaining
+Chinese-remainder/prime-number argument, not something the transcription claims.
 
 **§2, p. 103 — Peano with `+` eliminated.** Robinson takes Peano's axioms (`1, S, ·, +`)
 and removes `+` via Theorem 1.1, leaving the signature `(1, S, ·)`:

@@ -168,6 +168,15 @@ payment through the trusted `check()` and reports **bridge size** (translation
 nodes) against **toll** (proof nodes), with unpaid obligations ledgered openly: an
 interpretation with open debts is a conjecture with a ledger, not a theorem.
 
+Predicate symbols cross the same layer without fake function obligations. In
+particular, atomic `a | b` translates to PEANO's `∃k. a·k=b`; seven elementary
+divisibility laws are checker-paid across that 6-node bridge (toll: 9,953 proof
+nodes). Robinson's rendered Theorem 1.2 formula (2) is transcribed literally as
+a multiplication graph containing only `S`, `|`, equality, and logic. It measures
+331 nodes. Its report is deliberately incomplete with exactly `totality:*` and
+`uniqueness:*` open: those are the Chinese-remainder/prime debts in Robinson's
+argument, now isolated rather than blurred into the transcription.
+
 `bridges.py` lands Robinson's §2 twice over the same 19-node translation
 `x + y = z ↦ S(x·z)·S(y·z) = S((z·z)·S(x·y))`. Into her own `(1, S, ·)` theory,
 the translator drops base-1 Presburger's axioms onto A4' and (the closure of) A5'
