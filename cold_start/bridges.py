@@ -131,19 +131,22 @@ def one_add() -> Pf:
     return induction("b", pred, base, step)
 
 
-UNIQUE_DESCENT: Formula = Implies(
+_UNIQUE_AT_SUCC: Formula = forall(
+    "c",
+    "",
     forall(
-        "c",
+        "d",
         "",
-        forall(
-            "d",
-            "",
-            Implies(
-                bridge(_a, S(_b), Var("c")),
-                Implies(bridge(_a, S(_b), Var("d")), Eq(Var("c"), Var("d"))),
-            ),
+        Implies(
+            bridge(_a, S(_b), Var("c")),
+            Implies(bridge(_a, S(_b), Var("d")), Eq(Var("c"), Var("d"))),
         ),
     ),
+)
+"""Uniqueness of the bridge result at (a, S b), explicitly quantified."""
+
+UNIQUE_DESCENT: Formula = Implies(
+    _UNIQUE_AT_SUCC,
     Implies(bridge(_a, _b, _c), Implies(bridge(_a, _b, _d), Eq(_c, _d))),
 )
 """Uniqueness of the bridge result DESCENDS in b: if it holds at (a, S b) it
@@ -160,7 +163,7 @@ def uniqueness_descends() -> Pf:
     Assume uniqueness at (a, S b) and two bridges at (a, b): A5' lifts both
     results c, d to S c, S d at (a, S b), the assumed uniqueness identifies
     the lifts, and A2 peels the successors."""
-    hyp = UNIQUE_DESCENT.ant
+    hyp = _UNIQUE_AT_SUCC
     h1, h2 = bridge(_a, _b, _c), bridge(_a, _b, _d)
     up_c = MP(Axiom(ADD_SUCC), Assume(h1))  # bridge(a, S b, S c)
     up_d = MP(Inst(Axiom(ADD_SUCC), "c", _d), Assume(h2))  # bridge(a, S b, S d)
