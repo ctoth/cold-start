@@ -11,9 +11,9 @@ which one wrote the proof.
 
 from __future__ import annotations
 
-from .peano import MUL_SUCC_F, MUL_ZERO_F
+from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
 from .presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, induction, numeral
-from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Trans
+from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Sym, Trans
 from .robinson import ADD_ONE, ADD_SUCC
 from .syntax import Eq, Formula, Var
 from .tactics import axiom_rule, by_induction, lemma_rule
@@ -127,6 +127,10 @@ LEFT_IDENTITY: Formula = Eq(add(ZERO, _n), _n)  # 0 + n = n
 SUCC_ADD: Formula = Eq(add(S(_x), _y), S(add(_x, _y)))  # S(x) + y = S(x + y)
 ADD_COMM: Formula = Eq(add(_x, _y), add(_y, _x))  # x + y = y + x
 ADD_ASSOC: Formula = Eq(add(add(_x, _y), _z), add(_x, add(_y, _z)))  # (x+y)+z = x+(y+z)
+ADD_LEFT_COMM: Formula = Eq(  # x + (y + z) = y + (x + z)
+    add(_x, add(_y, _z)),
+    add(_y, add(_x, _z)),
+)
 
 ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
 """The two recursion axioms, read left to right: the whole starting kit."""
@@ -160,6 +164,135 @@ def add_assoc() -> Pf:
     """(x + y) + z = x + (y + z), by induction on z -- the axioms alone suffice,
     since both sides recurse on the same trailing argument."""
     return by_induction("z", ADD_ASSOC, ADD_RULES)
+
+
+def add_left_comm() -> Pf:
+    """x + (y + z) = y + (x + z), the third leg of the AC kit, built by hand
+    from associativity and commutativity:
+
+        x + (y + z) = (x + y) + z = (y + x) + z = y + (x + z).
+
+    Hand-built because the tactics cannot reach it: `prove_eq` would need
+    commutativity as a rewrite rule, and this very lemma is what an *ordered*
+    commutativity rule is missing -- ordered rewriting sorts the arguments of
+    one `+`, and this is what lets a swap reach past the head of a nested sum.
+    """
+    assoc = lemma_rule(ADD_ASSOC, add_assoc())
+    return Trans(
+        Sym(add_assoc()),  # x + (y + z) = (x + y) + z
+        Trans(
+            Cong("+", (add_comm(), Refl(_z))),  # (x + y) + z = (y + x) + z
+            assoc.instance({"x": _y, "y": _x, "z": _z}),  # (y + x) + z = y + (x + z)
+        ),
+    )
+
+
+def ac_add_rules() -> tuple:
+    """Associativity, commutativity and left-commutativity of `+` as a rewrite
+    kit: sums right-nest and their summands sort. The two permutative rules are
+    `ordered`, so the kit terminates; together they put every sum into one
+    canonical arrangement, which is what lets `prove_eq` decide goals that
+    differ only by how their additions are bracketed and ordered."""
+    return (
+        lemma_rule(ADD_ASSOC, add_assoc()),
+        lemma_rule(ADD_COMM, add_comm(), ordered=True),
+        lemma_rule(ADD_LEFT_COMM, add_left_comm(), ordered=True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Multiplication: the same ladder, one rung higher
+# ---------------------------------------------------------------------------
+# Peano's two multiplication axioms recurse on the SECOND argument, exactly as
+# addition's do, so every law here follows the same shape: peel a successor,
+# rewrite by the induction hypothesis, and let the addition kit reconcile what
+# is left. Each lemma joins the rule set of the next.
+
+MUL_ZERO_LEFT: Formula = Eq(mul(ZERO, _n), ZERO)  # 0 * n = 0
+MUL_SUCC_LEFT: Formula = Eq(mul(S(_x), _y), add(mul(_x, _y), _y))  # S(x)*y = x*y + y
+MUL_COMM: Formula = Eq(mul(_x, _y), mul(_y, _x))  # x * y = y * x
+DISTRIB_LEFT: Formula = Eq(  # x*(y+z) = x*y + x*z
+    mul(_x, add(_y, _z)),
+    add(mul(_x, _y), mul(_x, _z)),
+)
+DISTRIB_RIGHT: Formula = Eq(  # (x+y)*z = x*z + y*z
+    mul(add(_x, _y), _z),
+    add(mul(_x, _z), mul(_y, _z)),
+)
+MUL_ASSOC: Formula = Eq(mul(mul(_x, _y), _z), mul(_x, mul(_y, _z)))  # (x*y)*z = x*(y*z)
+MUL_LEFT_COMM: Formula = Eq(mul(_x, mul(_y, _z)), mul(_y, mul(_x, _z)))  # x*(y*z) = y*(x*z)
+
+MUL_RULES = (axiom_rule(MUL_ZERO_F), axiom_rule(MUL_SUCC_F))
+"""The two multiplication axioms, read left to right."""
+
+
+def mul_zero_left() -> Pf:
+    """0 * n = 0, by induction on n -- the mirror of `left_identity`, and
+    annoying for the same reason: the axioms recurse on the second argument, so
+    a zero sitting in the first one never reduces on its own."""
+    return by_induction("n", MUL_ZERO_LEFT, (*ADD_RULES, *MUL_RULES))
+
+
+def mul_succ_left() -> Pf:
+    """S(x) * y = x*y + y, by induction on y: the recursion law for the FIRST
+    argument. The step leaves `(x*y + y) + x` against `(x*y + x) + y`, which is
+    a pure rearrangement -- hence the addition kit."""
+    rules = (*ADD_RULES, *MUL_RULES, *ac_add_rules())
+    return by_induction("y", MUL_SUCC_LEFT, rules)
+
+
+def mul_comm() -> Pf:
+    """x * y = y * x, by induction on y, over the two one-sided lemmas: the base
+    case is `x*0 = 0*x` (mul-zero-left) and the step turns `S(y)*x` into
+    `y*x + x` (mul-succ-left) -- exactly how `add_comm` uses its own pair."""
+    rules = (
+        *ADD_RULES,
+        *MUL_RULES,
+        lemma_rule(MUL_ZERO_LEFT, mul_zero_left()),
+        lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),
+    )
+    return by_induction("y", MUL_COMM, rules)
+
+
+def distrib_left() -> Pf:
+    """x*(y + z) = x*y + x*z, by induction on z. The one law that ties the two
+    operations together -- and the reason arithmetic stops being decidable."""
+    rules = (*ADD_RULES, *MUL_RULES, *ac_add_rules())
+    return by_induction("z", DISTRIB_LEFT, rules)
+
+
+def distrib_right() -> Pf:
+    """(x + y)*z = x*z + y*z, by induction on z -- distributivity on the other
+    side. Provable from `distrib_left` and commutativity, but the direct
+    induction is shorter than the rearrangement would be."""
+    rules = (*ADD_RULES, *MUL_RULES, *ac_add_rules())
+    return by_induction("z", DISTRIB_RIGHT, rules)
+
+
+def mul_assoc() -> Pf:
+    """(x*y)*z = x*(y*z), by induction on z. The step needs distributivity: the
+    right side becomes `x*(y*z + y)`, which only reduces once the product is
+    pushed across the sum."""
+    rules = (
+        *ADD_RULES,
+        *MUL_RULES,
+        *ac_add_rules(),
+        lemma_rule(DISTRIB_LEFT, distrib_left()),
+    )
+    return by_induction("z", MUL_ASSOC, rules)
+
+
+def mul_left_comm() -> Pf:
+    """x*(y*z) = y*(x*z), built by hand from `mul_assoc` and `mul_comm` exactly
+    as `add_left_comm` is built from theirs."""
+    assoc = lemma_rule(MUL_ASSOC, mul_assoc())
+    return Trans(
+        Sym(mul_assoc()),  # x*(y*z) = (x*y)*z
+        Trans(
+            Cong("*", (mul_comm(), Refl(_z))),  # (x*y)*z = (y*x)*z
+            assoc.instance({"x": _y, "y": _x, "z": _z}),  # (y*x)*z = y*(x*z)
+        ),
+    )
 
 
 if __name__ == "__main__":
