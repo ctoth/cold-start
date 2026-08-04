@@ -1141,3 +1141,10 @@ Blockers: none.
   ROBINSON_PEANO induction rigidity f=id (+ multiplicativity bonus), Komatsu
   brachynomial search tests, Wehrung notes.md. Each gates on pytest/ruff/pyright
   and commits in its worktree; I merge + final-gate on completion.
+- MERGED: padoa-tester (8f32e58, 0bd8119 -> merge) and wehrung-tester (13d5fef..
+  d144570 -> merge). Gate on merged main: 1055 passed in 107s, ruff clean
+  (--exclude .claude, since the live bridge worktree leaks into root ruff runs),
+  pyright 0/0/0. Wehrung metadata.json + notes committed (c218537 + follow-up).
+  Merged worktrees/branches removed. REMAINING: bridge-prover still running
+  (diagnostics show ordered-rewriting work in tactics.py + robinson_proofs.py —
+  the mul-laws ladder and bridge theorem in progress).
