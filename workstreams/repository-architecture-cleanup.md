@@ -685,8 +685,8 @@ The workstream reaches fixed point only when:
 
 ## Next Action
 
-Execution was authorized by Q on 2026-08-04. Begin Iteration 1 from the completed
-preflight record below.
+Complete. The final fixed-point audit below found no remaining ownership move or
+compatibility surface. Further changes require a new workstream.
 
 ## Execution Record
 
@@ -1199,8 +1199,158 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 9 commit
+- `2c453ec docs: align durable architecture and retire history`
 
 Next slice:
 
 - final fixed-point audit
+
+### Final Fixed-Point Audit - Complete
+
+Full-read scope:
+
+- Read every current production owner touched by the workstream in full:
+  `codec.py`, `divisibility.py`, `emitter.py`, `notation.py`, `syntax.py`,
+  `proof.py`, `verify.py`, all four files under `cold_start/lean`, all three
+  theory-owned proof libraries, and both repository tools.
+- Confirmed the deleted `cold_start/lean.py` and `cold_start/proofs.py` have no
+  tracked replacement facade, package initializer, alias, or re-export.
+
+Remaining public-surface classification:
+
+- Core syntax
+  - Keep: `Node`, `Term`, `Formula`, all nine canonical concrete node classes,
+    `Not`, `forall`, `exists`, `instantiate`, `node_fields`, `children`,
+    `subnodes`, `map_children`, and `validate`.
+  - Keep/consolidate: `CANONICAL_NODE_TYPES` is the single exact syntax owner
+    set used by validation and downstream closed-family adapters.
+  - Rationale: equality, hashing, structural repr, traversal, substitution,
+    binding, sorting, and exact validation are intrinsic; no human, Lean, or
+    wire representation behavior remains here.
+- Core proof terms
+  - Keep: `Pf`, all sixteen canonical rule classes, and `validate_proof`.
+  - Keep/consolidate: `CANONICAL_PROOF_TYPES` is the single exact proof owner
+    set used by validation, checking dispatch, codec registration, and Lean
+    proof-case completeness.
+  - Rationale: rule validation and derivation are intrinsic and are protected
+    by the exact-type gate before polymorphic methods execute.
+- External emitter mechanism
+  - Consolidate/keep: `Emitter`, `Visit`, and metadata-only `case`; the immutable
+    exact case table is the one shared iterative emission mechanism.
+  - Keep: every decorated notation, Lean syntax, and Lean proof case is private
+    to its adapter and covered against the canonical owner set at class creation.
+  - Delete status: no old `_handlers`, `_push`, or `_emit` loop remains.
+- Wire codec
+  - Keep: exactly `encode_term`, `decode_term`, `encode_formula`,
+    `decode_formula`, `encode_proof`, and `decode_proof`.
+  - Consolidate/keep: the private syntax/proof registries are derived from the
+    canonical owner sets; `codec.py` is the only production Hamblin importer.
+  - Delete status: no node method, old byte function, wrapper, or alias remains.
+- Human notation
+  - Keep: `ParseError`, `parse_term`, `parse_formula`, `format_term`, and
+    `format_formula`; parser and printer helpers remain private adapter details.
+- Lean representation
+  - Keep in `lean/syntax.py`: `LeanError`, `lean_name`, `substitute`,
+    `render_term`, `render_formula`, `render_statement`, `closure_names`,
+    `universal_closure`, `parse_term`, and `parse_formula`.
+  - Keep in `lean/proof.py`: `AXIOM_LABELS`, `export_theorem`, and
+    `uses_induction`; `_Export` and its exact proof cases remain private.
+  - Keep in `lean/corpus.py`: `CORPUS_PATH`, `CORPUS_NAMES`,
+    `NAT_AXIOM_PROOFS`, `NAT_INDUCTION`, `corpus_entries`, `export_corpus`, and
+    `write_corpus`.
+  - Keep: `lean/__main__.py:main` as the direct corpus-writer CLI.
+  - Delete status: no monolith or package-root re-export exists.
+- Theory-owned theorem builders
+  - Keep in `presburger_proofs.py`: the addition formulas/rule kit and
+    `left_identity_proof`, `add_proof`, `left_identity`, `succ_add`, `add_comm`,
+    `add_assoc`, `add_left_comm`, `add_cancel_right`, `add_cancel_left`,
+    `add_kit`, `zero_or_succ`, and `add_eq_zero`.
+  - Keep in `peano_proofs.py`: the multiplication formulas/rule kit and
+    `mul_proof`, `mul_zero_left`, `mul_succ_left`, `mul_comm`, `distrib_left`,
+    `distrib_right`, `mul_assoc`, `mul_left_comm`, and
+    `mul_cancel_right_succ`.
+  - Keep in `robinson_proofs.py`: the bridge formulas/budget and
+    `robinson_add_proof`, `poly_kit`, `bridge_theorem`, `bridge_residual`,
+    `bridge_forward`, `bridge_converse_positive`,
+    `robinson_add_succ_positive`, `robinson_add_one`, and
+    `robinson_mul_succ`.
+  - Keep in `divisibility.py`: `ONE`, the named divisibility formulas,
+    `peano_divides`, and the twelve public `divides_*`/`one_divides` builders;
+    their proof dependencies now import only the appropriate theory owners.
+  - Delete status: no generic theorem-builder module or forwarding import remains.
+- Verifier, tools, and registries
+  - Keep: immutable `verify.THEORIES`, `verify.main`, its private argparse/input
+    boundaries, and exit codes 0/1/2.
+  - Keep: `mutate.py`'s `REPO_ROOT`, mutation maps, `resolve_source`,
+    `disposable_worktree`, `run_mutations`, and `main`; writes remain confined to
+    a verified disposable worktree.
+  - Keep: `gate.ps1`'s single `Invoke-Gate` orchestration and explicit native
+    failure propagation.
+- Compatibility-looking search hits
+  - Keep as non-surfaces: `Theory.accepts` and notation parser `accept` are domain
+    predicates, not visitor hooks; documentation says shims are forbidden;
+    tests name deleted paths/APIs as absence sentinels and recognize the real
+    Elan/WinGet executable shim. None forwards, aliases, or re-exports repository
+    behavior.
+
+Search evidence:
+
+- Pass: trusted `syntax.py` and `proof.py` have no Hamblin import.
+- Pass: current production and durable docs have no old `to_bytes`/`from_bytes`
+  owner, generic `proofs` import, old emitter loop/handler table, or Lean
+  package-root import.
+- Pass: `git ls-files` reports no `cold_start/lean.py`,
+  `cold_start/proofs.py`, or `cold_start/lean/__init__.py`.
+- Verified: every production Hamblin use is in `codec.py`; other hits are locked
+  dependency metadata, codec tests/callers, and accurate documentation.
+- Classified: every global-search textual hit is one of the non-surfaces listed
+  above; no compatibility mechanism is callable.
+
+Runtime and generated-artifact evidence:
+
+- Pass: `pwsh -File tools/gate.ps1`
+  - 1,268 passed in 96.72 seconds, with zero skips.
+  - Ruff: all checks passed.
+  - Pyright basic: 0 errors, 0 warnings, 0 informations.
+  - Final line: `GATE GREEN`.
+- Runtime comparison
+  - 6.67 seconds faster than the 103.39-second execution baseline.
+  - 3.19 seconds faster than the older 99.91-second planning observation.
+  - Coverage grew from 1,242 to 1,268 tests relative to preflight.
+- Pass: `uv run python -m cold_start.lean`.
+  - `lean_export/ColdStart.lean` remained byte-for-byte stable with SHA-256
+    `5C82C76F248F8EED2686A0F9712D47B4713180418FBDDA9918690910D42B329B` and
+    no Git diff.
+- Pass: installed Lean 4.32.2 release compiled the checked-in corpus directly
+  with exit code 0.
+- The full suite also retained both foreign-kernel tests: acceptance of the
+  valid corpus and rejection of a corrupted export.
+
+Repository-state evidence:
+
+- Branch: `main` at `2c453ec` before this final record.
+- Tracked diff before this record: empty.
+- Preserved untracked files: `notes-breakthrough.md`,
+  `notes-breakthrough-interp.md`, and `notes-cleanup-evaluation.md`; Git confirms
+  none is tracked or staged.
+- Preserved registered worktrees:
+  - `agent-a38bd5b3ad1cb886b` clean at `ea9538f`.
+  - `agent-a5db1243729e9dd02` clean at `c157f8e`.
+  - Neither worktree was modified or removed.
+- Atomic implementation commits, in order:
+  - `f37d8b0` preflight plan record.
+  - `6e6d542` safe mutation/gate ownership.
+  - `be1fdca` shared exact iterative emitter.
+  - `244e814` Lean owner package.
+  - `2ea3473` singular wire codec.
+  - `0aae508` theory-owned proof builders.
+  - `170c11c` explicit verifier CLI.
+  - `862718e` immutable Lean test setup sharing.
+  - `3dc5cd6` owned CI/type gate.
+  - `2c453ec` durable documentation and historical hygiene.
+
+Fixed-point result:
+
+- Every stated completion condition is satisfied. No remaining public surface is
+  classified move, delete, or rewrite; the remaining consolidate classifications
+  already have exactly one owner. No follow-on implementation slice remains.
