@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from .peano import mul
 from .presburger import ZERO, S
-from .proof import Assume, Cong, ExistsElim, ExistsIntro, ImpIntro, Pf, Refl, Sym, Trans
+from .proof import MP, Assume, Cong, ExistsElim, ExistsIntro, ImpIntro, Inst, Pf, Refl, Sym, Trans
 from .proofs import (
     ADD_RULES,
     LEFT_IDENTITY,
@@ -49,11 +49,16 @@ _a, _b, _c = Var("a"), Var("b"), Var("c")
 
 DIVIDES_REFL: Formula = peano_divides(_a, _a)
 DIVIDES_FACTOR: Formula = peano_divides(_a, mul(_a, _b))
+DIVIDES_PRODUCT_RIGHT: Formula = peano_divides(_b, mul(_a, _b))
 DIVIDES_ZERO: Formula = peano_divides(_a, ZERO)
 ONE_DIVIDES: Formula = peano_divides(ONE, _a)
 DIVIDES_TRANS: Formula = Implies(
     peano_divides(_a, _b),
     Implies(peano_divides(_b, _c), peano_divides(_a, _c)),
+)
+DIVIDES_PRODUCT: Formula = Implies(
+    peano_divides(_a, _b),
+    peano_divides(_a, mul(_b, _c)),
 )
 
 
@@ -72,6 +77,12 @@ def divides_refl() -> Pf:
 def divides_factor() -> Pf:
     """PEANO proves ``a | a*b``; the witness is ``b``."""
     return ExistsIntro(DIVIDES_FACTOR, _b, Refl(mul(_a, _b)))
+
+
+def divides_product_right() -> Pf:
+    """PEANO proves ``b | a*b`` by commuting the product; witness ``a``."""
+    commute = lemma_rule(MUL_COMM, mul_comm()).instance({"x": _b, "y": _a})
+    return ExistsIntro(DIVIDES_PRODUCT_RIGHT, _a, commute)
 
 
 def divides_zero() -> Pf:
@@ -110,13 +121,31 @@ def divides_trans() -> Pf:
     return ImpIntro(ab, ImpIntro(bc, use_ab))
 
 
+def divides_product() -> Pf:
+    """PEANO proves ``a|b -> a|b*c`` by transitivity through ``b|b*c``."""
+    ab = peano_divides(_a, _b)
+    transitive = Inst(
+        Inst(Inst(divides_trans(), "a", _a), "b", _b),
+        "c",
+        mul(_b, _c),
+    )
+    # Substitute the original ``b`` first: replacing ``a`` by the term named
+    # ``b`` and then substituting ``b`` would also rewrite that replacement.
+    factor = Inst(Inst(divides_factor(), "b", _c), "a", _b)
+    return ImpIntro(ab, MP(MP(transitive, Assume(ab)), factor))
+
+
 __all__ = [
     "DIVIDES_FACTOR",
+    "DIVIDES_PRODUCT",
+    "DIVIDES_PRODUCT_RIGHT",
     "DIVIDES_REFL",
     "DIVIDES_TRANS",
     "DIVIDES_ZERO",
     "ONE_DIVIDES",
     "divides_factor",
+    "divides_product",
+    "divides_product_right",
     "divides_refl",
     "divides_trans",
     "divides_zero",

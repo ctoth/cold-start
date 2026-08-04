@@ -7,11 +7,15 @@ from semantics import Model, evaluate
 from cold_start.checker import check
 from cold_start.divisibility import (
     DIVIDES_FACTOR,
+    DIVIDES_PRODUCT,
+    DIVIDES_PRODUCT_RIGHT,
     DIVIDES_REFL,
     DIVIDES_TRANS,
     DIVIDES_ZERO,
     ONE_DIVIDES,
     divides_factor,
+    divides_product,
+    divides_product_right,
     divides_refl,
     divides_trans,
     divides_zero,
@@ -65,6 +69,22 @@ def test_one_divides_every_number_is_checked_in_peano():
 
     assert not seq.hyps
     assert seq.concl == ONE_DIVIDES
+
+
+def test_both_factors_divide_a_product_in_peano():
+    left = check(divides_factor(), PEANO)
+    right = check(divides_product_right(), PEANO)
+
+    assert left.concl == DIVIDES_FACTOR
+    assert right.concl == DIVIDES_PRODUCT_RIGHT
+    assert not left.hyps and not right.hyps
+
+
+def test_a_divisor_still_divides_after_multiplication():
+    seq = check(divides_product(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_PRODUCT
 
 
 def test_transitivity_formula_has_the_expected_mathematical_shape():
