@@ -11,6 +11,14 @@ from hypothesis import strategies as st
 
 import cold_start.proof as P
 from cold_start.checker import Sequent, check
+from cold_start.codec import (
+    decode_formula,
+    decode_proof,
+    decode_term,
+    encode_formula,
+    encode_proof,
+    encode_term,
+)
 from cold_start.peano import PEANO, mul
 from cold_start.presburger import (
     ADD_SUCC_F,
@@ -20,7 +28,6 @@ from cold_start.presburger import (
     induction,
     numeral,
 )
-from cold_start.proof import from_bytes, to_bytes
 from cold_start.proofs import add_proof as prove_add
 from cold_start.proofs import mul_proof, robinson_add_proof
 from cold_start.robinson import ROBINSON_PEANO, bridge
@@ -38,10 +45,6 @@ from cold_start.syntax import (
     Var,
     exists,
     forall,
-    formula_from_bytes,
-    formula_to_bytes,
-    term_from_bytes,
-    term_to_bytes,
     validate,
 )
 
@@ -160,7 +163,7 @@ def test_examples_cover_every_concrete_node_class():
 @given(st.sampled_from(list(TERM_EXAMPLES.items())))
 def test_every_term_kind_round_trips(item):
     cls, term = item
-    decoded = term_from_bytes(term_to_bytes(term))
+    decoded = decode_term(encode_term(term))
     assert type(decoded) is cls
     assert decoded == term
 
@@ -168,7 +171,7 @@ def test_every_term_kind_round_trips(item):
 @given(st.sampled_from(list(FORMULA_EXAMPLES.items())))
 def test_every_formula_kind_round_trips(item):
     cls, formula = item
-    decoded = formula_from_bytes(formula_to_bytes(formula))
+    decoded = decode_formula(encode_formula(formula))
     assert type(decoded) is cls
     assert decoded == formula
 
@@ -176,26 +179,26 @@ def test_every_formula_kind_round_trips(item):
 @given(st.sampled_from(list(PROOF_EXAMPLES.items())))
 def test_every_proof_kind_round_trips(item):
     cls, proof = item
-    decoded = from_bytes(to_bytes(proof))
+    decoded = decode_proof(encode_proof(proof))
     assert type(decoded) is cls
     assert decoded == proof
 
 
 @given(terms())
 def test_term_roundtrips(t):
-    assert term_from_bytes(term_to_bytes(t)) == t
+    assert decode_term(encode_term(t)) == t
 
 
 @given(formulas())
 def test_formula_roundtrips(f):
-    assert formula_from_bytes(formula_to_bytes(f)) == f
+    assert decode_formula(encode_formula(f)) == f
 
 
 @given(proofs())
 def test_proof_roundtrips(pf):
-    assert from_bytes(to_bytes(pf)) == pf
-    assert from_bytes(to_bytes(pf)) == from_bytes(to_bytes(pf))
-    assert to_bytes(pf) == to_bytes(pf)  # encoding is deterministic
+    assert decode_proof(encode_proof(pf)) == pf
+    assert decode_proof(encode_proof(pf)) == decode_proof(encode_proof(pf))
+    assert encode_proof(pf) == encode_proof(pf)  # encoding is deterministic
 
 
 def test_deep_proof_survives_serialization_without_recursion():
@@ -218,7 +221,7 @@ def test_deep_proof_survives_serialization_without_recursion():
     old = _sys.getrecursionlimit()
     _sys.setrecursionlimit(300)  # < 1% of the term depth
     try:
-        seq = check(from_bytes(to_bytes(pf)), theory)
+        seq = check(decode_proof(encode_proof(pf)), theory)
     finally:
         _sys.setrecursionlimit(old)
     assert seq.concl == Eq(t, t)
@@ -395,7 +398,7 @@ def test_checker_agrees_with_addition(a, b):
 @settings(deadline=None)
 def test_serialization_preserves_checked_sequent(a, b):
     pf = prove_add(a, b)
-    assert check(pf, PEANO) == check(from_bytes(to_bytes(pf)), PEANO)
+    assert check(pf, PEANO) == check(decode_proof(encode_proof(pf)), PEANO)
 
 
 @given(st.integers(0, 20), st.integers(0, 20))
@@ -422,7 +425,7 @@ def _left_identity_induction():
 def test_induction_proof_checks_and_serializes():
     pred, pf = _left_identity_induction()
     assert check(pf, PEANO).concl == pred
-    assert check(from_bytes(to_bytes(pf)), PEANO) == check(pf, PEANO)
+    assert check(decode_proof(encode_proof(pf)), PEANO) == check(pf, PEANO)
 
 
 @given(VAR_NAMES)

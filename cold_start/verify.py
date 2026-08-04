@@ -27,7 +27,7 @@ from __future__ import annotations
 import sys
 
 from .checker import check
-from .proof import from_bytes
+from .codec import decode_proof
 
 THEORIES = {}
 
@@ -63,7 +63,7 @@ def main(argv: list[str]) -> int:
     data = open(path, "rb").read() if path else sys.stdin.buffer.read()
 
     try:
-        pf = from_bytes(data)
+        pf = decode_proof(data)
         sequent = check(pf, theory)
     except (ValueError, TypeError) as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)

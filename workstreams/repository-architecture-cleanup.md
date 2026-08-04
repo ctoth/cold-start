@@ -876,8 +876,65 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 3 commit
+- `244e814 refactor: split Lean representation owners`
 
 Next slice:
 
 - Iteration 4 - general codec owner
+
+### Iteration 4 - Codec Ownership - Complete
+
+Surfaces:
+
+- Hamblin imports and registries in trusted data owners
+  - Disposition: delete/move
+  - Owner after cleanup: `cold_start/codec.py` builds syntax and proof registries
+    from the canonical type sets.
+- syntax/proof-owned byte entrypoints
+  - Disposition: delete/rename
+  - Owner after cleanup: explicit `encode_term`/`decode_term`,
+    `encode_formula`/`decode_formula`, and `encode_proof`/`decode_proof` APIs in
+    `codec.py`.
+- root and structural validation
+  - Disposition: strengthen
+  - Action: encoders and decoders require exact canonical roots and validate the
+    complete structure; standalone open term fragments are validated at the
+    minimum binder depth required by their bound-variable indices.
+- fresh-process verifier wire input
+  - Disposition: migrate
+  - Owner after cleanup: `verify.py` imports `decode_proof` from the codec, then
+    passes its validated result to the independently validating checker.
+
+Red evidence:
+
+- Error: `uv run pytest -o addopts= -q tests\test_codec.py`
+  - collection failed because `cold_start.codec` did not exist.
+- Fail: first focused property run
+  - 1 failed, 73 passed because eager depth-zero term validation rejected the
+    existing valid open-fragment round trip for `BVar(0)`.
+  - Resolution: term validation computes the minimum closing depth iteratively;
+    formula and proof roots remain locally closed at depth zero.
+
+Green evidence:
+
+- Pass: direct codec contract tests
+  - 6 passed in 0.05 seconds.
+- Pass: codec/checker/property/relation/divisibility slice
+  - 74 passed in 20.16 seconds, including 50,000-node recursion-free round trips
+    and fresh-process verifier tests.
+- Pass: scoped Ruff
+  - all checks passed after mechanical import sorting and formatting.
+- Pass: full configured Pyright
+  - 0 errors, 0 warnings, 0 informations.
+- Pass: ownership searches
+  - old public serializer names have zero Python hits; Hamblin imports occur only
+    in `codec.py` and its direct adversarial test; trusted core modules do not
+    import the codec.
+
+Commit:
+
+- pending Iteration 4 commit
+
+Next slice:
+
+- Iteration 5 - theory-owned proof libraries

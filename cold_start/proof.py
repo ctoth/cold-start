@@ -2,7 +2,7 @@
 checking logic, carried as polymorphic methods on those terms.
 
 A proof term is a tree of rule applications. As *data* it asserts nothing: you
-can build any nonsense `Pf` you like, and it serializes to bytes (via hamblin) so
+can build any nonsense `Pf` you like, and the external codec can serialize it so
 a proof can be written to disk and re-checked by a separate process. Authority
 comes only from `check()` (in checker.py) driving `derive()` and getting a
 `Sequent` back.
@@ -22,11 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-import hamblin
-
 from .sequent import Sequent
 from .syntax import (
-    SYNTAX_REGISTRY,
     Bottom,
     Eq,
     Exists,
@@ -452,8 +449,22 @@ class ExistsElim(Pf):
 
 CANONICAL_PROOF_TYPES: frozenset[type] = frozenset(
     {
-        Axiom, Assume, Refl, Sym, Trans, Cong, MP, ImpIntro, Inst, Induct,
-        ExFalso, RAA, ForallElim, ForallIntro, ExistsIntro, ExistsElim,
+        Axiom,
+        Assume,
+        Refl,
+        Sym,
+        Trans,
+        Cong,
+        MP,
+        ImpIntro,
+        Inst,
+        Induct,
+        ExFalso,
+        RAA,
+        ForallElim,
+        ForallIntro,
+        ExistsIntro,
+        ExistsElim,
     }
 )
 
@@ -475,29 +486,3 @@ def validate_proof(pf: object) -> None:
         if type(p) not in CANONICAL_PROOF_TYPES:
             raise TypeError(f"not a proof term: {p!r}")
         stack.extend(cast(Pf, p)._validate())
-
-
-# ---------------------------------------------------------------------------
-# Serialization  (delegated to hamblin -- a recursion-free postfix codec)
-# ---------------------------------------------------------------------------
-
-
-# The registry is every node class (syntax + proof), so a new proof rule needs no
-# serialization code -- only its dataclass definition. Decoded bytes are untrusted;
-# `check` re-runs `validate_proof` over whatever this rebuilds, so a hostile blob
-# constructs only known shapes and is then re-derived or rejected.
-_PROOF_REGISTRY = {
-    **SYNTAX_REGISTRY,
-    **{c.__name__: c for c in CANONICAL_PROOF_TYPES},
-}
-
-
-def to_bytes(p: Pf) -> bytes:
-    return hamblin.encode(p)
-
-
-def from_bytes(data: bytes) -> Pf:
-    node = hamblin.decode(data, _PROOF_REGISTRY)
-    if not isinstance(node, Pf):
-        raise ValueError(f"expected a proof term, got {type(node).__name__}")
-    return node

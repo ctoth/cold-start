@@ -1,7 +1,7 @@
 """The object language: first-order terms and formulas.
 
 This module is NOT trusted. It is pure, immutable data plus structural helpers
-(free variables, substitution, serialization). Anyone may build any term or
+(free variables and substitution). Anyone may build any term or
 formula they like -- a formula is just a claim, not a proof. Trust lives in
 checker.py, which re-derives conclusions from proof terms over this language.
 
@@ -19,8 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
 from typing import ClassVar, cast
-
-import hamblin
 
 
 def _is_node(v: object) -> bool:
@@ -625,43 +623,3 @@ def validate(node: object, depth: int = 0) -> None:
         if type(n) not in CANONICAL_NODE_TYPES:
             raise TypeError(f"non-canonical node: {type(n).__name__}")
         stack.extend(cast(Node, n)._validate(d))
-
-
-# ---------------------------------------------------------------------------
-# Serialization  (delegated to hamblin -- a recursion-free postfix codec)
-# ---------------------------------------------------------------------------
-# Every node is a frozen dataclass, which is exactly what hamblin serializes: a
-# postfix opcode stream read back by a stack machine, so a term or formula nested
-# arbitrarily deep encodes and decodes WITHOUT recursion -- there is no
-# `json.loads` at the trust boundary to blow the call stack on a deep (or hostile)
-# input. The wire form is bytes, not JSON. Deserialized data is untrusted, but the
-# checker re-validates every term/formula, so the codec need only refuse unknown
-# kinds and mismatched field sets -- which hamblin reports as `HamblinError` (a
-# `ValueError`). `proof.py` reuses the same codec with its own registry.
-
-
-SYNTAX_REGISTRY = {
-    c.__name__: c for c in (Var, BVar, Fun, Eq, Rel, Implies, Bottom, Forall, Exists)
-}
-
-
-def term_to_bytes(t: Term) -> bytes:
-    return hamblin.encode(t)
-
-
-def term_from_bytes(data: bytes) -> Term:
-    node = hamblin.decode(data, SYNTAX_REGISTRY)
-    if not isinstance(node, Term):
-        raise ValueError(f"expected a term, got {type(node).__name__}")
-    return node
-
-
-def formula_to_bytes(f: Formula) -> bytes:
-    return hamblin.encode(f)
-
-
-def formula_from_bytes(data: bytes) -> Formula:
-    node = hamblin.decode(data, SYNTAX_REGISTRY)
-    if not isinstance(node, Formula):
-        raise ValueError(f"expected a formula, got {type(node).__name__}")
-    return node

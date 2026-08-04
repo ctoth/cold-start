@@ -11,16 +11,17 @@ import pytest
 from semantics import Model, evaluate
 
 from cold_start.checker import Signature, Theory, check
+from cold_start.codec import decode_formula, decode_proof, encode_formula, encode_proof
 from cold_start.notation import format_formula, parse_formula
-from cold_start.proof import Assume, Axiom, from_bytes, to_bytes
-from cold_start.syntax import Rel, Var, formula_from_bytes, formula_to_bytes, validate
+from cold_start.proof import Assume, Axiom
+from cold_start.syntax import Rel, Var, validate
 
 
 def test_relation_round_trips_through_syntax_and_proof_bytes():
     claim = Rel("|", (Var("a"), Var("b")))
 
-    assert formula_from_bytes(formula_to_bytes(claim)) == claim
-    assert from_bytes(to_bytes(Assume(claim))) == Assume(claim)
+    assert decode_formula(encode_formula(claim)) == claim
+    assert decode_proof(encode_proof(Assume(claim))) == Assume(claim)
 
 
 def test_relation_args_are_snapshotted_and_exact_type_validated():
