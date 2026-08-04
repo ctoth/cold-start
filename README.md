@@ -61,6 +61,15 @@ The code is the `cold_start/` package (flat, no src-layout):
   (`left_identity_proof`) and built by tactics (`left_identity`, `succ_add`,
   `add_comm`, `add_assoc` — commutativity and associativity of addition). Both
   face the same `check()`, which cannot tell them apart.
+- **`cold_start/rigidity.py`** — the first genuine *induction* proof in Robinson's
+  `(1, S, ·)` theory, whose base is **1**. Extends `ROBINSON_PEANO` (with
+  `dataclasses.replace`, never a subclass) by a fresh unary `f` and the successor
+  half of a *brachymorphism* — `f(1) = 1`, `f(S x) = S(f x)` — and derives
+  `|- f(x) = x`: every successor-preserving self-map of the positive integers is
+  the identity. That rigidity is what kills the prime-permuting automorphisms of
+  `(N, ·)` and so lets `+` be defined at all. Given it, the *other* brachymorphism
+  law is a theorem rather than an axiom: `|- f(x·y) = f(x)·f(y)`, by rewriting
+  alone. (Wehrung 2024, arXiv:2405.08364.)
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`cold_start/lean.py`** — untrusted **Lean 4 compat layer**: renders checked
