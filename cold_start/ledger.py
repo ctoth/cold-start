@@ -27,6 +27,7 @@ from .integers import integers_interpretation
 from .interp import BridgeReport, Interpretation, verify
 from .quotient import QuotientInterpretation
 from .quotient import verify as verify_quotient
+from .ring_z import ring_z_interpretation
 from .skolem import skolem_interpretation
 
 Artifact = Interpretation | QuotientInterpretation
@@ -38,6 +39,7 @@ ARTIFACTS: tuple[Callable[[], Artifact], ...] = (
     robinson_product_interpretation,
     skolem_interpretation,
     integers_interpretation,
+    ring_z_interpretation,
 )
 """Every interpretation artifact the repository has landed."""
 

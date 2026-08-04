@@ -21,7 +21,7 @@ from .presburger import add
 from .presburger_proofs import add_cancel_right
 from .proof import MP, Cong, Inst, Pf, Refl, Trans
 from .syntax import Eq, Term, Var
-from .tactics import prove_eq
+from .tactics import DEFAULT_BUDGET, prove_eq
 
 Hypothesis = tuple[Eq, Pf, Term | None]
 """An oriented equation, its proof, and an optional coefficient to scale by."""
@@ -55,7 +55,12 @@ def _cancel(lhs: Term, rhs: Term, suffix: Term) -> Pf:
     return pf
 
 
-def by_combination(goal: Eq, hyps: tuple[Hypothesis, ...], kit) -> Pf:
+def by_combination(
+    goal: Eq,
+    hyps: tuple[Hypothesis, ...],
+    kit,
+    budget: int = DEFAULT_BUDGET,
+) -> Pf:
     """Prove `goal` from equational hypotheses by a scaled sum and one
     cancellation.
 
@@ -70,10 +75,12 @@ def by_combination(goal: Eq, hyps: tuple[Hypothesis, ...], kit) -> Pf:
     and cancelling the suffix H_L lands the goal. The middle step is exactly
     the polynomial identity G_L + H_R == G_R + H_L, so a wrong orientation or
     a wrong coefficient fails loudly inside `prove_eq`, never silently. With
-    no hypotheses at all, the goal must be a kit identity outright."""
+    no hypotheses at all, the goal must be a kit identity outright. `budget`
+    bounds the rewrite steps per normalized side; a wide polynomial (a ring
+    axiom at degree three) legitimately needs more than the default."""
     kit = tuple(kit)
     if not hyps:
-        return prove_eq(goal, kit)
+        return prove_eq(goal, kit, budget)
     scaled: list[tuple[Eq, Pf]] = []
     for eq, pf, coeff in hyps:
         if coeff is not None:
@@ -87,7 +94,7 @@ def by_combination(goal: Eq, hyps: tuple[Hypothesis, ...], kit) -> Pf:
         combined = Cong("+", (combined, pf))
         h_l, h_r = add(h_l, eq.lhs), add(h_r, eq.rhs)
     on_sum = Cong("+", (Refl(goal.lhs), combined))  # G_L + H_L = G_L + H_R
-    shuffle = prove_eq(Eq(add(goal.lhs, h_r), add(goal.rhs, h_l)), kit)
+    shuffle = prove_eq(Eq(add(goal.lhs, h_r), add(goal.rhs, h_l)), kit, budget)
     return MP(_cancel(goal.lhs, goal.rhs, h_l), Trans(on_sum, shuffle))
 
 
