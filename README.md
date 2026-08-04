@@ -80,6 +80,23 @@ The code is the `cold_start/` package (flat, no src-layout):
   `(N, ·)` and so lets `+` be defined at all. Given it, the *other* brachymorphism
   law is a theorem rather than an axiom: `|- f(x·y) = f(x)·f(y)`, by rewriting
   alone. (Wehrung 2024, arXiv:2405.08364.)
+- **`cold_start/prop.py`** — derived propositional sugar over the →/⊥ core:
+  classical conjunction `And(A,B) := ¬(A → ¬B)` with introduction and both
+  (RAA) eliminations as untrusted combinators.
+- **`cold_start/interp.py`** — **interpretations between theories as checked
+  artifacts**. A translation (relational graph form, with optional domain
+  relativization) plus one proof obligation per source axiom and definedness
+  (totality/uniqueness) per translated symbol; `verify` drives every payment
+  through `check()` and reports **bridge size** (translation nodes) against
+  **toll** (proof nodes), ledgering unpaid obligations openly.
+- **`cold_start/bridges.py`** — the concrete crossings. Robinson's §2 as two
+  landed bridges: base-1 Presburger into `(1, S, ·)` (axioms land on A4'/A5',
+  totality `∃c bridge(a,b,c)` is the repo's first existential theorem, proved
+  by induction based at 1; uniqueness ledgered open), and the same **19-node
+  bridge** into PEANO relativized to the positives — **every obligation paid**
+  (toll: 484,089 proof nodes), with the previous campaign's converse theorem
+  paying uniqueness. Unguarded PEANO is provably impassable (A5' fails at 0),
+  so the relativization is forced, not decorative.
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`cold_start/lean.py`** — untrusted **Lean 4 compat layer**: renders checked
@@ -137,7 +154,12 @@ uv run python -m cold_start.verify proof.hmb
 - [x] Positive multiplication cancellation and Robinson's converse, proving the
       bridge is exactly the graph of addition on the positive domain; independently
       re-checked by the generated Lean 4 corpus
+- [x] Interpretations between theories as first-class checked artifacts
+      (`cold_start.interp`), with Robinson's §2 landed as two measured bridges
+      (`cold_start.bridges`) — one fully paid into PEANO's positives
 - [ ] Ordering (`<=`), divisibility, primality
+- [ ] Next far shores for the bridge layer: `(S, |)` (Robinson Thm 1.2),
+      Quine 1946 concatenation theory, Skolem arithmetic
 - [ ] A proof-term pretty-printer (proof trees / step listings)
 - [x] A *non-trusted* tactics layer that emits proof terms — including ordered
       rewriting, so commutativity can be a rule without looping

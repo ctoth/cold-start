@@ -154,3 +154,29 @@ formula is still false in the standard model at `c=0`, so by soundness it still 
 no PEANO proof. This cleanly separates the theorem from its single boundary
 obstruction. The generated Lean 4 corpus independently re-checks the cancellation
 and converse proofs.
+
+## Interpretations: bridges between theories, measured
+
+`interp.py` promotes what Robinson's paper *is* — an interpretation of one theory
+inside another — to a first-class checked artifact. An `Interpretation` names a
+source and target theory, translates chosen source function symbols relationally
+(the graph form of Tarski–Mostowski–Robinson, hoisting nested applications through
+∀-guards), optionally relativizes to a domain formula, and owes obligations: one
+per source axiom, totality and uniqueness per translated symbol, and — when
+relativized — nonemptiness and closure of the domain. `verify` pushes each offered
+payment through the trusted `check()` and reports **bridge size** (translation
+nodes) against **toll** (proof nodes), with unpaid obligations ledgered openly: an
+interpretation with open debts is a conjecture with a ledger, not a theorem.
+
+`bridges.py` lands Robinson's §2 twice over the same 19-node translation
+`x + y = z ↦ S(x·z)·S(y·z) = S((z·z)·S(x·y))`. Into her own `(1, S, ·)` theory,
+the translator drops base-1 Presburger's axioms onto A4' and (the closure of) A5'
+verbatim, and totality — `∃c bridge(a,b,c)`, the repo's first existential theorem —
+is derived by induction based at 1; uniqueness stays an honest open ledger entry
+pending a far-shore multiplication ladder. Into PEANO relativized to the positives
+(`δ(x) := ∃k. x = S(k)`), **every obligation is paid** (toll: 484,089 proof nodes):
+the guarded A5' theorem settles the translated recursion axiom and the bridge
+converse settles uniqueness — and the relativization is forced, since unguarded
+A5' is false at zero. The δ-guard on `S(a) ≠ 1` earns its keep the same way: at
+`a = 0` that translated axiom is false in PEANO, so only the relativized form has
+a proof.
