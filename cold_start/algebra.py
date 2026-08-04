@@ -120,3 +120,7 @@ RING_AXIOMS = frozenset(
 
 RING = Theory(axioms=RING_AXIOMS)
 COMM_RING = Theory(axioms=RING_AXIOMS | {COMM})  # COMM is x*y = y*x (reused)
+
+AB_GROUP = Theory(axioms=frozenset({ADD_ASSOC, ADD_COMM, ADD_ZERO, ADD_NEG}))
+"""The additive fragment of RING on its own: an abelian group (0, +, neg).
+The source theory of the Grothendieck bridge in `cold_start.integers`."""
