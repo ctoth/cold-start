@@ -11,11 +11,19 @@ The translator (cold_start.interp) lands the source's two addition axioms on
 Robinson's own A4' and A5'; the successor axioms cross verbatim; totality --
 `∃c bridge(a,b,c)`, addition is defined EVERYWHERE on the far shore -- is
 `bridge_total` below, this repo's first existential theorem, proved inside
-ROBINSON_PEANO by induction based at 1. Uniqueness is deliberately left as the
-artifact's one OPEN obligation: deriving `bridge(a,b,c) → bridge(a,b,d) → c=d`
-over (1, S, ·) needs the multiplication ladder rebuilt on the far shore, and
-the report says so rather than hiding it. An interpretation with an open
-obligation is a conjecture with a ledger, not a theorem.
+ROBINSON_PEANO by induction based at 1. Uniqueness is left as the artifact's
+one OPEN obligation, and honestly so: deriving `bridge(a,b,c) → bridge(a,b,d)
+→ c=d` over (1, S, ·) is exactly Robinson's axiom A8 (paper, p. 104), which
+she ADDED "to guarantee the operational character of addition" rather than
+derived, remarking "We do not know whether the axioms of S ... are mutually
+independent." The structural obstruction is checked below as
+`uniqueness_descends`: every axiom moves bridge solutions UPWARD in b (A5'
+maps the solution set at (a,b) injectively into the one at (a,Sb)), so
+uniqueness propagates downward -- while induction only climbs. The one
+equational multiplication axiom, A6 `a·1 = a`, cannot evaluate any product
+with a successor second factor; A7', the recursion law that could, is itself
+a bridge, usable as an equation only GIVEN uniqueness. An interpretation with
+an open obligation is a conjecture with a ledger, not a theorem.
 
 Untrusted, like every prover module: `check` remains the only judge.
 """
@@ -35,6 +43,7 @@ from .proof import (
     Cong,
     ExistsElim,
     ExistsIntro,
+    ForallElim,
     ForallIntro,
     ImpIntro,
     Inst,
@@ -51,7 +60,7 @@ from .robinson_proofs import (
     robinson_add_one,
     robinson_add_succ_positive,
 )
-from .syntax import Eq, Formula, Term, Var, exists
+from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import Rule, normalize_equality
 
 _a, _b, _c, _d = Var("a"), Var("b"), Var("c"), Var("d")
@@ -103,6 +112,62 @@ def bridge_total() -> Pf:
     step = ImpIntro(pred, used)
 
     return induction("b", pred, base, step)
+
+
+# --- the far-shore ladder: what falls without Robinson's A8 ----------------
+# Robinson (p. 104) could not derive uniqueness of the bridge result from
+# A1-A7' and added it as a new axiom A8, leaving its independence open. The
+# two theorems below are the rungs that DO fall, and the second states the
+# obstruction itself as a checked sequent.
+
+
+def one_add() -> Pf:
+    """|- bridge(1, b, S b): "1 + b = S b" said entirely in (1, S, ·), by
+    induction on b based at 1. The base is A4' at a := 1; the step is A5'."""
+    pred = bridge(ONE, _b, S(_b))
+    base = Inst(Axiom(ADD_ONE), "a", ONE)  # bridge(1, 1, S 1)
+    step_up = Inst(Inst(Axiom(ADD_SUCC), "a", ONE), "c", S(_b))
+    step = ImpIntro(pred, MP(step_up, Assume(pred)))
+    return induction("b", pred, base, step)
+
+
+UNIQUE_DESCENT: Formula = Implies(
+    forall(
+        "c",
+        "",
+        forall(
+            "d",
+            "",
+            Implies(
+                bridge(_a, S(_b), Var("c")),
+                Implies(bridge(_a, S(_b), Var("d")), Eq(Var("c"), Var("d"))),
+            ),
+        ),
+    ),
+    Implies(bridge(_a, _b, _c), Implies(bridge(_a, _b, _d), Eq(_c, _d))),
+)
+"""Uniqueness of the bridge result DESCENDS in b: if it holds at (a, S b) it
+holds at (a, b). This is the obstruction to paying `uniqueness:+` stated as a
+theorem: A5' maps the solution set at (a, b) injectively (by A2) into the one
+at (a, S b), so every axiom pushes information UP the b-axis -- and induction
+also only climbs. Nothing inverts. Robinson closed exactly this gap by fiat,
+with her axiom A8."""
+
+
+def uniqueness_descends() -> Pf:
+    """|- UNIQUE_DESCENT, inside ROBINSON_PEANO.
+
+    Assume uniqueness at (a, S b) and two bridges at (a, b): A5' lifts both
+    results c, d to S c, S d at (a, S b), the assumed uniqueness identifies
+    the lifts, and A2 peels the successors."""
+    hyp = UNIQUE_DESCENT.ant
+    h1, h2 = bridge(_a, _b, _c), bridge(_a, _b, _d)
+    up_c = MP(Axiom(ADD_SUCC), Assume(h1))  # bridge(a, S b, S c)
+    up_d = MP(Inst(Axiom(ADD_SUCC), "c", _d), Assume(h2))  # bridge(a, S b, S d)
+    at_lifts = ForallElim(ForallElim(Assume(hyp), S(_c)), S(_d))
+    succs_equal = MP(MP(at_lifts, up_c), up_d)  # S c = S d
+    peel = Inst(Inst(Axiom(SUCC_INJ), "a", _c), "b", _d)
+    return ImpIntro(hyp, ImpIntro(h1, ImpIntro(h2, MP(peel, succs_equal))))
 
 
 # --- the artifact ----------------------------------------------------------

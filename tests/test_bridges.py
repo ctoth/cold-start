@@ -39,6 +39,29 @@ def test_bridge_total_is_a_robinson_peano_theorem() -> None:
     assert seq.concl == exists("c", "", bridge(_a, _b, Var("c")))
 
 
+def test_one_add_is_a_robinson_peano_theorem() -> None:
+    # bridge(1, b, S b): "1 + b = S b" said entirely in (1, S, ·), by induction
+    # on b based at 1 -- base is A4' at a := 1, step is A5'. The first rung of
+    # the far-shore ladder that actually falls.
+    from cold_start.bridges import one_add
+
+    seq = check(one_add(), ROBINSON_PEANO)
+    assert not seq.hyps
+    assert seq.concl == bridge(ONE, _b, S(_b))
+
+
+def test_uniqueness_descends_is_a_robinson_peano_theorem() -> None:
+    # Uniqueness of the bridge result propagates DOWNWARD in b: A5' maps the
+    # solution set at (a, b) injectively (by A2) into the one at (a, S b). This
+    # is the checked half of the obstruction analysis: induction climbs upward,
+    # every axiom moves solutions upward, and nothing inverts.
+    from cold_start.bridges import UNIQUE_DESCENT, uniqueness_descends
+
+    seq = check(uniqueness_descends(), ROBINSON_PEANO)
+    assert not seq.hyps
+    assert seq.concl == UNIQUE_DESCENT
+
+
 def test_robinson_bridge_report() -> None:
     report = verify(robinson_interpretation())
     by_label = {s.obligation.label: s for s in report.statuses}
