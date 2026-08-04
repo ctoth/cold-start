@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from cold_start.syntax import Bottom, BVar, Eq, Exists, Forall, Fun, Implies, Var
+from cold_start.syntax import Bottom, BVar, Eq, Exists, Forall, Fun, Implies, Rel, Var
 
 
 class ModelLike(Protocol):
@@ -50,6 +50,8 @@ def evaluate(node: object, model: ModelLike, env: dict, denv: tuple = ()):
         return model.interp[node.name](*(evaluate(a, model, env, denv) for a in node.args))
     if type(node) is Eq:
         return evaluate(node.lhs, model, env, denv) == evaluate(node.rhs, model, env, denv)
+    if type(node) is Rel:
+        return model.interp[node.name](*(evaluate(a, model, env, denv) for a in node.args))
     if type(node) is Implies:
         return (not evaluate(node.ant, model, env, denv)) or evaluate(node.con, model, env, denv)
     if type(node) is Bottom:

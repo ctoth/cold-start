@@ -19,6 +19,7 @@ from cold_start.syntax import (
     Fun,
     Implies,
     Not,
+    Rel,
     Term,
     Var,
     exists,
@@ -52,7 +53,11 @@ def terms():
 
 def formulas():
     return st.recursive(
-        st.one_of(st.builds(Eq, terms(), terms()), st.builds(Bottom)),
+        st.one_of(
+            st.builds(Eq, terms(), terms()),
+            st.builds(lambda a, b: Rel("|", (a, b)), terms(), terms()),
+            st.builds(Bottom),
+        ),
         lambda kids: st.one_of(
             st.builds(Implies, kids, kids),
             st.builds(forall, VAR_NAMES, SORTS, kids),
@@ -107,7 +112,7 @@ def test_formulas_roundtrip_through_notation(formula: Formula):
     assert parse_formula(format_formula(formula)) == formula
 
 
-@given(st.sampled_from([Eq, Implies, Bottom, Forall, Exists]))
+@given(st.sampled_from([Eq, Rel, Implies, Bottom, Forall, Exists]))
 def test_symbols_are_declared_on_formula_classes(cls):
     assert isinstance(cls.symbol, str)
     assert cls.symbol

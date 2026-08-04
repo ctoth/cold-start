@@ -33,6 +33,7 @@ from cold_start.syntax import (
     Formula,
     Fun,
     Implies,
+    Rel,
     Term,
     Var,
     exists,
@@ -62,7 +63,11 @@ def terms():
 
 def formulas():
     return st.recursive(
-        st.one_of(st.builds(Eq, terms(), terms()), st.builds(Bottom)),
+        st.one_of(
+            st.builds(Eq, terms(), terms()),
+            st.builds(lambda a, b: Rel("|", (a, b)), terms(), terms()),
+            st.builds(Bottom),
+        ),
         lambda kids: st.one_of(
             st.builds(Implies, kids, kids),
             st.builds(forall, VAR_NAMES, st.just(""), kids),
@@ -112,6 +117,7 @@ TERM_EXAMPLES = {
 
 FORMULA_EXAMPLES = {
     Eq: BASE_FORMULA,
+    Rel: Rel("|", (BASE_TERM, BASE_TERM)),
     Implies: Implies(BASE_FORMULA, BASE_FORMULA),
     Bottom: Bottom(),
     Forall: forall("x", "", BASE_FORMULA),

@@ -28,9 +28,9 @@ from .syntax import Formula, Term
 
 @dataclass(frozen=True)
 class Signature:
-    """A many-sorted signature: the declared sort names and each function
-    symbol's rank (argument sorts -> result sort). When a `Theory` carries one,
-    the checker rejects ill-sorted terms and cross-sort instantiation.
+    """A many-sorted signature: declared sorts, function ranks, and relation
+    ranks. When a `Theory` carries one, the checker rejects ill-sorted syntax
+    and cross-sort instantiation.
 
     `ranks` stays a (hashable) tuple; an O(1) lookup dict is derived once and
     excluded from eq/hash so a Signature stays hashable.
@@ -38,13 +38,19 @@ class Signature:
 
     sorts: frozenset  # frozenset[str]
     ranks: tuple  # tuple[(name: str, arg_sorts: tuple[str, ...], result: str), ...]
+    relations: tuple = ()  # tuple[(name: str, arg_sorts: tuple[str, ...]), ...]
     _by_name: dict = field(default_factory=dict, init=False, compare=False, repr=False)
+    _relations_by_name: dict = field(default_factory=dict, init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_by_name", {n: (args, res) for n, args, res in self.ranks})
+        object.__setattr__(self, "_relations_by_name", {n: args for n, args in self.relations})
 
     def rank(self, name: str):
         return self._by_name.get(name)
+
+    def relation(self, name: str):
+        return self._relations_by_name.get(name)
 
 
 @dataclass(frozen=True, slots=True)

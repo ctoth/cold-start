@@ -426,6 +426,54 @@ class Eq(Formula):
 
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
+class Rel(Formula):
+    """An atomic relation application such as divisibility ``a | b``."""
+
+    symbol: ClassVar[str] = "relation"
+
+    name: str
+    args: tuple  # tuple[Term, ...]
+
+    def __post_init__(self) -> None:
+        # Relations have the same immutable argument ownership as functions.
+        if type(self.args) is not tuple:
+            object.__setattr__(self, "args", tuple(self.args))
+
+    def _repr_emit(self, out: list, stack: list) -> None:
+        if self.name == "|" and len(self.args) == 2:
+            _emit_pieces(
+                stack,
+                [("emit", self.args[0]), ("lit", " | "), ("emit", self.args[1])],
+            )
+            return
+        pieces: list = [("lit", self.name), ("lit", "(")]
+        for k, arg in enumerate(self.args):
+            if k:
+                pieces.append(("lit", ", "))
+            pieces.append(("emit", arg))
+        pieces.append(("lit", ")"))
+        _emit_pieces(stack, pieces)
+
+    def _sort_check_step(self, sig, scope: tuple) -> tuple:
+        arg_sorts = sig.relation(self.name)
+        if arg_sorts is None:
+            raise ValueError(f"undeclared relation {self.name!r}")
+        if len(self.args) != len(arg_sorts):
+            raise ValueError(f"{self.name!r} expects {len(arg_sorts)} args, got {len(self.args)}")
+        for arg, expected in zip(self.args, arg_sorts, strict=True):
+            actual = arg.sort_of(sig, scope)
+            if actual != expected:
+                raise ValueError(f"{self.name!r} arg has sort {actual!r}, expected {expected!r}")
+        return ()
+
+    def _validate(self, depth: int) -> tuple:
+        _check_str(self.name, "Rel.name")
+        if type(self.args) is not tuple:
+            raise TypeError("Rel.args must be a tuple")
+        return tuple((arg, depth) for arg in self.args)
+
+
+@dataclass(frozen=True, slots=True, eq=False, repr=False)
 class Implies(Formula):
     symbol: ClassVar[str] = "→"
 
@@ -555,7 +603,9 @@ def _check_str(s: object, what: str) -> None:
         raise TypeError(f"{what} must be a genuine str, got {type(s).__name__}")
 
 
-_CANONICAL: frozenset[type] = frozenset({Var, BVar, Fun, Eq, Implies, Bottom, Forall, Exists})
+_CANONICAL: frozenset[type] = frozenset(
+    {Var, BVar, Fun, Eq, Rel, Implies, Bottom, Forall, Exists}
+)
 
 
 def validate(node: object, depth: int = 0) -> None:
@@ -590,7 +640,9 @@ def validate(node: object, depth: int = 0) -> None:
 # `ValueError`). `proof.py` reuses the same codec with its own registry.
 
 
-SYNTAX_REGISTRY = {c.__name__: c for c in (Var, BVar, Fun, Eq, Implies, Bottom, Forall, Exists)}
+SYNTAX_REGISTRY = {
+    c.__name__: c for c in (Var, BVar, Fun, Eq, Rel, Implies, Bottom, Forall, Exists)
+}
 
 
 def term_to_bytes(t: Term) -> bytes:

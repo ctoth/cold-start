@@ -20,6 +20,7 @@ from .syntax import (
     Fun,
     Implies,
     Not,
+    Rel,
     Term,
     Var,
     exists,
@@ -40,7 +41,7 @@ class _Token:
 
 _EOF = "EOF"
 _MULTI = ("->", "=>", "!=", "<=", ">=")
-_SINGLE = set("()[],.:=+-*/#") | {"∀", "∃", "→", "⇒", "¬", "⊥", "≠", "≤", "≥"}
+_SINGLE = set("()[],.:=+-*/#|") | {"∀", "∃", "→", "⇒", "¬", "⊥", "≠", "≤", "≥"}
 _IMPLIES = {"->", "=>", "→", "⇒"}
 _NOT = {"¬", "not"}
 _FORALL = {"∀", "forall"}
@@ -230,7 +231,7 @@ class _Parser:
     def _infix_prec(self, text: str) -> int | None:
         if text in _IMPLIES:
             return _PREC_IMPLIES
-        if text == Eq.symbol or text in _NEQ:
+        if text == Eq.symbol or text in _NEQ or text == "|":
             return 2
         if text in ("+", "-"):
             return 3
@@ -376,6 +377,10 @@ class _Parser:
             if not (isinstance(left, Term) and isinstance(right, Term)):
                 self.error("inequality needs terms on both sides")
             return Not(Eq(left, right))
+        if op == "|":
+            if not (isinstance(left, Term) and isinstance(right, Term)):
+                self.error("relation needs terms on both sides")
+            return Rel("|", (left, right))
         if not (isinstance(left, Term) and isinstance(right, Term)):
             self.error(f"{op!r} needs terms on both sides")
         return Fun(op, (left, right))
@@ -474,6 +479,16 @@ def _emit(node: Term | Formula, printer: _Printer, prec: int, out: list, stack: 
         wrap = 40 < prec
         pieces: list = [("lit", "(")] if wrap else []
         pieces += [("emit", node.lhs, 0), ("lit", f" {node.symbol} "), ("emit", node.rhs, 0)]
+        if wrap:
+            pieces.append(("lit", ")"))
+        _push(stack, pieces)
+        return
+    if type(node) is Rel:
+        if node.name != "|" or len(node.args) != 2:
+            raise ValueError(f"notation has no surface form for relation {node.name!r}")
+        wrap = 40 < prec
+        pieces = [("lit", "(")] if wrap else []
+        pieces += [("emit", node.args[0], 0), ("lit", " | "), ("emit", node.args[1], 0)]
         if wrap:
             pieces.append(("lit", ")"))
         _push(stack, pieces)
