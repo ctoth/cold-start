@@ -66,4 +66,36 @@ def and_right(a: Formula, b: Formula, pab: Pf) -> Pf:
     return RAA(b, MP(pab, constant))
 
 
-__all__ = ["And", "Iff", "Or", "and_intro", "and_left", "and_right"]
+def or_left(a: Formula, b: Formula, pa: Pf) -> Pf:
+    """From a proof of A, a proof of Or(A, B): under ¬A the proved A explodes,
+    and ex falso supplies B. Intuitionistic."""
+    return ImpIntro(Not(a), ExFalso(MP(Assume(Not(a)), pa), b))
+
+
+def or_right(a: Formula, b: Formula, pb: Pf) -> Pf:
+    """From a proof of B, a proof of Or(A, B): the encoding ¬A → B holds by
+    ignoring its antecedent. Intuitionistic."""
+    return ImpIntro(Not(a), pb)
+
+
+def or_elim(a: Formula, b: Formula, c: Formula, pab: Pf, pac: Pf, pbc: Pf) -> Pf:
+    """Case analysis: from Or(A, B), A → C, and B → C, a proof of C.
+
+    By reductio: under ¬C, the arm A → C refutes A, so the encoded disjunction
+    ¬A → B yields B, whose arm lands C against the assumed ¬C."""
+    not_a = ImpIntro(a, MP(Assume(Not(c)), MP(pac, Assume(a))))
+    from_b = MP(pbc, MP(pab, not_a))
+    return RAA(c, MP(Assume(Not(c)), from_b))
+
+
+__all__ = [
+    "And",
+    "Iff",
+    "Or",
+    "and_intro",
+    "and_left",
+    "and_right",
+    "or_elim",
+    "or_left",
+    "or_right",
+]
