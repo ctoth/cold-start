@@ -13,6 +13,8 @@ the next, which is why the ladder has to be climbed in order.
 from __future__ import annotations
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from semantics import Model, evaluate
 
 from cold_start.checker import check
@@ -22,6 +24,7 @@ from cold_start.proofs import (
     DISTRIB_LEFT,
     DISTRIB_RIGHT,
     MUL_ASSOC,
+    MUL_CANCEL_RIGHT_SUCC,
     MUL_COMM,
     MUL_LEFT_COMM,
     MUL_SUCC_LEFT,
@@ -30,6 +33,7 @@ from cold_start.proofs import (
     distrib_left,
     distrib_right,
     mul_assoc,
+    mul_cancel_right_succ,
     mul_comm,
     mul_left_comm,
     mul_succ_left,
@@ -74,3 +78,15 @@ def test_the_law_is_a_peano_theorem(name, claim, build):
 )
 def test_the_law_says_what_its_name_says(name, claim, build, env):
     assert evaluate(claim, N, env)
+
+
+def test_peano_cancels_a_positive_right_factor():
+    seq = check(mul_cancel_right_succ(), PEANO)
+
+    assert seq.concl == MUL_CANCEL_RIGHT_SUCC
+    assert seq.hyps == frozenset()
+
+
+@given(st.fixed_dictionaries({name: st.integers(0, 12) for name in ("x", "y", "z")}))
+def test_positive_right_cancellation_statement_is_true_in_n(env):
+    assert evaluate(MUL_CANCEL_RIGHT_SUCC, N, env)
