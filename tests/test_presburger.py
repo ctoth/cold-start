@@ -15,8 +15,15 @@ import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO, mul
 from cold_start.presburger import PRESBURGER, ZERO, add, numeral
-from cold_start.proofs import left_identity_proof, mul_proof
-from cold_start.syntax import Eq, Var
+from cold_start.proofs import (
+    ADD_CANCEL_LEFT,
+    ADD_CANCEL_RIGHT,
+    add_cancel_left,
+    add_cancel_right,
+    left_identity_proof,
+    mul_proof,
+)
+from cold_start.syntax import Eq, Implies, Var
 
 
 def test_peano_is_presburger_plus_multiplication():
@@ -33,6 +40,22 @@ def test_presburger_proves_left_identity():
     n = Var("n")
     assert seq.concl == Eq(add(ZERO, n), n)
     assert seq.hyps == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("claim", "build"),
+    [
+        (ADD_CANCEL_RIGHT, add_cancel_right),
+        (ADD_CANCEL_LEFT, add_cancel_left),
+    ],
+    ids=["right", "left"],
+)
+def test_presburger_proves_additive_cancellation(claim, build):
+    seq = check(build(), PRESBURGER)
+
+    assert seq.concl == claim
+    assert seq.hyps == frozenset()
+    assert type(claim) is Implies
 
 
 def test_peano_proves_a_multiplication_axiom_instance():

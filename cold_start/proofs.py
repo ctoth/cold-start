@@ -12,11 +12,11 @@ which one wrote the proof.
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
-from .presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, induction, numeral
+from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, ZERO, S, add, induction, numeral
 from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Sym, Trans
 from .robinson import ADD_ONE, ADD_SUCC
-from .syntax import Eq, Formula, Var
-from .tactics import axiom_rule, by_induction, lemma_rule
+from .syntax import Eq, Formula, Implies, Var
+from .tactics import axiom_rule, by_induction, lemma_rule, normalize_equality
 
 
 def left_identity_proof() -> Pf:
@@ -131,6 +131,14 @@ ADD_LEFT_COMM: Formula = Eq(  # x + (y + z) = y + (x + z)
     add(_x, add(_y, _z)),
     add(_y, add(_x, _z)),
 )
+ADD_CANCEL_RIGHT: Formula = Implies(  # x + z = y + z -> x = y
+    Eq(add(_x, _z), add(_y, _z)),
+    Eq(_x, _y),
+)
+ADD_CANCEL_LEFT: Formula = Implies(  # z + x = z + y -> x = y
+    Eq(add(_z, _x), add(_z, _y)),
+    Eq(_x, _y),
+)
 
 ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
 """The two recursion axioms, read left to right: the whole starting kit."""
@@ -185,6 +193,45 @@ def add_left_comm() -> Pf:
             assoc.instance({"x": _y, "y": _x, "z": _z}),  # (y + x) + z = y + (x + z)
         ),
     )
+
+
+def add_cancel_right() -> Pf:
+    """x + z = y + z -> x = y, by induction on the common suffix ``z``.
+
+    The base simply unfolds both zero sums.  In the step both sums unfold to
+    successors; successor injectivity peels those, and the induction hypothesis
+    cancels the remaining common suffix.  Unlike the equational laws above,
+    this proof needs implication introduction and modus ponens, so
+    ``normalize_equality`` supplies the algebraic transport inside each case.
+    """
+    base_hyp = Eq(add(_x, ZERO), add(_y, ZERO))
+    base = ImpIntro(
+        base_hyp,
+        normalize_equality(base_hyp, Assume(base_hyp), ADD_RULES),
+    )
+
+    step_hyp = Eq(add(_x, S(_z)), add(_y, S(_z)))
+    unfolded = normalize_equality(step_hyp, Assume(step_hyp), ADD_RULES)
+    injective = Inst(
+        Inst(Axiom(SUCC_INJ), "x", add(_x, _z)),
+        "y",
+        add(_y, _z),
+    )
+    peeled = MP(injective, unfolded)
+    step_result = MP(Assume(ADD_CANCEL_RIGHT), peeled)
+    step = ImpIntro(ADD_CANCEL_RIGHT, ImpIntro(step_hyp, step_result))
+
+    return induction("z", ADD_CANCEL_RIGHT, base, step)
+
+
+def add_cancel_left() -> Pf:
+    """z + x = z + y -> x = y, from commutativity and right cancellation."""
+    hyp = Eq(add(_z, _x), add(_z, _y))
+    comm = lemma_rule(ADD_COMM, add_comm())
+    zx_to_xz = comm.instance({"x": _z, "y": _x})
+    zy_to_yz = comm.instance({"x": _z, "y": _y})
+    right_cancel_hyp = Trans(Sym(zx_to_xz), Trans(Assume(hyp), zy_to_yz))
+    return ImpIntro(hyp, MP(add_cancel_right(), right_cancel_hyp))
 
 
 def add_kit() -> tuple:
