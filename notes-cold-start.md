@@ -47,11 +47,24 @@ UPDATE (later same session):
   `axiom` keyword; ind hypothesis for Induct), ℕ instantiation epilogue,
   statement-level from-Lean parser, lean_export/ColdStart.lean corpus.
   Q says lean IS installed (choco) — must tell lean-coder to actually compile.
-- MERGING tactics branch into main NOW: proofs.py conflicted (fixes-coder's
-  robinson_add_proof vs tactics section) — resolved as clean union (both
-  kept, imports merged). Editor pyright showed stale mid-edit errors; CLI
-  gates are authoritative. NEXT: run full gates, commit merge, notify
-  lean-coder about choco lean, then final docs pass + verifier gate.
+- MERGE DONE (9e7f225): tactics branch into main. proofs.py conflict
+  (robinson_add_proof vs tactics section) resolved as clean union. Gates on
+  merged main: 389 passed in 66s, ruff clean, pyright 0/0/0.
+  Gotcha learned: pyproject addopts already has -q, so `pytest -q` goes
+  double-quiet and SUPPRESSES the summary line — run plain `uv run pytest`.
+- Lean toolchain: `lean --version` on PATH -> 3.4.2 (choco package is Lean 3,
+  2018). Export targets Lean 4 -> told lean-coder to version-gate the compile
+  test (skip with message on <4, probe `elan which lean`), keep targeting
+  Lean 4, and report honestly that the export is NOT compile-checked here
+  unless a Lean 4 is found. Q may want elan installed for a real Lean 4.
+- tactics-analyst (Opus) dispatched on merged main: probing exact-conclusion
+  claims, Rule.instance "x!" renaming collisions, by_induction eigenvariable
+  edge, normalize budget enforcement, robinson_add_proof(1,500) recursion
+  depth, top-3 test gaps. Read-only, no fixes.
+NEXT: (1) lean-coder report -> review, merge worktree, gates; (2) analyst
+report -> triage findings, dispatch fixes if MAJOR+; (3) final docs pass
+(README/NOTES already updated for tactics by its coder; add lean layer),
+(4) done-check against Q's goal. Blockers: none, two agents in flight.
 
 Workstream: `workstreams/notation-formatter-deletion-first.md`. Target is exact:
 `notation.py` owns human parse/print notation; `syntax.py` owns object-language
