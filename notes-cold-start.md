@@ -1016,3 +1016,22 @@ LEAN 4 RESOLVED: 4.32.2 extracted to ~\.lean4, linked as elan toolchain
 lean.exe -> 4.32.2, sanity-compiled a Nat theorem OK. Told lean-coder to
 prefer the shim (bare `lean` is still choco 3.4.2) and make the compile
 test actually run against ColdStart.lean.
+
+ANALYST VERDICT (tactics layer, merged main): NO soundness defect, no
+BLOCKER. All four tactic theorems exact (empty hyps, literal conclusions).
+Findings -> dispatched to fixes-coder as fix list:
+1 MAJOR: rules-as-generator silently yields non-normal form (rules iterated
+  inside walk loop; fix = materialize tuple at public entry points).
+2 MINOR: normalize budget off-by-one (N-step chain needs N+1; budget=0
+  rejects even a normal form).
+3 MINOR: Rule garbage escapes as TypeError/AttributeError deep inside.
+4 MINOR: lemma_rule "hypothesis-free" contract unenforced (violation is
+  sound — hyps surface in sequent — but API overpromises; docs+tests).
+5 NOTEs: bare assert in _under_context spine walk; free_var_sorts dict
+  collapse on dual-sorted var. Plus missing tests: lemma_rule at all,
+  budget step counts, `!`-named-var adversarial, sorted-theory tactics.
+7: add_proof/mul_proof/robinson_add_proof recurse per unit of b
+  (RecursionError ~950-1000) -> convert to loops; checker itself fine at
+  depth (iterative claim HOLDS, round-trip clean at 500).
+Also: ruff format --check would reformat 18 files repo-wide (pre-existing;
+project gates on ruff check only — leave alone).
