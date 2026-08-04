@@ -30,9 +30,10 @@ out, and cannot -- see `A5_IS_NOT_A_PEANO_THEOREM` at the bottom.
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
-from .presburger import add
-from .proof import Pf, Sym, Trans
+from .presburger import SUCC_INJ, S, add
+from .proof import MP, Assume, Axiom, ImpIntro, Inst, Pf, Sym, Trans
 from .proofs import (
+    ADD_ASSOC,
     DISTRIB_LEFT,
     DISTRIB_RIGHT,
     MUL_ASSOC,
@@ -40,24 +41,40 @@ from .proofs import (
     MUL_LEFT_COMM,
     MUL_SUCC_LEFT,
     MUL_ZERO_LEFT,
+    add_assoc,
+    add_cancel_right,
     add_kit,
     distrib_left,
     distrib_right,
     mul_assoc,
+    mul_cancel_right_succ,
     mul_comm,
     mul_left_comm,
     mul_succ_left,
     mul_zero_left,
 )
 from .robinson import ONE, bridge
-from .syntax import Formula, Var
-from .tactics import axiom_rule, lemma_rule, normalize, prove_eq
+from .syntax import Eq, Formula, Implies, Var
+from .tactics import axiom_rule, lemma_rule, normalize, normalize_equality, prove_eq
 
-_a, _b = Var("a"), Var("b")
+_a, _b, _c = Var("a"), Var("b"), Var("c")
 
 BRIDGE_SUM: Formula = bridge(_a, _b, add(_a, _b))
 """Robinson's bridge at `c := a + b` -- the claim that his definition of
 addition is correct, stated in PEANO's own signature."""
+
+BRIDGE_RESIDUAL: Formula = Implies(
+    bridge(_a, _b, _c),
+    Eq(mul(add(_a, _b), _c), mul(_c, _c)),
+)
+"""The exact algebraic content left by a bridge hypothesis after expansion."""
+
+BRIDGE_CONVERSE_POS: Formula = Implies(
+    bridge(_a, _b, S(_c)),
+    Eq(add(_a, _b), S(_c)),
+)
+"""The missing half of Robinson's theorem: her bridge defines addition when
+the result is positive (represented as ``S(c)``)."""
 
 POLY_BUDGET = 400
 """Rewrite steps the bridge needs; the identity is degree four in two
@@ -95,6 +112,76 @@ def bridge_theorem() -> Pf:
     correct. Both sides normalise to the same polynomial; nothing is assumed
     about `a` and `b`, so this is the theorem for every pair of naturals."""
     return prove_eq(BRIDGE_SUM, poly_kit(), POLY_BUDGET)
+
+
+def bridge_residual() -> Pf:
+    """PEANO |- bridge(a,b,c) -> (a+b)c = c^2.
+
+    Polynomial normalization turns the assumed bridge into
+
+        S(ac + (bc + abc^2)) = S(c^2 + abc^2).
+
+    Successor injectivity removes the outer ``S``; associativity exposes the
+    identical ``abc^2`` suffix, and the derived additive-cancellation theorem
+    removes it.  Folding distributivity back up gives the displayed residual.
+    This implication is valid even at ``c = 0``; only the next cancellation
+    step needs positivity.
+    """
+    hyp = bridge(_a, _b, _c)
+    rules = poly_kit()
+    normalized = normalize_equality(hyp, Assume(hyp), rules, POLY_BUDGET)
+
+    ac = mul(_a, _c)
+    bc = mul(_b, _c)
+    c_squared = mul(_c, _c)
+    common = mul(_a, mul(_b, c_squared))
+    left = add(ac, add(bc, common))
+    right = add(c_squared, common)
+    injective = Inst(Inst(Axiom(SUCC_INJ), "x", left), "y", right)
+    peeled = MP(injective, normalized)
+
+    reassociate = lemma_rule(ADD_ASSOC, add_assoc()).instance(
+        {"x": ac, "y": bc, "z": common}
+    )
+    cancellable = Trans(reassociate, peeled)
+    cancel = Inst(
+        Inst(
+            Inst(add_cancel_right(), "z", common),
+            "x",
+            add(ac, bc),
+        ),
+        "y",
+        c_squared,
+    )
+    residual_normal = MP(cancel, cancellable)
+
+    residual = Eq(mul(add(_a, _b), _c), c_squared)
+    _, left_to_normal = normalize(residual.lhs, rules, POLY_BUDGET)
+    _, right_to_normal = normalize(residual.rhs, rules, POLY_BUDGET)
+    folded = Trans(left_to_normal, Trans(residual_normal, Sym(right_to_normal)))
+    return ImpIntro(hyp, folded)
+
+
+def bridge_converse_positive() -> Pf:
+    """PEANO |- bridge(a,b,S(c)) -> a+b=S(c), Robinson's positive converse.
+
+    ``bridge_residual`` leaves ``(a+b)S(c) = S(c)^2``.  The factor ``S(c)`` is
+    provably positive, so the separately derived multiplication-cancellation
+    theorem removes it.  Together with ``bridge_theorem`` this proves that the
+    bridge is exactly the graph of addition on Robinson's positive domain.
+    """
+    hyp = bridge(_a, _b, S(_c))
+    product_eq = MP(Inst(bridge_residual(), "c", S(_c)), Assume(hyp))
+    cancel = Inst(
+        Inst(
+            Inst(mul_cancel_right_succ(), "z", _c),
+            "x",
+            add(_a, _b),
+        ),
+        "y",
+        S(_c),
+    )
+    return ImpIntro(hyp, MP(cancel, product_eq))
 
 
 def _instance_at(sigma: dict, rewrite: tuple) -> Pf:
