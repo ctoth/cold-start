@@ -1,14 +1,22 @@
 """Worked proofs. Each function returns a proof term (proof.Pf), an inert
 recipe. It asserts nothing until checker.check() re-derives its sequent.
+
+Two styles live here. The first section builds proof terms *by hand*, node by
+node -- that is the readable spelling of what a derivation actually is. The
+second section builds them *by tactics* (`cold_start.tactics`), stating only the
+theorem and letting an untrusted search emit the term. Both end up in front of
+the same `check`, which is the point: the checker cannot tell, and does not care,
+which one wrote the proof.
 """
 
 from __future__ import annotations
 
 from .peano import MUL_SUCC_F, MUL_ZERO_F
-from .presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, add, induction, numeral
+from .presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, induction, numeral
 from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Trans
 from .robinson import ADD_ONE, ADD_SUCC
-from .syntax import Eq, Var
+from .syntax import Eq, Formula, Var
+from .tactics import axiom_rule, by_induction, lemma_rule
 
 
 def left_identity_proof() -> Pf:
@@ -95,8 +103,65 @@ def robinson_add_proof(a: int, b: int) -> Pf:
     return MP(succ_step, robinson_add_proof(a, b - 1))
 
 
+# ---------------------------------------------------------------------------
+# The same mathematics, built by tactics
+# ---------------------------------------------------------------------------
+# Below, nothing is spelled node by node: we state the theorem and let the
+# untrusted rewriting engine in `tactics.py` emit the proof term. Each lemma is
+# then handed to the next one as a rewrite rule -- a `lemma_rule` wraps the
+# lemma's own (hypothesis-free) proof term, so instantiating it introduces no
+# assumption and every theorem here still checks with an empty context.
+
+_x, _y, _z, _n = Var("x"), Var("y"), Var("z"), Var("n")
+
+LEFT_IDENTITY: Formula = Eq(add(ZERO, _n), _n)  # 0 + n = n
+SUCC_ADD: Formula = Eq(add(S(_x), _y), S(add(_x, _y)))  # S(x) + y = S(x + y)
+ADD_COMM: Formula = Eq(add(_x, _y), add(_y, _x))  # x + y = y + x
+ADD_ASSOC: Formula = Eq(add(add(_x, _y), _z), add(_x, add(_y, _z)))  # (x+y)+z = x+(y+z)
+
+ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
+"""The two recursion axioms, read left to right: the whole starting kit."""
+
+
+def left_identity() -> Pf:
+    """0 + n = n, by induction on n -- the tactic-built twin of
+    `left_identity_proof`. Both derive the very same sequent."""
+    return by_induction("n", LEFT_IDENTITY, ADD_RULES)
+
+
+def succ_add() -> Pf:
+    """S(x) + y = S(x + y), by induction on y. The axioms recurse on the SECOND
+    argument, so moving a successor out of the first one needs induction."""
+    return by_induction("y", SUCC_ADD, ADD_RULES)
+
+
+def add_comm() -> Pf:
+    """x + y = y + x, by induction on y, over the axioms plus both lemmas: the
+    base case is `x + 0 = 0 + x` (left identity) and the step turns `S(y) + x`
+    into `S(y + x)` (succ-add)."""
+    rules = (
+        *ADD_RULES,
+        lemma_rule(LEFT_IDENTITY, left_identity()),
+        lemma_rule(SUCC_ADD, succ_add()),
+    )
+    return by_induction("y", ADD_COMM, rules)
+
+
+def add_assoc() -> Pf:
+    """(x + y) + z = x + (y + z), by induction on z -- the axioms alone suffice,
+    since both sides recurse on the same trailing argument."""
+    return by_induction("z", ADD_ASSOC, ADD_RULES)
+
+
 if __name__ == "__main__":
     from .checker import check
     from .presburger import PRESBURGER
 
     print("left identity:", check(left_identity_proof(), PRESBURGER))
+    for name, build in (
+        ("left identity (tactic)", left_identity),
+        ("succ-add", succ_add),
+        ("commutativity", add_comm),
+        ("associativity", add_assoc),
+    ):
+        print(f"{name}:", check(build(), PRESBURGER))

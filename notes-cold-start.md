@@ -32,9 +32,26 @@ Two Opus coder agents dispatched:
 Known cosmetic issue: repo-root `ruff check .` sees F401s inside the agent
 worktree under .claude/ — goes away when the worktree is cleaned up post-merge.
 
-NEXT: when tactics-coder reports — review its API, merge worktree branch into
-main, re-run full gates in main, refresh README/NOTES.md (prover layer now
-exists; theorem corpus grew), final commit. Blockers: none; waiting on agent.
+UPDATE (later same session):
+- tactics-coder DONE: 9 commits on worktree branch. tactics.py API: match /
+  Rule(.fire/.instance/.flipped) / axiom_rule / lemma_rule / hypothesis_rule /
+  rewrite_step (leftmost-outermost) / normalize / prove_eq / by_induction.
+  Theorems by tactics, all check() with empty hyps: LEFT_IDENTITY, SUCC_ADD
+  (S(x)+y=S(x+y)), ADD_COMM, ADD_ASSOC. Its gates: 356 passed, ruff+pyright 0.
+  Two pinned API facts: (1) sequential Inst captures — Rule.instance renames
+  holes to fresh x! names before substituting (simultaneous subst spelled in
+  sequential primitive); (2) IH is a ground rule + ImpIntro discharge is what
+  satisfies Induct's eigenvariable condition.
+- Q asked for a Lean compat layer -> lean-coder (Opus, own worktree) RUNNING:
+  cold_start/lean.py, conditional-theorem export (axioms as ∀-hypotheses, no
+  `axiom` keyword; ind hypothesis for Induct), ℕ instantiation epilogue,
+  statement-level from-Lean parser, lean_export/ColdStart.lean corpus.
+  Q says lean IS installed (choco) — must tell lean-coder to actually compile.
+- MERGING tactics branch into main NOW: proofs.py conflicted (fixes-coder's
+  robinson_add_proof vs tactics section) — resolved as clean union (both
+  kept, imports merged). Editor pyright showed stale mid-edit errors; CLI
+  gates are authoritative. NEXT: run full gates, commit merge, notify
+  lean-coder about choco lean, then final docs pass + verifier gate.
 
 Workstream: `workstreams/notation-formatter-deletion-first.md`. Target is exact:
 `notation.py` owns human parse/print notation; `syntax.py` owns object-language

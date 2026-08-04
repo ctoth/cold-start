@@ -34,7 +34,10 @@ the verifier, not the object.
                  into a definable bridge.
 - `algebra.py` — monoids, rings, sorted monoid actions, and finite models.
 - `notation.py` — untrusted human parser/formatter for terms and formulas.
-- `proofs.py`  — worked proof constructors such as left_identity_proof().
+- `tactics.py` — UNTRUSTED prover: matching, rewrite rules, normalization,
+                 prove_eq, by_induction. Emits proof terms; has no authority.
+- `proofs.py`  — worked proof constructors, by hand (left_identity_proof) and by
+                 tactics (add_comm, add_assoc, ...).
 - `verify.py`  — CLI: checks a binary proof in a SEPARATE process.
 - `tests/`     — example/regression tests, property tests, model probes,
                  notation tests, quantifier/classical/sort/algebra coverage.
