@@ -719,8 +719,58 @@ Baseline drift:
 
 Commit:
 
-- pending this record's initial plan commit
+- `f37d8b0 plan: record repository cleanup preflight`
 
 Next slice:
 
 - Iteration 1 - tool and gate safety
+
+### Iteration 1 - Tool and Gate Safety - Complete
+
+Surfaces:
+
+- caller-supplied in-place mutation target
+  - Disposition: delete
+  - Owner after cleanup: disposable detached Git worktree created by
+    `tools/mutate.py`
+  - Action: source arguments are validated as tracked repository-relative files;
+    all writes occur only at the corresponding path in the temporary worktree.
+- mutation cleanup
+  - Disposition: rewrite
+  - Owner after cleanup: verified Git worktree lifecycle
+  - Action: create and verify a detached worktree, remove it with Git, require the
+    directory to be absent, then remove only the known-empty temporary parent.
+- double-quiet pytest gate
+  - Disposition: delete
+  - Owner after cleanup: `pyproject.toml` supplies the single quiet setting.
+- ambiguous strict Pyright label
+  - Disposition: rewrite
+  - Owner after cleanup: `tools/gate.ps1` reports `pyright (basic)`.
+
+Red evidence:
+
+- Fail: `uv run pytest -o addopts= -q tests\test_tools.py`
+  - 3 failed: safe resolver absent, absolute mutation path accepted, gate still
+    double-quieted pytest and did not name basic mode.
+
+Green evidence:
+
+- Pass: `uv run pytest -o addopts= -q tests\test_tools.py`
+  - 3 passed in 0.20 seconds
+- Pass: focused checker/quantifier/logic/sort/ring/tool group
+  - 75 passed in 30.62 seconds
+- Pass: `uv run ruff check tools tests`
+  - all checks passed after mechanical import sorting
+- Pass: `uv run pyright`
+  - 0 errors, 0 warnings, 0 informations
+- Pass: `uv run python tools\mutate.py cold_start\peano.py`
+  - disposable worktree created, verified, and removed; 0 mutation sites; registered
+    worktree inventory returned exactly to its pre-run set.
+
+Commit:
+
+- pending Iteration 1 commit
+
+Next slice:
+
+- Iteration 2 - exact iterative emitter

@@ -1,4 +1,4 @@
-# The full repository gate: pytest, Ruff, Pyright -- in that order, strict.
+# The full repository gate: pytest, Ruff, Pyright basic -- in that order.
 #
 # Every native command is followed by an explicit $LASTEXITCODE test.
 # $ErrorActionPreference='Stop' alone does NOT stop on a native command's
@@ -20,8 +20,8 @@ function Invoke-Gate {
     }
 }
 
-Invoke-Gate -Label 'pytest'  -Command @('uv', 'run', 'pytest', '-q')
+Invoke-Gate -Label 'pytest'  -Command @('uv', 'run', 'pytest')
 Invoke-Gate -Label 'ruff'    -Command @('uv', 'run', 'ruff', 'check', '.')
-Invoke-Gate -Label 'pyright' -Command @('uv', 'run', 'pyright')
+Invoke-Gate -Label 'pyright (basic)' -Command @('uv', 'run', 'pyright')
 
 Write-Host 'GATE GREEN' -ForegroundColor Green
