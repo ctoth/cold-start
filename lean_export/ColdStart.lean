@@ -74,9 +74,9 @@ theorem coldstart_robinson_add_two_three {M : Type} (zero : M) (succ : M → M) 
 
 example : ∀ n : Nat, Nat.add Nat.zero n = n :=
   coldstart_left_identity (M := Nat)
-    (add := Nat.add)
-    (succ := Nat.succ)
     (zero := Nat.zero)
+    (succ := Nat.succ)
+    (add := Nat.add)
     (ax_add_succ := fun x y => rfl)
     (ax_add_zero := fun x => rfl)
     (ax_succ_inj := fun x y h => Nat.noConfusion h (fun h' => h'))
@@ -85,9 +85,9 @@ example : ∀ n : Nat, Nat.add Nat.zero n = n :=
 
 example : Nat.add (Nat.succ (Nat.succ Nat.zero)) (Nat.succ (Nat.succ (Nat.succ Nat.zero))) = Nat.succ (Nat.succ (Nat.succ (Nat.succ (Nat.succ Nat.zero)))) :=
   coldstart_add_two_three (M := Nat)
-    (add := Nat.add)
-    (succ := Nat.succ)
     (zero := Nat.zero)
+    (succ := Nat.succ)
+    (add := Nat.add)
     (ax_add_succ := fun x y => rfl)
     (ax_add_zero := fun x => rfl)
     (ax_succ_inj := fun x y h => Nat.noConfusion h (fun h' => h'))
@@ -95,10 +95,10 @@ example : Nat.add (Nat.succ (Nat.succ Nat.zero)) (Nat.succ (Nat.succ (Nat.succ N
 
 example : Nat.mul (Nat.succ (Nat.succ Nat.zero)) (Nat.succ (Nat.succ (Nat.succ Nat.zero))) = Nat.succ (Nat.succ (Nat.succ (Nat.succ (Nat.succ (Nat.succ Nat.zero))))) :=
   coldstart_mul_two_three (M := Nat)
+    (zero := Nat.zero)
+    (succ := Nat.succ)
     (add := Nat.add)
     (mul := Nat.mul)
-    (succ := Nat.succ)
-    (zero := Nat.zero)
     (ax_add_succ := fun x y => rfl)
     (ax_add_zero := fun x => rfl)
     (ax_mul_succ := fun x y => rfl)

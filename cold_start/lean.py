@@ -48,8 +48,6 @@ from . import peano as _peano
 from . import presburger as _presburger
 from . import robinson as _robinson
 from .checker import Theory, check
-from .peano import PEANO
-from .presburger import PRESBURGER
 from .proof import (
     MP,
     RAA,
@@ -70,7 +68,6 @@ from .proof import (
     Trans,
 )
 from .proofs import add_proof, left_identity_proof, mul_proof, robinson_add_proof
-from .robinson import ROBINSON_PEANO
 from .sequent import Sequent
 from .syntax import (
     Bottom,
@@ -146,11 +143,6 @@ def lean_name(name: str) -> str:
     if name.isidentifier():
         return f"{name}_"
     return "«" + name.replace("»", "") + "»"
-
-
-def symbol_name(symbol: str) -> str:
-    """The Lean identifier for a function symbol (`+` -> `add`, `S` -> `succ`)."""
-    return SYMBOL_NAMES.get(symbol) or lean_name(symbol)
 
 
 @dataclass(slots=True)
@@ -727,7 +719,7 @@ class _Export:
         if self.theory.zero is not None:
             roots.append(self.theory.zero)
         self.symbols = _symbols(roots)
-        self.supply = _Names({symbol_name(s) for s in self.symbols})
+        self.supply = _Names({_ABSTRACT.symbol(s) for s in self.symbols})
         self.axiom_names = {}
         for i, ax in enumerate(sorted(self.theory.axioms, key=render_statement)):
             self.axiom_names[ax] = self.supply.fresh(AXIOM_LABELS.get(ax, f"ax{i + 1}"))
@@ -760,6 +752,12 @@ class _Export:
 
     # --- the theorem --------------------------------------------------------
 
+    def symbol_order(self) -> list:
+        """The theory's function symbols as the theorem takes them: constants
+        first, then by name -- so an arithmetic signature reads zero, succ, add,
+        mul. Deterministic, and shared by the theorem and its `Nat` instance."""
+        return sorted(self.symbols, key=lambda s: (self.symbols[s], _ABSTRACT.symbol(s)))
+
     def theorem(self, name: str) -> str:
         concl = self.subst(self.seq.concl)
         hyps = [self.subst(h) for h in sorted(self.seq.hyps, key=render_statement)]
@@ -768,8 +766,7 @@ class _Export:
 
         params = [f"{{{CARRIER} : Type}}"]
         params += [
-            f"({symbol_name(s)} : {_fun_type(a)})"
-            for s, a in sorted(self.symbols.items(), key=lambda kv: (kv[1], symbol_name(kv[0])))
+            f"({_ABSTRACT.symbol(s)} : {_fun_type(self.symbols[s])})" for s in self.symbol_order()
         ]
         params += [f"({lean_name(v)} : {CARRIER})" for v in hyp_vars]
         params += [f"({self.open_names[h]} : {render_formula(h)})" for h in hyps]
@@ -797,10 +794,7 @@ class _Export:
             raise LeanError("cannot instantiate a theorem with open hypotheses at Nat")
         statement = _render_statement(self.subst(self.seq.concl), _NAT)
         args = [f"({CARRIER} := Nat)"]
-        args += [
-            f"({symbol_name(s)} := {_NAT.symbol(s)})"
-            for s in sorted(self.symbols, key=symbol_name)
-        ]
+        args += [f"({_ABSTRACT.symbol(s)} := {_NAT.symbol(s)})" for s in self.symbol_order()]
         for ax in sorted(self.theory.axioms, key=lambda a: self.axiom_names[a]):
             label = self.axiom_names[ax]
             proof = NAT_AXIOM_PROOFS.get(label)
@@ -816,7 +810,7 @@ class _Export:
         """The induction principle as a hypothesis: exactly the schema our
         `Induct` rule implements, with the theory's own base term."""
         zero = self.term_text(self.theory.zero, _L_ATOM)
-        succ = symbol_name(self.theory.succ or "S")
+        succ = _ABSTRACT.symbol(self.theory.succ or "S")
         return (
             f"∀ P : {CARRIER} → Prop, P {zero} → "
             f"(∀ n : {CARRIER}, P n → P ({succ} n)) → ∀ n : {CARRIER}, P n"
@@ -908,7 +902,7 @@ class _Export:
     def _cong(self, pf, sigma, env, out, stack) -> None:
         """`congrArg f h₁` gives `f a₁ = f b₁` (partially applied for an n-ary f);
         each further argument is folded on with `congr : f = g → a = b → f a = g b`."""
-        name = symbol_name(pf.fun)
+        name = _ABSTRACT.symbol(pf.fun)
         if not pf.args:
             out.append(f"(Eq.refl {name})")
             return
@@ -1101,10 +1095,15 @@ def corpus_entries() -> list:
     """The proofs the generated file carries: `(name, proof, theory, at_nat)`.
     `at_nat` says whether the epilogue may instantiate it at Lean's `Nat`."""
     return [
-        ("coldstart_left_identity", left_identity_proof(), PRESBURGER, True),
-        ("coldstart_add_two_three", add_proof(2, 3), PRESBURGER, True),
-        ("coldstart_mul_two_three", mul_proof(2, 3), PEANO, True),
-        ("coldstart_robinson_add_two_three", robinson_add_proof(2, 3), ROBINSON_PEANO, False),
+        ("coldstart_left_identity", left_identity_proof(), _presburger.PRESBURGER, True),
+        ("coldstart_add_two_three", add_proof(2, 3), _presburger.PRESBURGER, True),
+        ("coldstart_mul_two_three", mul_proof(2, 3), _peano.PEANO, True),
+        (
+            "coldstart_robinson_add_two_three",
+            robinson_add_proof(2, 3),
+            _robinson.ROBINSON_PEANO,
+            False,
+        ),
     ]
 
 
@@ -1154,7 +1153,6 @@ __all__ = [
     "render_statement",
     "render_term",
     "substitute",
-    "symbol_name",
     "universal_closure",
     "uses_induction",
 ]
