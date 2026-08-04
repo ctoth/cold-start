@@ -131,8 +131,22 @@ The code is the `cold_start/` package (flat, no src-layout):
   divisibility only (`every divisor ≠ 1 is even`). A 16-node bridge into
   PEANO, **every obligation paid** (toll: 116,358): product closure fell to
   course-of-values descent through the dyadic layers.
-- **`cold_start/ledger.py`** — the bridge ledger: every landed artifact
-  re-verified and measured in one table (`uv run python -m cold_start.ledger`).
+- **`cold_start/quotient.py`** — **k-dimensional quotient interpretations**,
+  the general Tarski–Mostowski–Robinson bridge: a source element becomes a
+  k-tuple of target elements and source equality lands on a DEFINED
+  equivalence, which the artifact must prove is an equivalence respected by
+  every translated symbol (respect at identical arguments is uniqueness).
+- **`cold_start/integers.py`** — the Grothendieck bridge, the quotient
+  machinery's first crossing: **the abelian group of integers interpreted
+  into PRESBURGER**, a pair `(a,b)` denoting `a−b`, equivalent when
+  `a+d = c+b`; zero the diagonal, addition componentwise, negation the swap.
+  A 28-node bridge, **every obligation paid** (toll: 155,545) — including
+  `x + (−x) = 0`, an axiom about subtraction landed as a theorem of a theory
+  with no negative numbers anywhere. Every payment is one cancellation
+  recipe: `Cong`-sum the hypotheses, AC-shuffle, cancel the suffix.
+- **`cold_start/ledger.py`** — the bridge ledger: every landed artifact of
+  either kind re-verified and measured in one table
+  (`uv run python -m cold_start.ledger`).
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
 - **`cold_start/lean/syntax.py`**, **`cold_start/lean/proof.py`**, and
@@ -200,6 +214,10 @@ The same lockfile-backed gate, generated-file check, and Lean compilation run in
       (`cold_start.parity`) — **complete**, every obligation paid
 - [x] Ordering (`<=`), transport, and strong induction (`cold_start.order`);
       primality still open
+- [x] k-dimensional quotient interpretations (`cold_start.quotient`) — the
+      general TMR notion — with the integers landed as the first crossing
+      (`cold_start.integers`): ℤ's abelian group into PRESBURGER, complete;
+      the commutative ring (adding `·` on pairs into PEANO) still open
 - [ ] Pay Robinson Theorem 1.2's totality/uniqueness debts (the CRT/prime
       step): the order kit and Euclid-at-2 now stock its H1/H2 frontier;
       then Quine 1946 concatenation theory

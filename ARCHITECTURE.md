@@ -242,7 +242,28 @@ induction compiled to the structural `Induct` rule** through
 `reach(n) := ∀z (z≤n → P(z))`, with `tactics.transport` (Leibniz's law as a
 combinator) carrying formulas along equalities at the seams. An odd divisor
 of `S(n)·y` halves through the even `S(n)` and drops one dyadic layer by
-Euclid-at-2, where the reach hypothesis refutes it. `ledger.py` renders
-every landed artifact — bridge size, toll, payments, open debts — as one
-table, re-verified through the trusted checker on each run
-(`uv run python -m cold_start.ledger`).
+Euclid-at-2, where the reach hypothesis refutes it.
+
+`quotient.py` generalizes the bridge layer itself to the full
+Tarski–Mostowski–Robinson notion: **k-dimensional interpretations with a
+defined equality**. A source element becomes a k-tuple of target elements
+(`x ↦ x.1 … x.k`), a hoisted application binds a block of k quantifiers, and
+source `=` translates to a definable equivalence `~` — always the honest
+ε-form, never the witness shortcut, so soundness needs no saturation
+assumption. The artifact owes what the generality costs: `~` must be proved
+an equivalence, and every translated symbol must *respect* it (equivalent
+arguments force equivalent results — which at identical arguments is
+uniqueness-up-to-~, so no separate uniqueness label exists to quietly
+weaken). `interp.py`'s one-dimensional machinery is untouched; the report
+types are shared. `integers.py` is the first crossing: the abelian group of
+integers into PRESBURGER via Grothendieck pairs — `(a,b)` denoting `a−b`,
+`~` the subtraction-free `a+d = c+b`, zero the diagonal, addition
+componentwise, negation the swap. The 28-node bridge is **complete** (toll:
+155,545), and `x + (−x) = 0` — false of the naturals — is a paid theorem of
+their own additive theory. Every payment core is one recipe
+(`by_cancellation`): `Cong`-sum the oriented hypotheses, AC-shuffle with
+`add_kit`'s ordered rewriting, cancel the common suffix.
+
+`ledger.py` renders every landed artifact of either kind — bridge size,
+toll, payments, open debts — as one table, re-verified through the trusted
+checker on each run (`uv run python -m cold_start.ledger`).
