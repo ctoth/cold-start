@@ -1088,3 +1088,16 @@ us), final wrap. This notes edit deliberately uncommitted until main is free.
   rejects. NON-VACUITY PROBED: neutering _fresh's avoid loop makes the bang test fail
   (x and x! collapse, proof proves a different equation). Restored via git checkout.
 - NEXT: item 7, iterative add_proof/mul_proof/robinson_add_proof (separate commit).
+- Item 7 IN PROGRESS: all three builders converted to loops (build base, fold upward).
+  Proof terms verified IDENTICAL to the recursive spelling over a 7x7 grid of (a,b)
+  against a scratch reference implementation -- 0 mismatches. Red confirmed first:
+  add_proof/robinson_add_proof(1,2000) both RecursionError; threshold was b~990.
+  NOW SIZING the test: timing run at 2000 exceeded a 120s foreground timeout, so
+  check() at that depth is the expensive part (quadratic-ish: each of b steps embeds
+  numerals of size up to b). Waiting on the background timing to pick sizes.
+- Item 7 DONE. Sizing measured: add_proof(1,2000) build 2.4s/check 4.3s;
+  robinson_add_proof(1,2000) build 9.2s/CHECK 82s (bridge repeats each argument ->
+  quadratic term growth); mul_proof(2,1200) build 1.7s/check 44s. So the test builds
+  at DEEP=1200 (recursion limit is exactly 1000; the recursive spelling was confirmed
+  RecursionError at 1000/1100/1200) and checks end-to-end at 300/250. ~12s added,
+  suite now 75s. check()'s own iterativeness is pinned separately at 6000 deep.

@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 
 import cold_start.proof as P
 from cold_start.checker import Sequent, check
-from cold_start.peano import PEANO
+from cold_start.peano import PEANO, mul
 from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
@@ -22,6 +22,8 @@ from cold_start.presburger import (
 )
 from cold_start.proof import from_bytes, to_bytes
 from cold_start.proofs import add_proof as prove_add
+from cold_start.proofs import mul_proof, robinson_add_proof
+from cold_start.robinson import ROBINSON_PEANO, bridge
 from cold_start.syntax import (
     Bottom,
     BVar,
@@ -287,6 +289,44 @@ def test_check_handles_arbitrarily_deep_proofs_without_recursion():
 
     # (4) deep substitution: Inst rewriting a free variable across the deep concl.
     assert isinstance(check(P.Inst(cong, "y", x), PEANO), Sequent)
+
+
+DEEP = 1200
+"""Past Python's default recursion limit of 1000 -- the depth at which the old
+recursive proof builders raised RecursionError. Kept just past it: the cost of
+checking a proof this long grows quadratically."""
+
+
+def test_the_worked_proof_builders_are_iterative_too():
+    """`check` being iterative is only half of it: a proof no one can BUILD is
+    just as unusable. These builders recursed one Python frame per unit of the
+    second argument, so they died with a RecursionError around b = 1000 --
+    before the checker they feed ever saw the term.
+
+    DEEP is past Python's recursion limit, which is what makes this a
+    regression test: the recursive spelling raised RecursionError at exactly
+    that limit. The Robinson chain is then checked end to end at a smaller
+    size, because re-checking it at DEEP costs ~80 seconds -- the bridge
+    repeats each of its arguments, so the terms grow quadratically -- and
+    `check`'s own freedom from recursion is pinned by the test above at a
+    depth several times greater than anything here."""
+    seq = check(prove_add(1, DEEP), PEANO)  # cheap enough to check in full
+    assert seq.concl == Eq(add(numeral(1), numeral(DEEP)), numeral(1 + DEEP))
+    assert seq.hyps == frozenset()
+
+    assert isinstance(robinson_add_proof(1, DEEP), P.Pf)  # builds at all: the fix
+    seq = check(robinson_add_proof(1, 300), ROBINSON_PEANO)
+    assert seq.concl == bridge(numeral(1), numeral(300), numeral(301))
+    assert seq.hyps == frozenset()
+
+
+def test_the_multiplication_builder_is_iterative_too():
+    # mul_proof recursed on b as well, and leans on add_proof for each partial
+    # product. Same split: build past the old cliff, check at a cheaper size.
+    assert isinstance(mul_proof(2, DEEP), P.Pf)
+    seq = check(mul_proof(2, 250), PEANO)
+    assert seq.concl == Eq(mul(numeral(2), numeral(250)), numeral(500))
+    assert seq.hyps == frozenset()
 
 
 # --- validation never false-rejects a genuinely canonical value -----------
