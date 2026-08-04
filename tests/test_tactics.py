@@ -13,6 +13,17 @@ import pytest
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
 from cold_start.proof import Axiom, Inst
+from cold_start.proofs import (
+    ADD_ASSOC,
+    ADD_COMM,
+    LEFT_IDENTITY,
+    SUCC_ADD,
+    add_assoc,
+    add_comm,
+    left_identity,
+    left_identity_proof,
+    succ_add,
+)
 from cold_start.syntax import Eq, Fun, Implies, Var
 from cold_start.tactics import (
     TacticError,
@@ -27,7 +38,7 @@ from cold_start.tactics import (
 
 ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
 
-x, y, n = Var("x"), Var("y"), Var("n")
+x, y, z, n = Var("x"), Var("y"), Var("z"), Var("n")
 
 
 # --- first-order matching -------------------------------------------------
@@ -234,3 +245,31 @@ def test_by_induction_reports_the_offending_case():
     pred = Eq(add(ZERO, n), S(n))  # false, so the base case 0 + 0 = S(0) fails
     with pytest.raises(TacticError):
         by_induction("n", pred, ADD_RULES)
+
+
+# --- the theorems, all four built by tactics and judged by check() --------
+
+
+def test_left_identity_by_tactics_matches_the_hand_built_proof():
+    seq = check(left_identity(), PRESBURGER)
+    assert seq.concl == LEFT_IDENTITY == Eq(add(ZERO, n), n)
+    assert seq.hyps == frozenset()
+    assert seq == check(left_identity_proof(), PRESBURGER)
+
+
+def test_successor_pushes_out_of_a_sum():
+    seq = check(succ_add(), PRESBURGER)
+    assert seq.concl == SUCC_ADD == Eq(add(S(x), y), S(add(x, y)))
+    assert seq.hyps == frozenset()
+
+
+def test_addition_is_commutative():
+    seq = check(add_comm(), PRESBURGER)
+    assert seq.concl == ADD_COMM == Eq(add(x, y), add(y, x))
+    assert seq.hyps == frozenset()
+
+
+def test_addition_is_associative():
+    seq = check(add_assoc(), PRESBURGER)
+    assert seq.concl == ADD_ASSOC == Eq(add(add(x, y), z), add(x, add(y, z)))
+    assert seq.hyps == frozenset()
