@@ -60,7 +60,8 @@ is just the swap `(b, a)`, and the sum lands on the diagonal.
 
 ## 4. The toll's engine: one cancellation recipe
 
-Every payment core is the same argument (`integers.by_cancellation`):
+Every payment core is the same argument (now `combination.by_combination`
+with no coefficients; the ring bridge later generalized it):
 
 1. orient each hypothesis (`Sym` where needed) and **sum them with `Cong`**
    into one equation `H_L = H_R`;

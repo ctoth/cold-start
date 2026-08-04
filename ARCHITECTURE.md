@@ -261,8 +261,21 @@ integers into PRESBURGER via Grothendieck pairs — `(a,b)` denoting `a−b`,
 componentwise, negation the swap. The 28-node bridge is **complete** (toll:
 155,545), and `x + (−x) = 0` — false of the naturals — is a paid theorem of
 their own additive theory. Every payment core is one recipe
-(`by_cancellation`): `Cong`-sum the oriented hypotheses, AC-shuffle with
-`add_kit`'s ordered rewriting, cancel the common suffix.
+(`combination.by_combination` with no coefficients): `Cong`-sum the oriented
+hypotheses, AC-shuffle with `add_kit`'s ordered rewriting, cancel the common
+suffix.
+
+`ring_z.py` completes that crossing: **the full commutative ring of the
+integers into PEANO**, same pairs, same `~`, plus `1` one step above the
+diagonal and multiplication as the difference product
+`(x₁y₁+x₂y₂, x₁y₂+x₂y₁)`. All 23 obligations are paid (bridge 51 nodes,
+toll 876,035). Two tooling pieces carry it: `peano_proofs.ring_kit` extends
+the addition kit with distribution and ordered multiplicative AC, giving
+`prove_eq` a polynomial normal form (a decision procedure for
+commutative-semiring identities); and `combination.by_combination` admits
+TERM COEFFICIENTS — a hypothesis `L = R` may join the sum as `L·c = R·c` —
+which is exactly what respect for `·` needs, since equal differences
+multiply only after each `~` is scaled by the other factor's components.
 
 `ledger.py` renders every landed artifact of either kind — bridge size,
 toll, payments, open debts — as one table, re-verified through the trusted
