@@ -66,6 +66,24 @@ report -> triage findings, dispatch fixes if MAJOR+; (3) final docs pass
 (README/NOTES already updated for tactics by its coder; add lean layer),
 (4) done-check against Q's goal. Blockers: none, two agents in flight.
 
+LEAN 4 TOOLCHAIN SAGA (Q asked "should I just get 4?" -> yes, doing it):
+- choco `lean` = 3.4.2 only (package dead). winget has official Lean.Elan
+  4.2.3 -> installed OK; exes land in %LOCALAPPDATA%\Microsoft\WinGet\Links
+  (NOT ~\.elan\bin). choco lean 3.4.2 still shadows `lean` on PATH — Q can
+  `choco uninstall lean`; any compile test must use elan's shim explicitly.
+- elan's own downloader FAILS instantly against release.lean-lang.org
+  ([7] connect fail in 7-37ms, sandboxed AND unsandboxed) while curl.exe
+  and Test-NetConnection to the same host succeed — looks like a libcurl/
+  IPv6 quirk in elan, not a network block. `leanprover/lean4:stable` spec
+  still resolves via release.lean-lang.org, same failure.
+- Workaround IN FLIGHT: downloading lean-4.32.2-windows.zip (794MB) from
+  GitHub releases to ~\Downloads (background job). Then: extract +
+  `elan toolchain link stable-manual <dir>` + `elan default stable-manual`,
+  verify `lean --version` via the Links shim, then compile
+  lean_export/ColdStart.lean for the real independent-kernel check.
+- tactics-analyst: idle-pinged once, report still owed. lean-coder: active
+  (corpus emitter + parser visible in worktree diagnostics).
+
 Workstream: `workstreams/notation-formatter-deletion-first.md`. Target is exact:
 `notation.py` owns human parse/print notation; `syntax.py` owns object-language
 structure and structural operations only. Deleted the syntax-owned formatter
@@ -992,3 +1010,9 @@ proof.MP(imp,ant), proofs.add_proof pattern. No blocker yet.
   referenced there (ruff --fix pruned the now-unused numeral import when the
   cross-process robinson test was upgraded from the bare axiom instance to the derived
   proof). No blocker; work complete.
+
+LEAN 4 RESOLVED: 4.32.2 extracted to ~\.lean4, linked as elan toolchain
+`lean4-manual`, set default. Shim: %LOCALAPPDATA%\Microsoft\WinGet\Links\
+lean.exe -> 4.32.2, sanity-compiled a Nat theorem OK. Told lean-coder to
+prefer the shim (bare `lean` is still choco 3.4.2) and make the compile
+test actually run against ColdStart.lean.
