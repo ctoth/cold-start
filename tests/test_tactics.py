@@ -9,6 +9,8 @@ false theorem.
 from __future__ import annotations
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
@@ -273,3 +275,29 @@ def test_addition_is_associative():
     seq = check(add_assoc(), PRESBURGER)
     assert seq.concl == ADD_ASSOC == Eq(add(add(x, y), z), add(x, add(y, z)))
     assert seq.hyps == frozenset()
+
+
+# --- the tactics agree with arithmetic, on generated input ----------------
+
+
+@given(st.integers(0, 20), st.integers(0, 20))
+@settings(deadline=None)
+def test_prove_eq_computes_numeral_addition(a, b):
+    """The engine reduces a closed sum with nothing but the two recursion
+    axioms, and the checker agrees -- for every small a and b, not just the
+    ones I thought to write down. Compare `proofs.add_proof`, which builds the
+    same theorem by hand: here we only state it."""
+    goal = Eq(add(numeral(a), numeral(b)), numeral(a + b))
+    seq = check(prove_eq(goal, ADD_RULES), PRESBURGER)
+    assert seq.concl == goal
+    assert seq.hyps == frozenset()
+
+
+@given(st.integers(0, 20), st.integers(0, 20))
+@settings(deadline=None)
+def test_a_false_sum_is_refused_rather_than_mis_proved(a, b):
+    """The failure direction: the tactics never emit a proof of a false
+    equation -- they raise. (And if they ever did emit one, `check` would be
+    the one to say no.)"""
+    with pytest.raises(TacticError):
+        prove_eq(Eq(add(numeral(a), numeral(b)), numeral(a + b + 1)), ADD_RULES)
