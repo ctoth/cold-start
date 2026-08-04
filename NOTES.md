@@ -7,11 +7,13 @@ trusted `check(proof, theory)` re-derives the sequent from inert data. Trust =
 the verifier, not the object.
 
 ## Current state: DONE & GREEN
-- pytest: **453 passed**
+- pytest: **1031 passed**
 - Regression coverage includes exact-type subclass attacks, mutable-args
   aliasing, deep non-recursive traversal, hamblin byte round-trips, cross-process
   verification, quantifier rules, classical rules, many-sorted checking, model
-  soundness probes, rings/monoids, Presburger/Peano, and the Robinson bridge.
+  soundness probes, rings/monoids, Presburger/Peano, the Robinson bridge, and
+  Padoa's method (a prime-swapping automorphism of `(N⁺, ·)` that preserves `·`
+  but breaks `+` and `S`, so `+` is not definable from `·` alone).
 - ruff check .: clean
 - pyright (repo-rooted CLI, uses pyrightconfig.json): **0 errors, 0 warnings**
   (NOTE: the editor's inline Pyright is rooted at parent `code\` and ignores our
