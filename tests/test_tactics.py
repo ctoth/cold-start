@@ -120,6 +120,12 @@ def test_a_flipped_rule_runs_the_equation_right_to_left():
     assert seq.hyps == frozenset()
 
 
+def test_firing_a_rule_yields_the_rewritten_term_and_its_proof_together():
+    new, pf = axiom_rule(ADD_SUCC_F).fire({"x": ZERO, "y": n})
+    assert new == S(add(ZERO, n))
+    assert check(pf, PRESBURGER).concl == Eq(add(ZERO, S(n)), new)
+
+
 def test_a_hypothesis_rule_is_ground_and_keeps_its_hypothesis():
     eq = Eq(add(ZERO, n), n)
     rule = hypothesis_rule(eq)

@@ -12,6 +12,7 @@ The layer is a small equational engine:
 
     match(pattern, target)         first-order matching, pattern Vars are holes
     Rule                           a directed equation + the Pf that justifies it
+    Rule.fire(sigma)               the rewritten term and its proof, together
     rewrite_step(term, rules)      rewrite the leftmost-outermost redex
     normalize(term, rules)         rewrite to a fixpoint, Trans-chained
     prove_eq(goal, rules)          normalize both sides, join with Trans/Sym
@@ -20,11 +21,11 @@ The layer is a small equational engine:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, is_dataclass
 
 from .presburger import ZERO, S, induction
 from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Sym, Trans
-from .syntax import Eq, Formula, Fun, Node, Term, Var
+from .syntax import Eq, Formula, Fun, Node, Term, Var, node_fields
 
 
 class TacticError(Exception):
@@ -68,7 +69,7 @@ def match(pattern: Node, target: Node, vars: frozenset[str] | None = None) -> di
             continue
         if type(p) is not type(t):
             return None
-        for f in fields(p):
+        for f in node_fields(p):
             vp, vt = getattr(p, f.name), getattr(t, f.name)
             if _is_node(vp):
                 stack.append((vp, vt))
@@ -97,6 +98,30 @@ def _fresh(base: str, avoid: set) -> str:
         k += 1
         name = f"{base}!{k}"
     return name
+
+
+def _subst_all(term: Term, sigma: dict) -> Term:
+    """Simultaneous substitution of a match into a rule's right-hand side.
+    Iterative (post-order over an explicit agenda). Rule equations are
+    quantifier-free, so only `Var` and `Fun` occur."""
+    if not sigma:
+        return term
+    order: list = []
+    stack: list = [term]
+    while stack:
+        t = stack.pop()
+        order.append(t)
+        if type(t) is Fun:
+            stack.extend(t.args)
+    done: dict = {}
+    for t in reversed(order):
+        if type(t) is Var and t.name in sigma:
+            done[id(t)] = sigma[t.name]
+        elif type(t) is Fun:
+            done[id(t)] = Fun(t.name, tuple(done[id(a)] for a in t.args))
+        else:
+            done[id(t)] = t
+    return done[id(term)]
 
 
 @dataclass(frozen=True)
@@ -153,6 +178,13 @@ class Rule:
             pf = Inst(pf, renaming[v], sigma.get(v, Var(v, sorts.get(v, ""))))
         return pf
 
+    def fire(self, sigma: dict) -> tuple[Term, Pf]:
+        """The rule applied at a match: `(rhs under sigma, Pf of lhs = rhs under
+        sigma)`. Term and proof are produced together, in one place, so they
+        cannot drift apart -- and if they ever did, `Trans` in the checker would
+        be the one to notice."""
+        return _subst_all(self.rhs, sigma), self.instance(sigma)
+
 
 def _equation(f: Formula) -> Eq:
     """A rule needs an equation; anything else is a tactic-authoring mistake.
@@ -192,30 +224,6 @@ DEFAULT_BUDGET = 200
 """Rewrite steps `normalize` will take before declaring the rule set looping."""
 
 
-def _subst_all(term: Term, sigma: dict) -> Term:
-    """Simultaneous substitution of a match into a rule's right-hand side.
-    Iterative (post-order over an explicit agenda). Rule equations are
-    quantifier-free, so only `Var` and `Fun` occur."""
-    if not sigma:
-        return term
-    order: list = []
-    stack: list = [term]
-    while stack:
-        t = stack.pop()
-        order.append(t)
-        if type(t) is Fun:
-            stack.extend(t.args)
-    done: dict = {}
-    for t in reversed(order):
-        if type(t) is Var and t.name in sigma:
-            done[id(t)] = sigma[t.name]
-        elif type(t) is Fun:
-            done[id(t)] = Fun(t.name, tuple(done[id(a)] for a in t.args))
-        else:
-            done[id(t)] = t
-    return done[id(term)]
-
-
 def _find_redex(term: Term, rules) -> tuple | None:
     """The LEFTMOST-OUTERMOST redex: `(path, rule, sigma)`, or None.
 
@@ -237,34 +245,39 @@ def _find_redex(term: Term, rules) -> tuple | None:
     return None
 
 
-def rewrite_step(term: Term, rules) -> tuple | None:
-    """Rewrite the leftmost-outermost redex once: `(new_term, Pf of term = new)`,
-    or None if no rule applies.
+def _under_context(term: Term, path: tuple, new_sub: Term, sub_pf: Pf) -> tuple[Term, Pf]:
+    """Lift a proof of `subterm = new_sub` at `path` to a proof about the whole
+    `term`, returning the rebuilt term alongside it.
 
-    The rule proves only the redex's own equation; the surrounding context is
-    rebuilt as a tower of `Cong` nodes along the path, with `Refl` on every
-    sibling that did not move. That tower is precisely "equals may be
-    substituted for equals", spelled out for the checker."""
-    found = _find_redex(term, rules)
-    if found is None:
-        return None
-    path, rule, sigma = found
-    pf = rule.instance(sigma)
-    new: Term = _subst_all(rule.rhs, sigma)
-    # walk back up the path, wrapping in Cong and rebuilding the term
+    Walking back up the path, each level becomes a `Cong` over the parent's
+    function symbol whose slots are `Refl` for every argument that did not move
+    and the proof so far for the one that did. That tower is "equals may be
+    substituted for equals", spelled out in the primitives the checker knows."""
     spine: list[tuple[Fun, int]] = []
     node = term
     for i in path:
         assert type(node) is Fun  # only a Fun has arguments, so only it has a path
         spine.append((node, i))
         node = node.args[i]
+    new, pf = new_sub, sub_pf
     for parent, i in reversed(spine):
-        pf = Cong(
-            parent.name,
-            tuple(pf if j == i else Refl(a) for j, a in enumerate(parent.args)),
-        )
+        pf = Cong(parent.name, tuple(pf if j == i else Refl(a) for j, a in enumerate(parent.args)))
         new = Fun(parent.name, tuple(new if j == i else a for j, a in enumerate(parent.args)))
     return new, pf
+
+
+def rewrite_step(term: Term, rules) -> tuple | None:
+    """Rewrite the leftmost-outermost redex once: `(new_term, Pf of term = new)`,
+    or None if no rule applies.
+
+    The rule proves only the redex's own equation; `_under_context` lifts that
+    to the whole term."""
+    found = _find_redex(term, rules)
+    if found is None:
+        return None
+    path, rule, sigma = found
+    new, pf = rule.fire(sigma)
+    return _under_context(term, path, new, pf)
 
 
 def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
@@ -317,17 +330,16 @@ def by_induction(var: str, pred: Formula, rules, budget: int = DEFAULT_BUDGET) -
     condition forbids `var` free in any surviving hypothesis, and after the
     discharge there are none."""
     eq = _equation(pred)
-    base_goal = eq.subst(var, ZERO)
-    step_goal = eq.subst(var, S(Var(var)))
-    try:
-        base = prove_eq(base_goal, rules, budget)
-    except TacticError as exc:
-        raise TacticError(f"induction on {var!r}: base case failed: {exc}") from exc
-    try:
-        step_body = prove_eq(step_goal, (*rules, hypothesis_rule(eq)), budget)
-    except TacticError as exc:
-        raise TacticError(f"induction on {var!r}: step case failed: {exc}") from exc
-    return induction(var, eq, base, ImpIntro(eq, step_body))
+
+    def case(label: str, goal: Formula, case_rules) -> Pf:
+        try:
+            return prove_eq(goal, case_rules, budget)
+        except TacticError as exc:
+            raise TacticError(f"induction on {var!r}: {label} case failed: {exc}") from exc
+
+    base = case("base", eq.subst(var, ZERO), rules)
+    step = case("step", eq.subst(var, S(Var(var))), (*rules, hypothesis_rule(eq)))
+    return induction(var, eq, base, ImpIntro(eq, step))
 
 
 __all__ = [
@@ -335,9 +347,9 @@ __all__ = [
     "Rule",
     "TacticError",
     "axiom_rule",
+    "by_induction",
     "hypothesis_rule",
     "lemma_rule",
-    "by_induction",
     "match",
     "normalize",
     "prove_eq",
