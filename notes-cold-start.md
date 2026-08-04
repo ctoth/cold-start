@@ -922,3 +922,12 @@ proof.MP(imp,ant), proofs.add_proof pattern. No blocker yet.
   checked theorem" -> concrete instances are DERIVED (cites robinson_add_proof +
   tests), with an explicit note that the general definability theorem is NOT derived.
   No blocker.
+- TASK 3 DONE = cddd630 (ARCHITECTURE.md + these notes). ALL THREE TASKS COMMITTED:
+  62e1d72, 52eeaf8, cddd630. Final gate after the last commit: 352 passed, ruff clean
+  on cold_start+tests, pyright 0 errors, git status clean (only untracked .claude/ and
+  papers/Wehrung_2024_*, neither mine). Stale editor diagnostic about test_checker.py
+  ~line 368 (undefined robinson_add_proof/ADD_ONE/numeral) is RESOLVED: line 23 imports
+  robinson_add_proof from cold_start.proofs, and ADD_ONE/numeral are no longer
+  referenced there (ruff --fix pruned the now-unused numeral import when the
+  cross-process robinson test was upgraded from the bare axiom instance to the derived
+  proof). No blocker; work complete.
