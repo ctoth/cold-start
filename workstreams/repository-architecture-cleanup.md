@@ -1089,8 +1089,64 @@ Measured evidence:
 
 Commit:
 
-- pending Iteration 7 commit
+- `862718e test: share immutable Lean export setup`
 
 Next slice:
 
 - Iteration 8 - CI and typing truth
+
+### Iteration 8 - CI and Typing Truth - Complete
+
+Surfaces:
+
+- absent automated repository gate
+  - Disposition: create
+  - Owner after cleanup: `.github/workflows/ci.yml` checks out the repository,
+    installs Python 3.11 and uv, syncs `uv.lock`, and invokes the exact local
+    `tools/gate.ps1` command.
+- generated-corpus and foreign-kernel CI checks
+  - Disposition: create
+  - Owner after cleanup: CI regenerates and diffs `ColdStart.lean`, then compiles
+    it under the release pinned by `lean-toolchain`.
+- Pyright mode reporting
+  - Disposition: keep/verify
+  - Action: `pyrightconfig.json` remains explicitly `basic`; the local gate and
+    CI make no strict-mode claim.
+- Lean discovery under a repository toolchain override
+  - Disposition: strengthen test infrastructure
+  - Action: local tests enumerate installed Elan toolchains when the pinned
+    release is not downloaded, preserving both foreign-kernel executions instead
+    of silently skipping them.
+
+Red evidence:
+
+- Fail: initial CI ownership tests
+  - 2 failed, 4 passed because `.github/workflows/ci.yml` did not exist.
+- Coverage regression found during first full gate
+  - the gate was technically green at 1,264 passed and 2 skipped, but the new
+    `lean-toolchain` override hid the installed manual Lean 4 toolchain.
+  - Resolution: general Elan toolchain enumeration restored the two required
+    Lean tests; the skipped green was not accepted.
+
+Green evidence:
+
+- Pass: CI/tool contract tests
+  - 6 passed in 0.18 seconds.
+- Pass: workflow syntax parse
+  - Ruby/Psych loaded `ci.yml` and found its jobs mapping.
+- Pass: complete owned local gate
+  - 1,266 passed in 97.27 seconds, Ruff all checks passed, Pyright basic reported
+    0 errors and 0 warnings, and the gate printed `GATE GREEN`; zero skips.
+- Pass: generated and foreign-kernel checks
+  - regeneration produced no Git diff and installed Lean 4 compiled the corpus
+    with exit code 0.
+- Verified: CI uses `uv sync --locked --dev`, Python 3.11 (the supported minimum),
+  official pinned uv setup, and the repository's `uv.lock`.
+
+Commit:
+
+- pending Iteration 8 commit
+
+Next slice:
+
+- Iteration 9 - documentation and historical hygiene

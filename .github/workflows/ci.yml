@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked development environment
+        run: uv sync --locked --dev
+
+      - name: Install pinned Lean 4 toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+
+      - name: Run the repository gate
+        shell: pwsh
+        run: pwsh -File tools/gate.ps1
+
+      - name: Check generated Lean corpus freshness
+        run: |
+          uv run python -m cold_start.lean
+          git diff --exit-code -- lean_export/ColdStart.lean
+
+      - name: Compile generated corpus with Lean 4
+        run: lean lean_export/ColdStart.lean

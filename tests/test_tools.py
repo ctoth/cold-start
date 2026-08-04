@@ -53,3 +53,33 @@ def test_full_gate_prints_the_pytest_summary_and_names_basic_pyright_mode():
     assert "@('uv', 'run', 'pytest')" in gate
     assert "@('uv', 'run', 'pytest', '-q')" not in gate
     assert "pyright (basic)" in gate
+
+
+def test_ci_uses_the_lockfile_supported_python_and_the_owned_local_gate():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert 'python-version: "3.11"' in workflow
+    assert "uv sync --locked --dev" in workflow
+    assert "pwsh -File tools/gate.ps1" in workflow
+    assert "uv run pytest" not in workflow
+    assert "uv run ruff" not in workflow
+    assert "uv run pyright" not in workflow
+
+
+def test_ci_checks_the_generated_corpus_and_compiles_it_with_pinned_lean4():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    toolchain = (REPO_ROOT / "lean-toolchain").read_text(encoding="utf-8").strip()
+
+    assert toolchain.startswith("leanprover/lean4:v4.")
+    assert "uv run python -m cold_start.lean" in workflow
+    assert "git diff --exit-code -- lean_export/ColdStart.lean" in workflow
+    assert "lean lean_export/ColdStart.lean" in workflow
+
+
+def test_type_checking_mode_is_named_consistently():
+    gate = (REPO_ROOT / "tools" / "gate.ps1").read_text(encoding="utf-8")
+    config = (REPO_ROOT / "pyrightconfig.json").read_text(encoding="utf-8")
+
+    assert '"typeCheckingMode": "basic"' in config
+    assert "pyright (basic)" in gate
+    assert "strict" not in gate.lower()

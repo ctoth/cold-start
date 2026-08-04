@@ -341,6 +341,23 @@ def _lean_candidates() -> list[str]:
         which = subprocess.run([elan, "which", "lean"], capture_output=True, text=True, check=False)
         if which.returncode == 0 and which.stdout.strip():
             found.append(which.stdout.strip())
+        listed = subprocess.run(
+            [elan, "toolchain", "list"], capture_output=True, text=True, check=False
+        )
+        for line in listed.stdout.splitlines():
+            toolchain = line.split(maxsplit=1)[0]
+            if not toolchain:
+                continue
+            env = {**os.environ, "ELAN_TOOLCHAIN": toolchain}
+            which = subprocess.run(
+                [elan, "which", "lean"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            if which.returncode == 0 and which.stdout.strip():
+                found.append(which.stdout.strip())
     local = os.environ.get("LOCALAPPDATA")
     if local:
         shim = Path(local) / "Microsoft" / "WinGet" / "Links" / "lean.exe"
