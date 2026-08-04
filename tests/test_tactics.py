@@ -438,6 +438,30 @@ def test_by_induction_reports_the_offending_case():
         by_induction("n", pred, ADD_RULES)
 
 
+def test_by_induction_takes_the_theory_base_term():
+    # ROBINSON_PEANO's induction is based at 1, not 0: the checker asks for
+    # pred[var := theory.zero] and theory.zero is S(0). A tactic that hardcodes
+    # ZERO builds the wrong base goal, so `base=` must reach the case builder.
+    # Rigidity (f(x) = x from f(1)=1, f(Sx)=S(fx)) is the canonical base-1
+    # induction; here the tactic rebuilds it and check() is the judge.
+    from cold_start.rigidity import F_ONE, F_SUCC, RIGIDITY, ROBINSON_PEANO_F
+    from cold_start.robinson import ONE
+
+    pf = by_induction("x", RIGIDITY, (axiom_rule(F_ONE), axiom_rule(F_SUCC)), base=ONE)
+    seq = check(pf, ROBINSON_PEANO_F)
+    assert seq.concl == RIGIDITY
+    assert seq.hyps == frozenset()
+
+
+def test_by_induction_base_defaults_to_zero():
+    # The default is unchanged: a base-1 predicate handed to the default tactic
+    # fails at the base case it wrongly states at 0.
+    from cold_start.rigidity import F_ONE, F_SUCC, RIGIDITY
+
+    with pytest.raises(TacticError, match="base case"):
+        by_induction("x", RIGIDITY, (axiom_rule(F_ONE), axiom_rule(F_SUCC)))
+
+
 # --- the theorems, all four built by tactics and judged by check() --------
 
 

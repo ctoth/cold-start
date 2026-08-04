@@ -478,8 +478,19 @@ def prove_eq(goal: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
     return Trans(left_pf, Sym(right_pf))
 
 
-def by_induction(var: str, pred: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
-    """Prove the equation `pred` by induction on `var`, over Presburger's 0/S.
+def by_induction(
+    var: str,
+    pred: Formula,
+    rules,
+    budget: int = DEFAULT_BUDGET,
+    base: Term = ZERO,
+) -> Pf:
+    """Prove the equation `pred` by induction on `var`, based at `base`.
+
+    `base` is the theory's induction base TERM -- Presburger's `ZERO` by
+    default, `robinson.ONE` for the positive integers. The checker re-derives
+    the base goal as `pred[var := theory.zero]`, so a mismatched `base` here
+    surfaces as an honest rejection, never a false theorem.
 
     Base and step are each handed to `prove_eq`. The step gets one extra rule:
     the induction hypothesis, assumed as `pred` itself and therefore GROUND --
@@ -496,9 +507,9 @@ def by_induction(var: str, pred: Formula, rules, budget: int = DEFAULT_BUDGET) -
         except TacticError as exc:
             raise TacticError(f"induction on {var!r}: {label} case failed: {exc}") from exc
 
-    base = case("base", eq.subst(var, ZERO), rules)
+    base_pf = case("base", eq.subst(var, base), rules)
     step = case("step", eq.subst(var, S(Var(var))), (*rules, hypothesis_rule(eq)))
-    return induction(var, eq, base, ImpIntro(eq, step))
+    return induction(var, eq, base_pf, ImpIntro(eq, step))
 
 
 __all__ = [
