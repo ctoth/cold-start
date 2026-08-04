@@ -29,6 +29,7 @@ from cold_start.proofs import (
 )
 from cold_start.syntax import Eq, Fun, Implies, Var
 from cold_start.tactics import (
+    Rule,
     TacticError,
     axiom_rule,
     by_induction,
@@ -167,6 +168,43 @@ def test_a_hypothesis_rule_is_ground_and_keeps_its_hypothesis():
     seq = check(rule.instance({}), PRESBURGER)
     assert seq.concl == eq
     assert seq.hyps == frozenset({eq})
+
+
+def test_a_rule_rejects_a_non_equation():
+    with pytest.raises(TacticError):
+        Rule(Implies(Eq(x, y), Eq(y, x)), Axiom(ADD_ZERO_F), frozenset())  # pyright: ignore[reportArgumentType]
+
+
+def test_a_rule_rejects_holes_that_are_not_names():
+    # frozenset({None}) used to survive construction and blow up much later, as
+    # a TypeError from `sorted()` deep inside `instance`.
+    with pytest.raises(TacticError) as excinfo:
+        Rule(Eq(add(x, ZERO), x), Axiom(ADD_ZERO_F), frozenset({None}))
+    assert "None" in str(excinfo.value)
+
+
+def test_a_rule_rejects_a_proof_that_is_not_a_proof_term():
+    with pytest.raises(TacticError):
+        Rule(Eq(add(x, ZERO), x), "not a proof", frozenset({"x"}))  # pyright: ignore[reportArgumentType]
+
+
+def test_firing_a_rule_rejects_a_substitution_that_is_not_terms():
+    # {"x": 5} used to reach `free_vars` and raise AttributeError from inside
+    # the engine; the caller deserves to be told which binding is bad.
+    rule = axiom_rule(ADD_ZERO_F)
+    with pytest.raises(TacticError) as excinfo:
+        rule.fire({"x": 5})
+    assert "x" in str(excinfo.value)
+    with pytest.raises(TacticError):
+        rule.instance({"x": 5})
+
+
+def test_firing_a_ground_rule_still_rejects_a_bad_substitution():
+    # A ground rule takes the early exit in `instance`, so its check has to sit
+    # in front of that exit rather than after it.
+    rule = hypothesis_rule(Eq(add(ZERO, n), n))
+    with pytest.raises(TacticError):
+        rule.fire({"n": 5})
 
 
 # --- positional rewriting -------------------------------------------------

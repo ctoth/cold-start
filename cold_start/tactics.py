@@ -138,6 +138,22 @@ class Rule:
     proof: Pf
     vars: frozenset
 
+    def __post_init__(self) -> None:
+        """Catch a malformed rule where it is built, not five frames deep.
+
+        Nothing here is a soundness check -- `check` is still the only judge.
+        It is diagnosability: without it, `vars={None}` surfaces as a TypeError
+        from `sorted()` inside `instance`, which names neither the rule nor the
+        mistake."""
+        _equation(self.eq)
+        if not isinstance(self.proof, Pf):
+            raise TacticError(f"a rewrite rule needs a proof term, got {self.proof!r}")
+        if not isinstance(self.vars, frozenset):
+            raise TacticError(f"a rule's holes must be a frozenset of names, got {self.vars!r}")
+        for v in self.vars:
+            if type(v) is not str:
+                raise TacticError(f"a rule's holes must be variable names, got {v!r}")
+
     @property
     def lhs(self) -> Term:
         return self.eq.lhs
@@ -160,6 +176,9 @@ class Rule:
         simultaneous substitution, spelled in the trusted core's sequential
         primitive. Holes `sigma` does not mention are renamed back to
         themselves."""
+        for name, term in sigma.items():
+            if type(name) is not str or not isinstance(term, Term):
+                raise TacticError(f"a match must bind names to terms, got {name!r} -> {term!r}")
         if not self.vars:
             return self.proof
         sorts = dict(self.eq.free_var_sorts())
@@ -183,7 +202,8 @@ class Rule:
         sigma)`. Term and proof are produced together, in one place, so they
         cannot drift apart -- and if they ever did, `Trans` in the checker would
         be the one to notice."""
-        return _subst_all(self.rhs, sigma), self.instance(sigma)
+        pf = self.instance(sigma)  # validates sigma before it reaches _subst_all
+        return _subst_all(self.rhs, sigma), pf
 
 
 def _equation(f: Formula) -> Eq:
