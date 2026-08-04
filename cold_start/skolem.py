@@ -17,14 +17,12 @@ relativized to the domain
 entirely in divisibility, with no exponentiation anywhere. The target is
 PEANO; `a | b` is the paid predicate `exists k, a*k = b`.
 
-Every source axiom is paid, and so are both definedness obligations of the
-doubling graph: closure of the powers of two under doubling is EXACTLY
-Euclid's lemma at 2 (`cold_start.parity`), which also settles the translated
-successor injectivity. The single open obligation is `totality:+` -- that a
-product of powers of two is a power of two -- whose honest proof needs
-descent on divisors (strong induction / an order kit) that the repository
-does not yet own. An interpretation with an open obligation is a conjecture
-with a ledger, not a theorem; the ledger says exactly this.
+EVERY obligation is paid; the bridge is a theorem, not a conjecture. The
+doubling graph's definedness and the translated successor injectivity ride
+Euclid's lemma at 2 (`cold_start.parity`); the last debt -- `totality:+`,
+that a product of powers of two is a power of two -- fell to course-of-values
+descent through the dyadic layers (`cold_start.order`): the order kit the
+ledger asked for is exactly what paid it.
 
 Untrusted, like every prover module: `check` remains the only judge.
 """
@@ -448,10 +446,10 @@ def _pay_nonempty() -> Pf:
 def skolem_interpretation() -> Interpretation:
     """Presburger -> PEANO's powers of two, over multiplication alone.
 
-    Ten obligations paid; `totality:+` -- the product of two powers of two is
-    a power of two -- is offered no payment and stays on the ledger: proving
-    it needs descent (an odd divisor of x*y must fall through x's dyadic
-    layers), which awaits an order kit."""
+    All eleven obligations paid: the four translated axioms, definedness of
+    all three graphs, and the domain's nonemptiness. `totality:+` -- product
+    closure -- was the last to fall, by strong-induction descent through the
+    order kit."""
     return Interpretation(
         name="presburger-into-skolem-powers-of-two",
         source=PRESBURGER,

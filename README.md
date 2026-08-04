@@ -120,12 +120,17 @@ The code is the `cold_start/` package (flat, no src-layout):
   or `S(m·2)`, even never equals odd, cancellation by 2, and **Euclid's lemma
   at the prime 2** (`¬2|d → d|x·2 → d|x`) — carried by parity alone, no order
   kit, no Bézout. The first rung of the formula (2) H1 debt.
+- **`cold_start/order.py`** — the order kit: `≤` as `∃w. a+w=b`, discreteness
+  (`a ≤ S(n) → a ≤ n ∨ a = S(n)`), the dyadic descent step, and
+  **`course_of_values` — strong induction compiled to the structural `Induct`
+  rule** through `reach(n) := ∀z (z≤n → P(z))`. `tactics.transport` (Leibniz's
+  law as a combinator) moves whole formulas along proved equalities.
 - **`cold_start/skolem.py`** — **Presburger interpreted into multiplication
   alone** (Mostowski's embedding into Skolem arithmetic): `0 ↦ 1`,
   `S(x) ↦ x·2`, `+ ↦ ·`, relativized to the powers of two, defined by
   divisibility only (`every divisor ≠ 1 is even`). A 16-node bridge into
-  PEANO, ten of eleven obligations paid (toll: 64,281); `totality:+` (product
-  closure) ledgered open pending an order kit.
+  PEANO, **every obligation paid** (toll: 116,358): product closure fell to
+  course-of-values descent through the dyadic layers.
 - **`cold_start/ledger.py`** — the bridge ledger: every landed artifact
   re-verified and measured in one table (`uv run python -m cold_start.ledger`).
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
@@ -192,11 +197,11 @@ The same lockfile-backed gate, generated-file check, and Lean compilation run in
       (`cold_start.bridges`) — one fully paid into PEANO's positives
 - [x] Skolem arithmetic: Presburger interpreted into multiplication on the
       powers of two (`cold_start.skolem`), riding Euclid's lemma at 2
-      (`cold_start.parity`); `totality:+` ledgered open
-- [ ] Ordering (`<=`) and primality; divisibility foundations and Euclid at 2
-      are now checked
-- [ ] Pay Robinson Theorem 1.2's totality/uniqueness debts (the CRT/prime step)
-      and the Skolem bridge's product closure — both wait on the order kit;
+      (`cold_start.parity`) — **complete**, every obligation paid
+- [x] Ordering (`<=`), transport, and strong induction (`cold_start.order`);
+      primality still open
+- [ ] Pay Robinson Theorem 1.2's totality/uniqueness debts (the CRT/prime
+      step): the order kit and Euclid-at-2 now stock its H1/H2 frontier;
       then Quine 1946 concatenation theory
 - [ ] A proof-term pretty-printer (proof trees / step listings)
 - [x] A *non-trusted* tactics layer that emits proof terms — including ordered

@@ -32,8 +32,11 @@ system, yet this carves out exactly {1, 2, 4, 8, …} — zero fails it because
 ## 2. The measurement
 
     bridge:  16 nodes    (three graph instances)
-    toll:    64,281 proof nodes across ten paid obligations
-    open:    totality:+  (one obligation of eleven)
+    toll:    116,358 proof nodes across all eleven obligations
+    open:    ()          -- the bridge is COMPLETE
+
+First landing (same wave, before the order kit): ten of eleven paid at toll
+64,281 with `totality:+` open. The completion below is the second landing.
 
 Paid, all checked in PEANO through the graph translator's exact output
 (hoisted ∀-guards, δ-relativization of free variables and hoisted
@@ -50,6 +53,8 @@ quantifiers):
   is transitivity; `1` is in the domain vacuously.
 * `totality:S` — **closure of the powers of two under doubling**, the
   mathematical heart (below).
+* `totality:+` — **closure under products**, by strong-induction descent
+  (section 4).
 * `domain:nonempty` — witness 1.
 
 ## 3. The toll's engine: Euclid's lemma at the prime 2
@@ -79,19 +84,32 @@ unlocks the translated successor injectivity — the payment exists only
 because doubling stays inside the domain, which is the relativization
 earning its keep.
 
-## 4. The open debt, honestly
+## 4. The last debt, paid: the order kit and dyadic descent
 
-`totality:+` — a product of powers of two is a power of two — is offered no
-payment. The obstruction is real: showing an odd `d ≠ 1` cannot divide `x·y`
-for `x, y` powers of two requires descending through `x`'s dyadic layers
-(`d | x·y → d | (x/2)·y → …`), which is strong induction / well-founded
-descent on divisors. The repository's `Induct` climbs; nothing yet descends.
-This is the same frontier as the formula (2) ledger's order-kit item (H2):
-one order kit would unlock both `totality:+` here and the bounding argument
-there. The ledger states the debt; nothing hides it.
+`totality:+` — a product of powers of two is a power of two — needed what
+`Induct` alone cannot do: descend. The order kit (`cold_start/order.py`)
+supplies it, trusting nothing new:
+
+* `le(a,b) := ∃w. a+w = b` — order defined by addition;
+* `le_zero`, `le_succ_split` (discreteness), `le_double`, and `pos_half_le`
+  (`a = S(m) → a·2 = S(n) → a ≤ n` — the descent step);
+* `tactics.transport` — Leibniz's law as a combinator, rewriting a whole
+  formula along a proved equality (Cong/Trans at equations, antecedent
+  re-introduction at implications, open–move–close at binders);
+* `course_of_values` — **strong induction compiled to structural `Induct`**
+  through `reach(n) := ∀z (z ≤ n → P(z))`.
+
+`pow2_mul` (checked, the payment's engine) then descends: an odd divisor
+`d ≠ 1` of `S(n)·y` is refuted because `S(n)` is even by its own domain
+membership (`S(n) = h·2`), the half sits at `h ≤ n` (`pos_half_le`) and is
+itself a power of two (`transport` + `pow2_half`), and Euclid's lemma at 2
+drops `d` one dyadic layer to a divisor of `h·y` — where the reach
+hypothesis pronounces it even. `not_pow2_zero` (odd witness 3) anchors the
+base. The formula (2) ledger's H2 item is made of exactly these order-kit
+pieces; that frontier is now stocked, not just named.
 
 ## 5. Reproduce
 
-    uv run pytest tests/test_parity.py tests/test_skolem.py -q
+    uv run pytest tests/test_parity.py tests/test_order.py tests/test_skolem.py -q
     uv run python -m cold_start.skolem     # the single-bridge report
     uv run python -m cold_start.ledger     # every bridge, one table

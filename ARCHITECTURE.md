@@ -229,16 +229,20 @@ of two, multiplication is addition of exponents, so the whole additive
 signature translates away: `0 ↦ 1`, `S(x) ↦ x·2`, `x + y ↦ x·y`, relativized to
 `pow2(t) := ∀d (d|t → d≠1 → 2|d)` — "every divisor except 1 is even", a
 definition of *power of two* with no exponentiation, spoken entirely in the
-paid divisibility predicate. The 16-node bridge lands in PEANO with ten of
-eleven obligations paid (toll: 64,281 proof nodes). The toll's engine is
+paid divisibility predicate. The 16-node bridge lands in PEANO **complete**
+(toll: 116,358 proof nodes). The toll's engine is
 `parity.py`: the 2-adic case split (`n = m·2 ∨ n = S(m·2)`), even ≠ odd, and
 **Euclid's lemma at the prime 2** (`¬2|d → d|x·2 → d|x`) — proved by parity
 alone, with no order relation and no Bézout — which yields closure of the
 powers of two under doubling and, through it, both definedness debts of the
-doubling graph *and* the translated successor injectivity. The single open
-obligation is `totality:+`: that a product of powers of two is a power of two,
-whose honest proof needs descent on divisors (an order kit / strong
-induction), the same frontier as the formula (2) debts. `ledger.py` renders
+doubling graph *and* the translated successor injectivity. The last debt,
+`totality:+` (product closure), fell to `order.py`: `≤` as a witnessed sum,
+discreteness, the halving descent step, and `course_of_values` — **strong
+induction compiled to the structural `Induct` rule** through
+`reach(n) := ∀z (z≤n → P(z))`, with `tactics.transport` (Leibniz's law as a
+combinator) carrying formulas along equalities at the seams. An odd divisor
+of `S(n)·y` halves through the even `S(n)` and drops one dyadic layer by
+Euclid-at-2, where the reach hypothesis refutes it. `ledger.py` renders
 every landed artifact — bridge size, toll, payments, open debts — as one
 table, re-verified through the trusted checker on each run
 (`uv run python -m cold_start.ledger`).
