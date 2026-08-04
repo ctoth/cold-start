@@ -995,8 +995,56 @@ Green evidence:
 
 Commit:
 
-- pending Iteration 5 commit
+- `0aae508 refactor: assign proof builders to theories`
 
 Next slice:
 
 - Iteration 6 - verifier CLI contract
+
+### Iteration 6 - Verifier CLI Contract - Complete
+
+Surfaces:
+
+- manual index-based argument parsing
+  - Disposition: delete/rewrite
+  - Owner after cleanup: one `argparse.ArgumentParser` defines an optional proof
+    path and named theory option, rejecting missing values and extra paths with
+    standard exit code 2.
+- repeated mutable theory loading
+  - Disposition: delete/consolidate
+  - Owner after cleanup: one immutable `MappingProxyType` mapping of the three
+    supported theories.
+- unscoped file reading and uncaught input errors
+  - Disposition: rewrite
+  - Owner after cleanup: `_read_input` uses a managed `Path.open` boundary or
+    stdin and maps `OSError` to a stable diagnostic and exit code 2.
+- checker rejection behavior
+  - Disposition: keep
+  - Action: malformed or invalid proof data remains `REJECTED` with exit code 1;
+    verified sequents remain exit code 0.
+
+Red evidence:
+
+- Fail: initial verifier subprocess contract
+  - 4 failed, 7 passed, 23 deselected.
+  - Missing `--theory` raised `IndexError`; duplicate paths silently selected the
+    last path; missing files and directory paths leaked uncaught I/O tracebacks.
+
+Green evidence:
+
+- Pass: all verifier/cross-process cases
+  - 11 passed, 23 deselected in 1.31 seconds.
+- Pass: complete checker test file
+  - 34 passed in 1.31 seconds.
+- Pass: scoped Ruff and configured Pyright
+  - Ruff all checks passed; Pyright 0 errors, 0 warnings, 0 informations.
+- Pass: old path search
+  - no manual argument loop, mutable loader, or unscoped `open(path)` remains.
+
+Commit:
+
+- pending Iteration 6 commit
+
+Next slice:
+
+- Iteration 7 - test runtime without coverage loss

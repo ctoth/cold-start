@@ -24,43 +24,60 @@ exactly the one theory named, so citing an axiom from another is a rejection.
 
 from __future__ import annotations
 
+import argparse
 import sys
+from collections.abc import Mapping
+from pathlib import Path
+from types import MappingProxyType
 
-from .checker import check
+from .checker import Theory, check
 from .codec import decode_proof
+from .peano import PEANO
+from .presburger import PRESBURGER
+from .robinson import ROBINSON_PEANO
 
-THEORIES = {}
+THEORIES: Mapping[str, Theory] = MappingProxyType(
+    {
+        "peano": PEANO,
+        "presburger": PRESBURGER,
+        "robinson": ROBINSON_PEANO,
+    }
+)
 
 
-def _load_theories() -> None:
-    from .peano import PEANO
-    from .presburger import PRESBURGER
-    from .robinson import ROBINSON_PEANO
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m cold_start.verify",
+        description="Decode and independently check one Hamblin proof term.",
+    )
+    parser.add_argument("path", nargs="?", help="proof file; omit to read standard input")
+    parser.add_argument("--theory", default="peano", help="peano, presburger, or robinson")
+    return parser
 
-    THEORIES["peano"] = PEANO
-    THEORIES["presburger"] = PRESBURGER
-    THEORIES["robinson"] = ROBINSON_PEANO
+
+def _read_input(path: str | None) -> bytes | None:
+    try:
+        if path is None:
+            return sys.stdin.buffer.read()
+        with Path(path).open("rb") as source:
+            return source.read()
+    except OSError as exc:
+        label = "standard input" if path is None else repr(path)
+        print(f"error: cannot read {label}: {exc}", file=sys.stderr)
+        return None
 
 
 def main(argv: list[str]) -> int:
-    _load_theories()
-    path = None
-    theory_name = "peano"
-    i = 0
-    while i < len(argv):
-        if argv[i] == "--theory":
-            theory_name = argv[i + 1]
-            i += 2
-        else:
-            path = argv[i]
-            i += 1
+    args = _parser().parse_args(argv)
 
-    theory = THEORIES.get(theory_name)
+    theory = THEORIES.get(args.theory)
     if theory is None:
-        print(f"unknown theory: {theory_name!r} (have: {', '.join(THEORIES)})", file=sys.stderr)
+        print(f"unknown theory: {args.theory!r} (have: {', '.join(THEORIES)})", file=sys.stderr)
         return 2
 
-    data = open(path, "rb").read() if path else sys.stdin.buffer.read()
+    data = _read_input(args.path)
+    if data is None:
+        return 2
 
     try:
         pf = decode_proof(data)
@@ -69,7 +86,7 @@ def main(argv: list[str]) -> int:
         print(f"REJECTED: {exc}", file=sys.stderr)
         return 1
 
-    print(f"VERIFIED [{theory_name}]: {sequent}")
+    print(f"VERIFIED [{args.theory}]: {sequent}")
     return 0
 
 

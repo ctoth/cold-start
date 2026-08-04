@@ -363,6 +363,16 @@ def test_cross_process_verifies_under_presburger():
     assert "VERIFIED [presburger]" in result.stdout.decode()
 
 
+def test_cross_process_verifies_file_with_explicit_theory(tmp_path):
+    proof_path = tmp_path / "left-identity.hmb"
+    proof_path.write_bytes(encode_proof(left_identity_proof()))
+
+    result = _run_verify(b"", str(proof_path), "--theory", "presburger")
+
+    assert result.returncode == 0, result.stderr
+    assert "VERIFIED [presburger]" in result.stdout.decode()
+
+
 def test_cross_process_verifies_under_robinson():
     # The (1, S, ·) theory with `+` eliminated: a fresh process re-derives
     # 2 + 3 = 5 from Robinson's own axioms, as a bridge with no `+` symbol.
@@ -376,6 +386,36 @@ def test_cross_process_rejects_unknown_theory():
     result = _run_verify(encode_proof(left_identity_proof()), "--theory", "nonesuch")
     assert result.returncode == 2
     assert "unknown theory" in result.stderr.decode()
+
+
+def test_cross_process_rejects_missing_theory_value():
+    result = _run_verify(b"", "--theory")
+    assert result.returncode == 2
+    assert "error:" in result.stderr.decode()
+
+
+def test_cross_process_rejects_duplicate_paths():
+    result = _run_verify(b"", "first.hmb", "second.hmb")
+    assert result.returncode == 2
+    assert "error:" in result.stderr.decode()
+
+
+def test_cross_process_reports_a_missing_file(tmp_path):
+    result = _run_verify(b"", str(tmp_path / "missing.hmb"))
+    assert result.returncode == 2
+    assert "cannot read" in result.stderr.decode()
+
+
+def test_cross_process_reports_an_unreadable_path(tmp_path):
+    result = _run_verify(b"", str(tmp_path))
+    assert result.returncode == 2
+    assert "cannot read" in result.stderr.decode()
+
+
+def test_cross_process_rejects_malformed_bytes():
+    result = _run_verify(b"not a Hamblin stream")
+    assert result.returncode == 1
+    assert "REJECTED" in result.stderr.decode()
 
 
 def test_cross_process_rejects_forged_axiom():
