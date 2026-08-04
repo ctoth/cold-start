@@ -287,18 +287,26 @@ def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
     """Rewrite to a fixpoint: `(normal_form, Pf of term = normal_form)`.
 
     Steps are joined with `Trans`; a term already in normal form gets `Refl`.
-    `budget` bounds the number of steps -- a non-terminating rule set (say, an
-    equation used right-to-left) raises `TacticError` instead of hanging."""
+    `budget` bounds the number of rewrite steps actually taken -- reaching the
+    fixpoint costs nothing, so a term already in normal form normalizes under a
+    budget of 0, and a term needing exactly n steps normalizes under a budget of
+    n. A non-terminating rule set (say, an equation used right-to-left) exceeds
+    any budget and raises `TacticError` instead of hanging."""
     rules = tuple(rules)
     pf: Pf = Refl(term)
     current = term
-    for _ in range(budget):
+    taken = 0
+    while True:
         step = rewrite_step(current, rules)
         if step is None:
             return current, pf
+        if taken == budget:
+            raise TacticError(
+                f"rewriting did not terminate within {budget} steps: {term!r} -> {current!r}"
+            )
         current, step_pf = step
         pf = Trans(pf, step_pf)
-    raise TacticError(f"rewriting did not terminate within {budget} steps: {term!r} -> {current!r}")
+        taken += 1
 
 
 # ---------------------------------------------------------------------------

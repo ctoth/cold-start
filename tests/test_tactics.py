@@ -275,6 +275,25 @@ def test_normalize_raises_instead_of_hanging_on_a_looping_rule_set():
         normalize(x, looping, budget=8)
 
 
+def test_a_term_already_in_normal_form_costs_no_budget():
+    # `budget` counts rewrite steps taken, so a term that takes none is free.
+    nf, pf = normalize(ZERO, ADD_RULES, budget=0)
+    assert nf == ZERO
+    assert check(pf, PRESBURGER).concl == Eq(ZERO, ZERO)
+
+
+def test_budget_is_exactly_the_number_of_steps_the_term_needs():
+    # 1 + 1 needs two rewrites: 1 + S(0) -> S(1 + 0) -> S(1). A budget of two
+    # must suffice -- spending an extra one to notice the fixpoint would be a
+    # budget that does not mean what it says.
+    term = add(numeral(1), numeral(1))
+    nf, pf = normalize(term, ADD_RULES, budget=2)
+    assert nf == numeral(2)
+    assert check(pf, PRESBURGER).concl == Eq(term, numeral(2))
+    with pytest.raises(TacticError):
+        normalize(term, ADD_RULES, budget=1)
+
+
 # --- prove_eq: join the two normal forms ----------------------------------
 
 
