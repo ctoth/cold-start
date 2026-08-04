@@ -41,12 +41,15 @@ first-order checker this project is. We import Lean *statements* only.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TypeVar, cast
 
 from . import peano as _peano
 from . import presburger as _presburger
 from . import robinson as _robinson
 from .checker import Theory, check
+from .peano import PEANO
+from .presburger import PRESBURGER
 from .proof import (
     MP,
     RAA,
@@ -66,6 +69,8 @@ from .proof import (
     Sym,
     Trans,
 )
+from .proofs import add_proof, left_identity_proof, mul_proof, robinson_add_proof
+from .robinson import ROBINSON_PEANO
 from .sequent import Sequent
 from .syntax import (
     Bottom,
@@ -212,6 +217,25 @@ _L_APP = 9
 _L_ATOM = 10
 
 
+@dataclass(frozen=True, slots=True)
+class _Style:
+    """How the carrier and the function symbols are spelled. The abstract style
+    is what a conditional theorem is stated over (`M`, with `zero`/`succ`/... as
+    its parameters); the `Nat` style re-renders the very same formulas at Lean's
+    own naturals, which is what lets the epilogue state the instantiated facts
+    without any string surgery."""
+
+    carrier: str
+    symbols: dict
+
+    def symbol(self, name: str) -> str:
+        return self.symbols.get(name) or lean_name(name)
+
+
+_ABSTRACT = _Style(CARRIER, SYMBOL_NAMES)
+_NAT = _Style("Nat", {"0": "Nat.zero", "S": "Nat.succ", "+": "Nat.add", "*": "Nat.mul"})
+
+
 def render_term(term: Term) -> str:
     """Render a term as a Lean 4 expression over the carrier's operations."""
     return _render(term, _Names(_free_names(term)), _L_IMPL)
@@ -229,10 +253,14 @@ def render_statement(formula: Formula) -> str:
     our theories read as implicitly universal, become leading `forall` binders in
     lexicographic order. That order is the contract instantiation relies on --
     `Inst` on the k-th name must line up with the k-th binder."""
+    return _render_statement(formula, _ABSTRACT)
+
+
+def _render_statement(formula: Formula, style: _Style) -> str:
     names = closure_names(formula)
     supply = _Names(_free_names(formula))
-    body = _render(formula, supply, _L_IMPL)
-    prefix = "".join(f"∀ {lean_name(n)} : {CARRIER}, " for n in names)
+    body = _render(formula, supply, _L_IMPL, style)
+    prefix = "".join(f"∀ {lean_name(n)} : {style.carrier}, " for n in names)
     return prefix + body
 
 
@@ -256,7 +284,7 @@ def _free_names(node: Node) -> set:
     return {lean_name(n) for n in node.free_vars()}
 
 
-def _render(node: Node, supply: _Names, prec: int) -> str:
+def _render(node: Node, supply: _Names, prec: int, style: _Style = _ABSTRACT) -> str:
     """Emit `node` as Lean text, ITERATIVELY and in O(tree size): a pre-order walk
     pushes `("emit", node, prec, scope)` and `("lit", text)` items and appends
     fragments left-to-right into `out`, joined once at the end. `scope` is the
@@ -270,7 +298,7 @@ def _render(node: Node, supply: _Names, prec: int) -> str:
         if item[0] == "lit":
             out.append(item[1])
         else:
-            _emit(item[1], supply, item[2], item[3], out, stack)
+            _emit(item[1], supply, item[2], item[3], style, out, stack)
     return "".join(out)
 
 
@@ -283,7 +311,7 @@ def _wrapped(level: int, prec: int, pieces: list) -> list:
     return [("lit", "("), *pieces, ("lit", ")")] if level < prec else pieces
 
 
-def _emit(node, supply: _Names, prec: int, scope: tuple, out: list, stack: list) -> None:
+def _emit(node, supply: _Names, prec: int, scope: tuple, style: _Style, out, stack) -> None:
     kind = type(node)
     if kind is Var:
         if node.sort:
@@ -296,7 +324,7 @@ def _emit(node, supply: _Names, prec: int, scope: tuple, out: list, stack: list)
         out.append(scope[-1 - node.index])
         return
     if kind is Fun:
-        name = symbol_name(node.name)
+        name = style.symbol(node.name)
         if not node.args:
             out.append(name)
             return
@@ -330,7 +358,7 @@ def _emit(node, supply: _Names, prec: int, scope: tuple, out: list, stack: list)
         name = supply.fresh(_binder_base(supply))
         symbol = "∀" if kind is Forall else "∃"
         pieces = [
-            ("lit", f"{symbol} {name} : {CARRIER}, "),
+            ("lit", f"{symbol} {name} : {style.carrier}, "),
             ("emit", node.body, _L_IMPL, (*scope, name)),
         ]
         _push(stack, _wrapped(_L_IMPL, prec, pieces))
@@ -761,6 +789,29 @@ class _Export:
         rest = "".join(f"\n    {p}" for p in params[4:])
         return f"{head}{rest}\n    : {statement} :=\n  {body}\n"
 
+    def nat_example(self, name: str) -> str:
+        """The same theorem, instantiated at Lean's `Nat`: every hypothesis is
+        supplied by a core lemma, so what remains is an unconditional `example`.
+        Arguments are passed by NAME, so this never depends on parameter order."""
+        if self.seq.hyps:
+            raise LeanError("cannot instantiate a theorem with open hypotheses at Nat")
+        statement = _render_statement(self.subst(self.seq.concl), _NAT)
+        args = [f"({CARRIER} := Nat)"]
+        args += [
+            f"({symbol_name(s)} := {_NAT.symbol(s)})"
+            for s in sorted(self.symbols, key=symbol_name)
+        ]
+        for ax in sorted(self.theory.axioms, key=lambda a: self.axiom_names[a]):
+            label = self.axiom_names[ax]
+            proof = NAT_AXIOM_PROOFS.get(label)
+            if proof is None:
+                raise LeanError(f"no Nat proof for the hypothesis {label}")
+            args.append(f"({label} := {proof})")
+        if uses_induction(self.pf):
+            args.append(f"(ind := {NAT_INDUCTION})")
+        applied = "\n    ".join([f"  {name} {args[0]}", *args[1:]])
+        return f"example : {statement} :=\n{applied}\n"
+
     def induction_type(self) -> str:
         """The induction principle as a hypothesis: exactly the schema our
         `Induct` rule implements, with the theory's own base term."""
@@ -987,9 +1038,112 @@ class _Export:
         )
 
 
+# ---------------------------------------------------------------------------
+# The corpus: one self-contained Lean file
+# ---------------------------------------------------------------------------
+
+CORPUS_PATH = Path(__file__).resolve().parent.parent / "lean_export" / "ColdStart.lean"
+
+# Discharging each abstract hypothesis at Lean's `Nat`. The recursion axioms are
+# `rfl`: `Nat.add`/`Nat.mul` recurse on their second argument exactly as our
+# axioms say, so the two sides are definitionally equal. The successor axioms are
+# `noConfusion`, the injectivity/disjointness of constructors.
+NAT_AXIOM_PROOFS: dict = {
+    "ax_add_zero": "fun x => rfl",
+    "ax_add_succ": "fun x y => rfl",
+    "ax_mul_zero": "fun x => rfl",
+    "ax_mul_succ": "fun x y => rfl",
+    "ax_succ_ne_zero": "fun x h => Nat.noConfusion h",
+    "ax_succ_inj": "fun x y h => Nat.noConfusion h (fun h' => h')",
+}
+NAT_INDUCTION = "fun P h0 hs n => Nat.rec (motive := P) h0 hs n"
+
+_HEADER = """/-
+  ColdStart.lean
+
+  Generated by `uv run python -m cold_start.lean` -- do not edit by hand.
+
+  Each theorem below is a proof term from the `cold_start` checker, re-rendered
+  for Lean 4. The point is the De Bruijn criterion: our checker re-derives a
+  proof instead of trusting it, and this file hands the same derivations to a
+  completely independent kernel. If Lean accepts this file, two unrelated
+  implementations agree.
+
+  Nothing here is asserted. There are no `axiom` declarations, no placeholder
+  proofs and no tactics: each theorem is CONDITIONAL, taking the operations and
+  the axioms of its theory (and, where the proof uses induction, the induction
+  principle) as hypotheses over an abstract carrier `M`. The epilogue then
+  instantiates them at Lean's own `Nat`, discharging every hypothesis with a
+  core lemma, which turns them into unconditional facts about the naturals.
+
+  Lean core only: this file needs no `import`, no Std and no Mathlib.
+-/
+
+-- Every theorem takes its theory's WHOLE axiom set as hypotheses, whether or not
+-- a given proof cites all of them, so that the axioms are visible in the
+-- statement and the epilogue can discharge them by name. Lean would otherwise
+-- report each uncited one as an unused binder.
+set_option linter.unusedVariables false
+"""
+
+_EPILOGUE_HEADER = """/-
+  The epilogue: `M := Nat`, with every hypothesis discharged, so the conditional
+  theorems above become unconditional facts about Lean's own naturals.
+
+  Robinson's theory is deliberately absent here. Its axioms describe the
+  POSITIVE integers (A1 says `succ a ≠ 1`, which is false at `a := 0`), so `Nat`
+  is not a model of it and the theorem above stays conditional -- as it should.
+-/
+"""
+
+
+def corpus_entries() -> list:
+    """The proofs the generated file carries: `(name, proof, theory, at_nat)`.
+    `at_nat` says whether the epilogue may instantiate it at Lean's `Nat`."""
+    return [
+        ("coldstart_left_identity", left_identity_proof(), PRESBURGER, True),
+        ("coldstart_add_two_three", add_proof(2, 3), PRESBURGER, True),
+        ("coldstart_mul_two_three", mul_proof(2, 3), PEANO, True),
+        ("coldstart_robinson_add_two_three", robinson_add_proof(2, 3), ROBINSON_PEANO, False),
+    ]
+
+
+CORPUS_NAMES = tuple(name for name, _pf, _theory, _nat in corpus_entries())
+
+
+def export_corpus() -> str:
+    """The whole `ColdStart.lean`: header, one conditional theorem per corpus
+    proof, then the `Nat` epilogue."""
+    parts = [_HEADER]
+    epilogue = [_EPILOGUE_HEADER]
+    for name, pf, theory, at_nat in corpus_entries():
+        export = _Export(pf, theory)
+        parts.append(export.theorem(name))
+        if at_nat:
+            epilogue.append(export.nat_example(name))
+    return "\n".join([*parts, *epilogue])
+
+
+def write_corpus(path: Path | str | None = None) -> Path:
+    """Write `export_corpus()` to `path` (default `lean_export/ColdStart.lean`),
+    with LF endings so the checked-in file is stable across platforms."""
+    target = Path(path) if path is not None else CORPUS_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", newline="\n") as fh:
+        fh.write(export_corpus())
+    return target
+
+
 __all__ = [
     "AXIOM_LABELS",
     "CARRIER",
+    "CORPUS_NAMES",
+    "CORPUS_PATH",
+    "NAT_AXIOM_PROOFS",
+    "NAT_INDUCTION",
+    "corpus_entries",
+    "export_corpus",
+    "write_corpus",
     "LeanError",
     "closure_names",
     "export_theorem",
@@ -1004,3 +1158,7 @@ __all__ = [
     "universal_closure",
     "uses_induction",
 ]
+
+
+if __name__ == "__main__":
+    print(f"wrote {write_corpus()}")
