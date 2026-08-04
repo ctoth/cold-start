@@ -40,6 +40,7 @@ from cold_start.tactics import (
     lemma_rule,
     match,
     normalize,
+    normalize_equality,  # transport a proved equation, not just a bare term
     prove_eq,
     rewrite_step,
 )
@@ -538,7 +539,30 @@ def test_prove_eq_computes_numeral_addition(a, b):
     assert seq.hyps == frozenset()
 
 
-@given(st.integers(0, 20), st.integers(0, 20))
+def test_normalize_equality_transports_a_proved_equation():
+    x, y = Var("x"), Var("y")
+    source = Eq(add(x, ZERO), add(y, ZERO))
+    transported = normalize_equality(source, Assume(source), ADD_RULES)
+
+    seq = check(transported, PRESBURGER)
+
+    assert seq.concl == Eq(x, y)
+    assert seq.hyps == frozenset({source})
+
+
+def test_normalize_equality_does_not_authorize_a_mismatched_proof():
+    x, y = Var("x"), Var("y")
+    source = Eq(add(x, ZERO), add(y, ZERO))
+    forged = normalize_equality(source, Refl(add(x, ZERO)), ADD_RULES)
+
+    with pytest.raises(ValueError, match="middle terms differ"):
+        check(forged, PRESBURGER)
+
+
+@given(
+    st.integers(min_value=0, max_value=20),
+    st.integers(min_value=0, max_value=20),
+)
 @settings(deadline=None)
 def test_a_false_sum_is_refused_rather_than_mis_proved(a, b):
     """The failure direction: the tactics never emit a proof of a false

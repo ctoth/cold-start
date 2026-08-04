@@ -16,6 +16,7 @@ The layer is a small equational engine:
     Rule.fire(sigma)               the rewritten term and its proof, together
     rewrite_step(term, rules)      rewrite the leftmost-outermost redex
     normalize(term, rules)         rewrite to a fixpoint, Trans-chained
+    normalize_equality(eq, pf, rules) transport a proved equation to normal form
     prove_eq(goal, rules)          normalize both sides, join with Trans/Sym
     by_induction(var, pred, rules) base + step by prove_eq, closed by Induct
 """
@@ -427,6 +428,32 @@ def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
         taken += 1
 
 
+def normalize_equality(
+    source: Formula,
+    proof: Pf,
+    rules,
+    budget: int = DEFAULT_BUDGET,
+) -> Pf:
+    """Transport a proof of ``lhs = rhs`` to the equality of its normal forms.
+
+    If normalization emits ``lhs = lhs_nf`` and ``rhs = rhs_nf``, the returned
+    recipe is ``lhs_nf = lhs = rhs = rhs_nf``.  This is the implication-facing
+    twin of :func:`prove_eq`: it does not try to show that the two normal forms
+    coincide.  Instead it preserves whatever hypotheses ``proof`` used while
+    exposing the algebraic content of that equality for a later inference such
+    as injectivity or cancellation.
+
+    The caller supplies ``source`` because tactics are deliberately untrusted
+    and do not derive proof conclusions.  A mismatch between it and ``proof``
+    produces an invalid ``Trans`` node that the checker rejects.
+    """
+    eq = _equation(source)
+    rules = tuple(rules)
+    _, left_pf = normalize(eq.lhs, rules, budget)
+    _, right_pf = normalize(eq.rhs, rules, budget)
+    return Trans(Sym(left_pf), Trans(proof, right_pf))
+
+
 # ---------------------------------------------------------------------------
 # Goal-directed tactics
 # ---------------------------------------------------------------------------
@@ -484,6 +511,7 @@ __all__ = [
     "lemma_rule",
     "match",
     "normalize",
+    "normalize_equality",
     "prove_eq",
     "rewrite_step",
 ]
