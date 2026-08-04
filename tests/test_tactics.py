@@ -12,6 +12,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import cold_start.tactics
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
 from cold_start.proof import Axiom, Inst
@@ -41,6 +42,39 @@ from cold_start.tactics import (
 ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
 
 x, y, z, n = Var("x"), Var("y"), Var("z"), Var("n")
+
+TRUSTED_MODULES = ("syntax", "proof", "sequent", "checker")
+
+
+# --- the boundary ---------------------------------------------------------
+
+
+def _imports_tactics(module_name: str) -> bool:
+    import ast
+    import pathlib
+
+    source = pathlib.Path(cold_start.tactics.__file__).with_name(f"{module_name}.py")
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "tactics":
+            return True
+        if isinstance(node, ast.Import) and any("tactics" in a.name for a in node.names):
+            return True
+    return False
+
+
+def test_the_trusted_core_does_not_import_the_tactics():
+    """The split only means anything one way round. Tactics may read the whole
+    trusted core; the trusted core must never depend on the prover, or a bug in
+    this file would become a bug in the judge."""
+    for name in TRUSTED_MODULES:
+        assert not _imports_tactics(name), f"{name}.py imports the tactics"
+
+
+def test_the_import_direction_check_can_actually_see_an_import():
+    # proofs.py DOES use the tactics -- which is what makes the negative result
+    # above evidence rather than a vacuous pass.
+    assert _imports_tactics("proofs")
 
 
 # --- first-order matching -------------------------------------------------
