@@ -1080,3 +1080,11 @@ us), final wrap. This notes edit deliberately uncommitted until main is free.
   a lemma_rule lie WITH free variables cannot even be instantiated, because Inst
   refuses to substitute a variable free in a hypothesis -> check rejects outright.
   Still declining the bare-Assume guard for the reason logged above.
+- Item 5 DONE = 19e57ed (_under_context assert -> TacticError raise; instance builds
+  the sorts dict with setdefault and raises on a var used at two sorts).
+- Item 6 DONE (tests only): bang-name rule via lemma_rule over
+  Inst(Axiom(ADD_SUCC_F),"y",Var("x!")) -- free vars exactly {x, x!}; many-sorted run
+  over algebra MONOID_ACTION (ACT_ID/ACT_COMP) plus a wrong-sort instance that check
+  rejects. NON-VACUITY PROBED: neutering _fresh's avoid loop makes the bang test fail
+  (x and x! collapse, proof proves a different equation). Restored via git checkout.
+- NEXT: item 7, iterative add_proof/mul_proof/robinson_add_proof (separate commit).

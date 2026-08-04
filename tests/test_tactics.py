@@ -13,6 +13,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import cold_start.tactics
+from cold_start.algebra import ACT_COMP, ACT_ID, MONOID_ACTION, E, act, mul
 from cold_start.checker import check
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
 from cold_start.proof import Assume, Axiom, Inst, Refl
@@ -461,6 +462,63 @@ def test_addition_is_associative():
     seq = check(add_assoc(), PRESBURGER)
     assert seq.concl == ADD_ASSOC == Eq(add(add(x, y), z), add(x, add(y, z)))
     assert seq.hyps == frozenset()
+
+
+# --- adversarial: names that collide with the freshening scheme -----------
+
+
+def test_a_rule_whose_equation_already_contains_a_bang_name():
+    """`instance` renames every hole to `name!` before substituting. If the
+    equation ALREADY uses `x!`, the naive freshening would rename `x` on top of
+    a variable that is really there and the two would be substituted as one.
+    `_fresh` avoids everything free in the equation, so it picks `x!1` instead."""
+    bang = Var("x!")
+    # a genuine hypothesis-free lemma whose free variables are exactly {x, x!}
+    pf = Inst(Axiom(ADD_SUCC_F), "y", bang)
+    eq = check(pf, PRESBURGER).concl
+    assert eq == Eq(add(x, S(bang)), S(add(x, bang)))
+    rule = lemma_rule(eq, pf)
+    assert rule.vars == frozenset({"x", "x!"})
+
+    new, inst_pf = rule.fire({"x": ZERO, "x!": numeral(2)})
+    seq = check(inst_pf, PRESBURGER)
+    assert seq.hyps == frozenset()
+    # the term and the proof agree -- the two holes stayed distinct
+    assert new == S(add(ZERO, numeral(2)))
+    assert seq.concl == Eq(add(ZERO, S(numeral(2))), new)
+
+
+# --- a many-sorted theory: sorts survive instantiation --------------------
+
+
+def test_the_engine_rewrites_under_a_many_sorted_theory():
+    """`instance` carries each hole's sort through the renaming. Under a
+    signature `Inst` rejects a substitution whose sort does not match the
+    variable's, so a dropped sort here is a rejected proof there -- which makes
+    this a real check on the renaming, not a formality."""
+    m, k, v = Var("m", "M"), Var("n", "M"), Var("x", "X")
+    rules = (axiom_rule(ACT_ID), axiom_rule(ACT_COMP))
+
+    # ACT_ID is tried first, so act(e, act(m, x)) loses its unit in one step.
+    nf, pf = normalize(act(E, act(m, v)), rules)
+    assert nf == act(m, v)  # it really did rewrite
+    seq = check(pf, MONOID_ACTION)
+    assert seq.concl == Eq(act(E, act(m, v)), nf)
+    assert seq.hyps == frozenset()
+
+    goal = Eq(act(m, act(k, v)), act(mul(m, k), v))
+    seq = check(prove_eq(goal, rules), MONOID_ACTION)
+    assert seq.concl == goal
+    assert seq.hyps == frozenset()
+
+
+def test_a_many_sorted_rule_instantiated_at_the_wrong_sort_is_rejected():
+    # The other direction: the tactics will happily build the term, and the
+    # checker is the one that says no. An M where an X belongs.
+    rule = axiom_rule(ACT_ID)
+    pf = rule.instance({"x": Var("m", "M")})
+    with pytest.raises(ValueError):
+        check(pf, MONOID_ACTION)
 
 
 # --- the tactics agree with arithmetic, on generated input ----------------
