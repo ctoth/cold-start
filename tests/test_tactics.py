@@ -545,3 +545,47 @@ def test_a_false_sum_is_refused_rather_than_mis_proved(a, b):
     the one to say no.)"""
     with pytest.raises(TacticError):
         prove_eq(Eq(add(numeral(a), numeral(b)), numeral(a + b + 1)), ADD_RULES)
+
+
+# --- ordered rewriting: permutative rules that would otherwise loop --------
+
+
+def test_an_unordered_commutativity_rule_loops():
+    # The motivation for ordered rewriting: `x + y = y + x` read left to right
+    # rewrites forever, since its right-hand side is a redex again.
+    with pytest.raises(TacticError):
+        normalize(add(x, y), (lemma_rule(ADD_COMM, add_comm()),), budget=8)
+
+
+def test_an_ordered_commutativity_rule_sorts_its_arguments():
+    # The same equation, fired only where it makes the term strictly smaller in
+    # the engine's term order: `y + x` sorts to `x + y`, which is a fixpoint.
+    # The emitted proof still checks -- ordering restricts the SEARCH, it is not
+    # a new inference.
+    comm = lemma_rule(ADD_COMM, add_comm(), ordered=True)
+    nf, pf = normalize(add(y, x), (comm,))
+    assert nf == add(x, y)
+    assert check(pf, PRESBURGER).concl == Eq(add(y, x), add(x, y))
+    assert normalize(add(x, y), (comm,))[0] == add(x, y)
+
+
+def test_an_ordered_rule_fires_under_a_congruence():
+    comm = lemma_rule(ADD_COMM, add_comm(), ordered=True)
+    assert normalize(S(add(y, x)), (comm,))[0] == S(add(x, y))
+
+
+def test_an_ordered_rule_orders_by_structure_not_just_by_name():
+    # `S(x) + x` is already sorted (a taller argument comes first), while
+    # `x + S(x)` is not -- the order is lexicographic on the pre-order symbol
+    # sequence, so the function symbol beats the variable.
+    comm = lemma_rule(ADD_COMM, add_comm(), ordered=True)
+    assert normalize(add(x, S(x)), (comm,))[0] == add(S(x), x)
+    assert normalize(add(S(x), x), (comm,))[0] == add(S(x), x)
+
+
+def test_a_non_permutative_rule_may_not_be_ordered():
+    # Ordering only tames rules whose sides carry the same multiset of symbols.
+    # `x + 0 = x` drops two, so the term order gives no termination argument and
+    # calling it "ordered" would be a lie. (It needs no taming anyway.)
+    with pytest.raises(TacticError):
+        axiom_rule(ADD_ZERO_F, ordered=True)
