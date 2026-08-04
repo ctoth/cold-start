@@ -9,21 +9,40 @@ PEANO.
 
 from __future__ import annotations
 
-from .peano import mul
-from .presburger import ZERO, S, add
-from .proof import MP, Assume, Cong, ExistsElim, ExistsIntro, ImpIntro, Inst, Pf, Refl, Sym, Trans
+from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
+from .presburger import ZERO, S, add, induction
+from .proof import (
+    MP,
+    Assume,
+    Axiom,
+    Cong,
+    ExistsElim,
+    ExistsIntro,
+    ImpIntro,
+    Inst,
+    Pf,
+    Refl,
+    Sym,
+    Trans,
+)
 from .proofs import (
+    ADD_ASSOC,
     ADD_RULES,
     DISTRIB_LEFT,
     LEFT_IDENTITY,
     MUL_ASSOC,
     MUL_COMM,
     MUL_RULES,
+    add_assoc,
+    add_cancel_right,
+    add_eq_zero,
     distrib_left,
     left_identity,
     mul_assoc,
     mul_comm,
+    zero_or_succ,
 )
+from .prop import and_left, or_elim
 from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
 from .tactics import lemma_rule, prove_eq
 
@@ -69,6 +88,15 @@ DIVIDES_ADD: Formula = Implies(
 DIVIDES_MUL_LEFT: Formula = Implies(
     peano_divides(_a, _b),
     peano_divides(mul(_c, _a), mul(_c, _b)),
+)
+_k = Var("k")
+DIVIDES_STEP: Formula = Implies(
+    Eq(mul(_a, _k), add(_b, _a)),
+    peano_divides(_a, _b),
+)
+DIVIDES_ADD_CANCEL: Formula = Implies(
+    peano_divides(_a, add(_b, mul(_a, _c))),
+    peano_divides(_a, _b),
 )
 
 
@@ -185,8 +213,85 @@ def divides_mul_left() -> Pf:
     return ImpIntro(ab, ExistsElim("k!", Assume(ab), packed))
 
 
+def divides_step() -> Pf:
+    """PEANO proves ``a*k = b + a -> a | b``: peel one copy of the divisor.
+
+    By cases on ``k``. At ``k = 0`` the hypothesis makes the sum zero, so
+    ``a = b = 0`` and the witness is 0. At ``k = S(m)`` the recursion law
+    exposes ``a*m + a = b + a``; additive cancellation leaves the witness
+    ``m``. This is the subtraction step ``(b + a) - a`` spelled without
+    subtraction, and the engine of ``divides_add_cancel`` below.
+    """
+    hyp = Eq(mul(_a, _k), add(_b, _a))
+    goal = peano_divides(_a, _b)
+    k_zero = Eq(_k, ZERO)
+    ex_succ = exists("m", "", Eq(_k, S(Var("m"))))
+
+    # k = 0: the sum collapses to zero, so both summands do.
+    to_zero = Cong("*", (Refl(_a), Assume(k_zero)))  # a*k = a*0
+    times_zero = Inst(Axiom(MUL_ZERO_F), "x", _a)  # a*0 = 0
+    sum_is_zero = Sym(Trans(Trans(Sym(times_zero), Sym(to_zero)), Assume(hyp)))  # b + a = 0
+    split = MP(Inst(Inst(add_eq_zero(), "x", _b), "y", _a), sum_is_zero)
+    b_zero = and_left(Eq(_b, ZERO), Eq(_a, ZERO), split)
+    zero_witness = Trans(times_zero, Sym(b_zero))  # a*0 = b
+    zero_arm = ImpIntro(k_zero, ExistsIntro(goal, ZERO, zero_witness))
+
+    # k = S(m!): unfold one recursion rung and cancel the common suffix.
+    m = Var("m!")
+    k_succ = Eq(_k, S(m))
+    to_succ = Cong("*", (Refl(_a), Assume(k_succ)))  # a*k = a*S(m!)
+    unfold = Inst(Inst(Axiom(MUL_SUCC_F), "x", _a), "y", m)  # a*S(m!) = a*m! + a
+    shifted = Trans(Trans(Sym(unfold), Sym(to_succ)), Assume(hyp))  # a*m! + a = b + a
+    cancel = Inst(Inst(Inst(add_cancel_right(), "z", _a), "x", mul(_a, m)), "y", _b)
+    smaller_witness = MP(cancel, shifted)  # a*m! = b
+    packed = ExistsIntro(goal, m, smaller_witness)
+    succ_arm = ImpIntro(ex_succ, ExistsElim("m!", Assume(ex_succ), packed))
+
+    cases = or_elim(k_zero, ex_succ, goal, Inst(zero_or_succ(), "n", _k), zero_arm, succ_arm)
+    return ImpIntro(hyp, cases)
+
+
+def divides_add_cancel() -> Pf:
+    """PEANO proves ``a | b + a*c -> a | b``: subtract a multiple of ``a``.
+
+    Induction on ``c``. The base simplifies ``b + a*0`` to ``b``; the step
+    rearranges ``b + a*S(c)`` into ``(b + a*c) + a``, peels the trailing ``a``
+    with ``divides_step``, and hands the rest to the induction hypothesis.
+    Together with ``divides_add`` this makes divisibility a congruence for the
+    additive structure -- the extraction step Robinson's Chinese-remainder
+    argument needs after the ``crt_key_identity`` congruence.
+    """
+    pred = DIVIDES_ADD_CANCEL
+    goal = peano_divides(_a, _b)
+    k = Var("k!")
+
+    base_hyp = peano_divides(_a, add(_b, mul(_a, ZERO)))
+    base_instance = instantiate(base_hyp, k)
+    simplify = prove_eq(Eq(add(_b, mul(_a, ZERO)), _b), (*ADD_RULES, *MUL_RULES))
+    base_witness = Trans(Assume(base_instance), simplify)  # a*k! = b
+    base_packed = ExistsIntro(goal, k, base_witness)
+    base = ImpIntro(base_hyp, ExistsElim("k!", Assume(base_hyp), base_packed))
+
+    step_hyp = peano_divides(_a, add(_b, mul(_a, S(_c))))
+    step_instance = instantiate(step_hyp, k)
+    rearrange = prove_eq(
+        Eq(add(_b, mul(_a, S(_c))), add(add(_b, mul(_a, _c)), _a)),
+        (*ADD_RULES, *MUL_RULES, lemma_rule(ADD_ASSOC, add_assoc())),
+    )
+    shifted = Trans(Assume(step_instance), rearrange)  # a*k! = (b + a*c) + a
+    peel = Inst(Inst(divides_step(), "b", add(_b, mul(_a, _c))), "k", k)
+    smaller = MP(peel, shifted)  # a | b + a*c
+    from_ih = MP(Assume(pred), smaller)  # a | b
+    step_body = ExistsElim("k!", Assume(step_hyp), from_ih)
+    step = ImpIntro(pred, ImpIntro(step_hyp, step_body))
+
+    return induction("c", pred, base, step)
+
+
 __all__ = [
     "DIVIDES_ADD",
+    "DIVIDES_ADD_CANCEL",
+    "DIVIDES_STEP",
     "DIVIDES_FACTOR",
     "DIVIDES_MUL_LEFT",
     "DIVIDES_PRODUCT",
@@ -196,8 +301,10 @@ __all__ = [
     "DIVIDES_ZERO",
     "ONE_DIVIDES",
     "divides_add",
+    "divides_add_cancel",
     "divides_factor",
     "divides_mul_left",
+    "divides_step",
     "divides_product",
     "divides_product_right",
     "divides_refl",

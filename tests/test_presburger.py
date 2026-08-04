@@ -18,14 +18,16 @@ from cold_start.presburger import PRESBURGER, ZERO, S, add, numeral
 from cold_start.proofs import (
     ADD_CANCEL_LEFT,
     ADD_CANCEL_RIGHT,
+    ADD_EQ_ZERO,
     ZERO_OR_SUCC,
     add_cancel_left,
     add_cancel_right,
+    add_eq_zero,
     left_identity_proof,
     mul_proof,
     zero_or_succ,
 )
-from cold_start.prop import Or
+from cold_start.prop import And, Or
 from cold_start.syntax import Eq, Implies, Var, exists
 
 
@@ -59,6 +61,18 @@ def test_presburger_proves_additive_cancellation(claim, build):
     assert seq.concl == claim
     assert seq.hyps == frozenset()
     assert type(claim) is Implies
+
+
+def test_presburger_proves_a_zero_sum_has_zero_summands():
+    seq = check(add_eq_zero(), PRESBURGER)
+    x, y = Var("x"), Var("y")
+
+    assert seq.hyps == frozenset()
+    assert seq.concl == ADD_EQ_ZERO
+    assert ADD_EQ_ZERO == Implies(
+        Eq(add(x, y), ZERO),
+        And(Eq(x, ZERO), Eq(y, ZERO)),
+    )
 
 
 def test_presburger_proves_every_number_is_zero_or_a_successor():

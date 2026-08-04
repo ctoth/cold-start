@@ -7,20 +7,24 @@ from semantics import Model, evaluate
 from cold_start.checker import check
 from cold_start.divisibility import (
     DIVIDES_ADD,
+    DIVIDES_ADD_CANCEL,
     DIVIDES_FACTOR,
     DIVIDES_MUL_LEFT,
     DIVIDES_PRODUCT,
     DIVIDES_PRODUCT_RIGHT,
     DIVIDES_REFL,
+    DIVIDES_STEP,
     DIVIDES_TRANS,
     DIVIDES_ZERO,
     ONE_DIVIDES,
     divides_add,
+    divides_add_cancel,
     divides_factor,
     divides_mul_left,
     divides_product,
     divides_product_right,
     divides_refl,
+    divides_step,
     divides_trans,
     divides_zero,
     one_divides,
@@ -112,6 +116,30 @@ def test_divisibility_is_preserved_by_a_common_left_factor_in_peano():
     assert DIVIDES_MUL_LEFT == Implies(
         peano_divides(a, b),
         peano_divides(mul(c, a), mul(c, b)),
+    )
+
+
+def test_one_peeled_factor_still_leaves_a_multiple_in_peano():
+    a, b, k = Var("a"), Var("b"), Var("k")
+    seq = check(divides_step(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_STEP
+    assert DIVIDES_STEP == Implies(
+        Eq(mul(a, k), add(b, a)),
+        peano_divides(a, b),
+    )
+
+
+def test_a_divisor_of_a_shifted_sum_divides_the_remainder_in_peano():
+    a, b, c = Var("a"), Var("b"), Var("c")
+    seq = check(divides_add_cancel(), PEANO)
+
+    assert not seq.hyps
+    assert seq.concl == DIVIDES_ADD_CANCEL
+    assert DIVIDES_ADD_CANCEL == Implies(
+        peano_divides(a, add(b, mul(a, c))),
+        peano_divides(a, b),
     )
 
 
