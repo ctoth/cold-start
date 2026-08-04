@@ -26,8 +26,36 @@ from __future__ import annotations
 from dataclasses import dataclass, is_dataclass
 
 from .presburger import ZERO, S, induction
-from .proof import Assume, Axiom, Cong, ImpIntro, Inst, Pf, Refl, Sym, Trans
-from .syntax import Eq, Formula, Fun, Node, Term, Var, node_fields
+from .proof import (
+    MP,
+    Assume,
+    Axiom,
+    Cong,
+    ExistsElim,
+    ExistsIntro,
+    ForallElim,
+    ForallIntro,
+    ImpIntro,
+    Inst,
+    Pf,
+    Refl,
+    Sym,
+    Trans,
+)
+from .syntax import (
+    Bottom,
+    Eq,
+    Exists,
+    Forall,
+    Formula,
+    Fun,
+    Implies,
+    Node,
+    Term,
+    Var,
+    instantiate,
+    node_fields,
+)
 
 
 class TacticError(Exception):
@@ -455,6 +483,64 @@ def normalize_equality(
 
 
 # ---------------------------------------------------------------------------
+# Transport: rewriting a whole formula along a proved equality
+# ---------------------------------------------------------------------------
+
+
+def _term_transport(tpat: Term, var: str, eq: Eq, eq_pf: Pf) -> Pf:
+    """A recipe for ``tpat[var := eq.lhs] = tpat[var := eq.rhs]``: `eq_pf` at
+    every hole, `Refl` elsewhere, `Cong` up the applications."""
+    if type(tpat) is Var:
+        return eq_pf if tpat.name == var else Refl(tpat)
+    if type(tpat) is Fun:
+        if var not in tpat.free_vars():
+            return Refl(tpat)
+        return Cong(tpat.name, tuple(_term_transport(a, var, eq, eq_pf) for a in tpat.args))
+    raise TacticError(f"transport pattern holds {tpat!r} where a term was expected")
+
+
+def transport(pattern: Formula, var: str, eq: Eq, eq_pf: Pf, pf: Pf) -> Pf:
+    """Leibniz's law as a combinator: from ``pf : pattern[var := eq.lhs]`` and
+    ``eq_pf : eq``, a recipe for ``pattern[var := eq.rhs]``.
+
+    The primitives rewrite only inside equations (`Cong`/`Trans`), so moving a
+    whole formula -- a divisibility, a domain membership, an induction
+    predicate -- along an equality must be COMPILED: equalities bridge through
+    `Cong`, implications re-introduce their rewritten antecedent (transporting
+    it backwards along the flipped equality), and binders open at a fresh
+    variable, move, and close again. Relation atoms have no congruence rule to
+    compile into, so a pattern whose hole sits under `Rel` is rejected.
+
+    Untrusted like every tactic: hypotheses of `pf` and `eq_pf` ride along
+    honestly, and `check` remains the only judge of the result."""
+    if var not in pattern.free_vars():
+        return pf
+    if type(pattern) is Eq:
+        left = _term_transport(pattern.lhs, var, eq, eq_pf)
+        right = _term_transport(pattern.rhs, var, eq, eq_pf)
+        return Trans(Sym(left), Trans(pf, right))
+    if type(pattern) is Implies:
+        moved_ant = pattern.ant.subst(var, eq.rhs)
+        back = transport(pattern.ant, var, Eq(eq.rhs, eq.lhs), Sym(eq_pf), Assume(moved_ant))
+        return ImpIntro(moved_ant, transport(pattern.con, var, eq, eq_pf, MP(pf, back)))
+    if type(pattern) is Forall:
+        u = _fresh("t", set(pattern.free_vars()) | set(eq.free_vars()) | {var})
+        opened = instantiate(pattern, Var(u, pattern.sort))
+        inner = transport(opened, var, eq, eq_pf, ForallElim(pf, Var(u, pattern.sort)))
+        return ForallIntro(u, pattern.sort, inner)
+    if type(pattern) is Exists:
+        u = _fresh("t", set(pattern.free_vars()) | set(eq.free_vars()) | {var})
+        opened = instantiate(pattern, Var(u, pattern.sort))
+        assumption = opened.subst(var, eq.lhs)
+        moved = transport(opened, var, eq, eq_pf, Assume(assumption))
+        target = pattern.subst(var, eq.rhs)
+        return ExistsElim(u, pf, ExistsIntro(target, Var(u, pattern.sort), moved))
+    if type(pattern) is Bottom:  # no free variables, but be total anyway
+        return pf
+    raise TacticError(f"cannot transport through {type(pattern).__name__}")
+
+
+# ---------------------------------------------------------------------------
 # Goal-directed tactics
 # ---------------------------------------------------------------------------
 
@@ -525,4 +611,5 @@ __all__ = [
     "normalize_equality",
     "prove_eq",
     "rewrite_step",
+    "transport",
 ]
