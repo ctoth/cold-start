@@ -55,13 +55,40 @@ def test_pow2_means_power_of_two():
         assert value == (n in powers), n
 
 
+def test_not_pow2_zero_checks():
+    from cold_start.skolem import NOT_POW2_ZERO, not_pow2_zero
+
+    seq = check(not_pow2_zero(), PEANO)
+    assert not seq.hyps
+    assert seq.concl == NOT_POW2_ZERO
+
+
+def test_pow2_half_checks():
+    from cold_start.skolem import POW2_HALF, pow2_half
+
+    seq = check(pow2_half(), PEANO)
+    assert not seq.hyps
+    assert seq.concl == POW2_HALF
+
+
+def test_pow2_mul_checks():
+    """Product closure of the powers of two -- by strong induction, descending
+    through the dyadic layers with Euclid's lemma at 2."""
+    from cold_start.skolem import POW2_MUL, pow2_mul
+
+    seq = check(pow2_mul(), PEANO)
+    assert not seq.hyps
+    assert seq.concl == POW2_MUL
+
+
 def test_skolem_bridge_report():
+    """Every obligation is paid: the bridge is a theorem, not a conjecture."""
     report = verify(skolem_interpretation())
     assert report.name == "presburger-into-skolem-powers-of-two"
-    assert report.open_labels() == ("totality:+",)
-    assert not report.complete
+    assert report.open_labels() == ()
+    assert report.complete
     paid = [s for s in report.statuses if s.paid]
-    assert len(paid) == 10
+    assert len(paid) == 11
     assert all(s.toll > 0 for s in paid)
     assert report.bridge_size == 16
 
