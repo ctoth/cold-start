@@ -41,7 +41,32 @@ first-order checker this project is. We import Lean *statements* only.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeVar, cast
 
+from . import peano as _peano
+from . import presburger as _presburger
+from . import robinson as _robinson
+from .checker import Theory, check
+from .proof import (
+    MP,
+    RAA,
+    Assume,
+    Axiom,
+    Cong,
+    ExFalso,
+    ExistsElim,
+    ExistsIntro,
+    ForallElim,
+    ForallIntro,
+    ImpIntro,
+    Induct,
+    Inst,
+    Pf,
+    Refl,
+    Sym,
+    Trans,
+)
+from .sequent import Sequent
 from .syntax import (
     Bottom,
     BVar,
@@ -52,13 +77,17 @@ from .syntax import (
     Fun,
     Implies,
     Node,
+    Not,
     Term,
     Var,
     children,
     exists,
     forall,
+    instantiate,
     map_children,
 )
+
+_N = TypeVar("_N", bound=Node)  # substitution preserves the node's kind
 
 
 class LeanError(ValueError):
@@ -144,7 +173,7 @@ class _Names:
 # ---------------------------------------------------------------------------
 
 
-def substitute(node: Node, sigma: dict) -> Node:
+def substitute(node: _N, sigma: dict) -> _N:
     """Simultaneously replace free `Var`s by name, per `sigma: name -> Term`.
 
     Iterative (post-order over a heap agenda), and simultaneous -- so mapping
@@ -166,7 +195,7 @@ def substitute(node: Node, sigma: dict) -> Node:
             done[id(n)] = sigma[n.name]
         else:
             done[id(n)] = map_children(n, lambda c: done[id(c)])
-    return done[id(node)]
+    return cast(_N, done[id(node)])
 
 
 # ---------------------------------------------------------------------------
@@ -572,10 +601,398 @@ class _Parser:
         return Eq(left, right)
 
 
+# ---------------------------------------------------------------------------
+# Proof export: one conditional theorem per checked proof
+# ---------------------------------------------------------------------------
+
+# Readable names for the axioms of the theories we export. Anything unrecognised
+# gets `ax<n>` from a deterministic ordering, so the export never depends on a
+# theory's `frozenset` iteration order.
+AXIOM_LABELS: dict = {
+    _presburger.ADD_ZERO_F: "ax_add_zero",
+    _presburger.ADD_SUCC_F: "ax_add_succ",
+    _presburger.SUCC_NEQ_ZERO: "ax_succ_ne_zero",
+    _presburger.SUCC_INJ: "ax_succ_inj",
+    _peano.MUL_ZERO_F: "ax_mul_zero",
+    _peano.MUL_SUCC_F: "ax_mul_succ",
+    _robinson.SUCC_NEQ_ONE: "ax_succ_ne_one",
+    _robinson.SUCC_INJ: "ax_succ_inj",
+    _robinson.ADD_ONE: "ax_add_one",
+    _robinson.ADD_SUCC: "ax_add_succ",
+    _robinson.MUL_ONE: "ax_mul_one",
+    _robinson.MUL_SUCC: "ax_mul_succ",
+}
+
+
+def export_theorem(name: str, pf: object, theory: Theory) -> str:
+    """Render a checked proof as a self-contained Lean 4 `theorem`.
+
+    The proof is re-checked here (`check`), so an unproved recipe never reaches
+    the file. What comes out is CONDITIONAL: the theory's function symbols and
+    axioms -- and the induction principle, if the proof uses `Induct` -- are
+    hypotheses of the theorem, over an abstract carrier `M`. No `axiom`, no
+    `sorry`: Lean is asked to verify the entailment, not to believe us."""
+    return _Export(pf, theory).theorem(name)
+
+
+def uses_induction(pf: object) -> bool:
+    """Whether the proof cites the `Induct` rule (so needs the `ind` hypothesis)."""
+    return any(type(n) is Induct for n in _tree(pf))
+
+
+def _tree(node: object):
+    """Every dataclass node under `node` -- proof terms and the syntax they embed --
+    iteratively (a proof term is a dataclass, so `children` walks it too)."""
+    stack: list = [node]
+    while stack:
+        n = stack.pop()
+        yield n
+        stack.extend(children(n))
+
+
+def _symbols(nodes) -> dict:
+    """`name -> arity` for every function symbol occurring in `nodes`."""
+    arities: dict = {}
+    for root in nodes:
+        for n in _tree(root):
+            if type(n) is Fun:
+                arity = len(n.args)
+                if arities.setdefault(n.name, arity) != arity:
+                    raise LeanError(f"symbol {n.name!r} used at two arities")
+    return arities
+
+
+def _var_names(nodes) -> set:
+    return {n.name for root in nodes for n in _tree(root) if type(n) is Var}
+
+
+def _fun_type(arity: int) -> str:
+    return " → ".join([CARRIER] * (arity + 1))
+
+
+@dataclass(slots=True)
+class _Export:
+    """One theorem's worth of export state: the naming decisions, then the
+    emitters that consume them.
+
+    The proof is rendered under a substitution environment `sigma` (object
+    variable name -> the term it now stands for) threaded downward, which is what
+    makes `Inst` free: instantiating a variable is not an operation in the Lean
+    proof at all, it is a change to the environment the *same* sub-proof renders
+    under. An axiom is then rendered as its hypothesis applied to the images of
+    its own free variables, in `closure_names` order -- the one place where the
+    lexicographic closure order is load-bearing."""
+
+    pf: object
+    theory: Theory
+    seq: Sequent = field(init=False)
+    supply: _Names = field(init=False)
+    axiom_names: dict = field(init=False)
+    open_names: dict = field(init=False)
+    symbols: dict = field(init=False)
+    sigma0: dict = field(init=False)
+    concls: dict = field(init=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.seq = check(self.pf, self.theory)
+        roots = [self.pf, self.seq.concl, *self.seq.hyps, *self.theory.axioms]
+        if self.theory.zero is not None:
+            roots.append(self.theory.zero)
+        self.symbols = _symbols(roots)
+        self.supply = _Names({symbol_name(s) for s in self.symbols})
+        self.axiom_names = {}
+        for i, ax in enumerate(sorted(self.theory.axioms, key=render_statement)):
+            self.axiom_names[ax] = self.supply.fresh(AXIOM_LABELS.get(ax, f"ax{i + 1}"))
+        if uses_induction(self.pf):
+            self.supply.fresh("ind")
+        # Object variables are renamed only when their name is not usable in Lean
+        # (or is already a parameter); everything else keeps the name it had.
+        self.sigma0 = {}
+        for v in sorted(_var_names(roots)):
+            target = self.supply.fresh(v)
+            if target != v:
+                self.sigma0[v] = Var(target)
+        self.open_names = {}
+        for hyp in sorted(self.seq.hyps, key=render_statement):
+            self.open_names[self.subst(hyp)] = self.supply.fresh("h")
+
+    # --- naming and substitution -------------------------------------------
+
+    def subst(self, node):
+        return substitute(node, self.sigma0)
+
+    def conclusion(self, pf: object) -> Formula:
+        """A sub-proof's derived conclusion (cached). Only the rules that cannot
+        read their own conclusion off their fields -- `ExistsElim` -- need it."""
+        hit = self.concls.get(id(pf))
+        if hit is None:
+            hit = cast(Pf, pf).derive(self.theory).concl
+            self.concls[id(pf)] = hit
+        return hit
+
+    # --- the theorem --------------------------------------------------------
+
+    def theorem(self, name: str) -> str:
+        concl = self.subst(self.seq.concl)
+        hyps = [self.subst(h) for h in sorted(self.seq.hyps, key=render_statement)]
+        hyp_vars = sorted({v for h in hyps for v in h.free_vars()})
+        concl_vars = [v for v in closure_names(concl) if v not in hyp_vars]
+
+        params = [f"{{{CARRIER} : Type}}"]
+        params += [
+            f"({symbol_name(s)} : {_fun_type(a)})"
+            for s, a in sorted(self.symbols.items(), key=lambda kv: (kv[1], symbol_name(kv[0])))
+        ]
+        params += [f"({lean_name(v)} : {CARRIER})" for v in hyp_vars]
+        params += [f"({self.open_names[h]} : {render_formula(h)})" for h in hyps]
+        params += [
+            f"({self.axiom_names[ax]} : {render_statement(ax)})"
+            for ax in sorted(self.theory.axioms, key=lambda a: self.axiom_names[a])
+        ]
+        if uses_induction(self.pf):
+            params.append(f"(ind : {self.induction_type()})")
+
+        statement = "".join(f"∀ {lean_name(v)} : {CARRIER}, " for v in concl_vars)
+        statement += render_formula(concl)
+        body = "".join(f"fun {lean_name(v)} : {CARRIER} => " for v in concl_vars)
+        body += self.proof_text(self.pf, self.sigma0, {})
+
+        head = f"theorem {name} " + " ".join(params[:4])
+        rest = "".join(f"\n    {p}" for p in params[4:])
+        return f"{head}{rest}\n    : {statement} :=\n  {body}\n"
+
+    def induction_type(self) -> str:
+        """The induction principle as a hypothesis: exactly the schema our
+        `Induct` rule implements, with the theory's own base term."""
+        zero = self.term_text(self.theory.zero, _L_ATOM)
+        succ = symbol_name(self.theory.succ or "S")
+        return (
+            f"∀ P : {CARRIER} → Prop, P {zero} → "
+            f"(∀ n : {CARRIER}, P n → P ({succ} n)) → ∀ n : {CARRIER}, P n"
+        )
+
+    def term_text(self, term, prec: int = _L_ATOM) -> str:
+        return _render(term, _Names(_free_names(term)), prec)
+
+    # --- the proof term -----------------------------------------------------
+
+    def proof_text(self, pf: object, sigma: dict, env: dict) -> str:
+        """Render a proof term as a Lean 4 term-mode proof, ITERATIVELY: the work
+        stack holds `("lit", text)` and `("pf", proof, sigma, env)` items, and the
+        environments travel *on* the items rather than in a mutable scope -- so no
+        item needs a matching "pop", and fresh names come from a supply that never
+        reuses one."""
+        out: list[str] = []
+        stack: list = [("pf", pf, sigma, env)]
+        while stack:
+            item = stack.pop()
+            if item[0] == "lit":
+                out.append(item[1])
+            else:
+                self._emit_proof(item[1], item[2], item[3], out, stack)
+        return "".join(out)
+
+    def _emit_proof(self, pf, sigma: dict, env: dict, out: list, stack: list) -> None:
+        handler = self._handlers().get(type(pf))
+        if handler is None:
+            raise LeanError(f"cannot export the rule {type(pf).__name__}")
+        handler(pf, sigma, env, out, stack)
+
+    def _handlers(self) -> dict:
+        return {
+            Axiom: self._axiom,
+            Assume: self._assume,
+            Refl: self._refl,
+            Sym: self._sym,
+            Trans: self._trans,
+            Cong: self._cong,
+            MP: self._mp,
+            ImpIntro: self._imp_intro,
+            Inst: self._inst,
+            Induct: self._induct,
+            ExFalso: self._ex_falso,
+            RAA: self._raa,
+            ForallElim: self._forall_elim,
+            ForallIntro: self._forall_intro,
+            ExistsIntro: self._exists_intro,
+            ExistsElim: self._exists_elim,
+        }
+
+    # Each handler appends finished text to `out` and/or pushes further work.
+
+    def _axiom(self, pf, sigma, env, out, stack) -> None:
+        name = self.axiom_names.get(pf.formula)
+        if name is None:
+            raise LeanError(f"not an axiom of the exported theory: {pf.formula!r}")
+        args = [
+            self.term_text(substitute(Var(v), sigma), _L_ATOM) for v in closure_names(pf.formula)
+        ]
+        out.append(f"({name} {' '.join(args)})" if args else name)
+
+    def _assume(self, pf, sigma, env, out, stack) -> None:
+        key = substitute(pf.formula, sigma)
+        name = env.get(key) or self.open_names.get(key)
+        if name is None:
+            raise LeanError(f"no hypothesis in scope for {key!r}")
+        out.append(name)
+
+    def _refl(self, pf, sigma, env, out, stack) -> None:
+        out.append(f"(Eq.refl {self.term_text(substitute(pf.term, sigma))})")
+
+    def _sym(self, pf, sigma, env, out, stack) -> None:
+        _push(stack, [("lit", "(Eq.symm "), ("pf", pf.sub, sigma, env), ("lit", ")")])
+
+    def _trans(self, pf, sigma, env, out, stack) -> None:
+        _push(
+            stack,
+            [
+                ("lit", "(Eq.trans "),
+                ("pf", pf.left, sigma, env),
+                ("lit", " "),
+                ("pf", pf.right, sigma, env),
+                ("lit", ")"),
+            ],
+        )
+
+    def _cong(self, pf, sigma, env, out, stack) -> None:
+        """`congrArg f h₁` gives `f a₁ = f b₁` (partially applied for an n-ary f);
+        each further argument is folded on with `congr : f = g → a = b → f a = g b`."""
+        name = symbol_name(pf.fun)
+        if not pf.args:
+            out.append(f"(Eq.refl {name})")
+            return
+        pieces: list = [("lit", "(congr " * (len(pf.args) - 1))]
+        pieces += [("lit", f"(congrArg {name} "), ("pf", pf.args[0], sigma, env), ("lit", ")")]
+        for sub in pf.args[1:]:
+            pieces += [("lit", " "), ("pf", sub, sigma, env), ("lit", ")")]
+        _push(stack, pieces)
+
+    def _mp(self, pf, sigma, env, out, stack) -> None:
+        _push(
+            stack,
+            [
+                ("lit", "("),
+                ("pf", pf.imp, sigma, env),
+                ("lit", " "),
+                ("pf", pf.ant, sigma, env),
+                ("lit", ")"),
+            ],
+        )
+
+    def _imp_intro(self, pf, sigma, env, out, stack) -> None:
+        hyp = substitute(pf.hyp, sigma)
+        name = self.supply.fresh("h")
+        _push(
+            stack,
+            [
+                ("lit", f"(fun {name} : {render_formula(hyp)} => "),
+                ("pf", pf.body, sigma, {**env, hyp: name}),
+                ("lit", ")"),
+            ],
+        )
+
+    def _inst(self, pf, sigma, env, out, stack) -> None:
+        """Instantiation emits nothing: it re-renders the sub-proof under an
+        extended environment, so the variable is already gone by the time any
+        axiom or hypothesis is printed."""
+        stack.append(("pf", pf.sub, {**sigma, pf.var: substitute(pf.term, sigma)}, env))
+
+    def _induct(self, pf, sigma, env, out, stack) -> None:
+        """`ind (fun n => P n) <base at zero> (fun n => <step at n>) <the variable>`.
+        Our `Induct` proves `pred` with `var` still free -- read as universally
+        quantified -- so the Lean term applies the principle back to `var`'s
+        current image, and base/step render under `var := zero` / `var := n`."""
+        base_var = self.supply.fresh(pf.var)
+        step_var = self.supply.fresh(pf.var)
+        motive = render_formula(substitute(pf.pred, {**sigma, pf.var: Var(base_var)}))
+        arg = self.term_text(substitute(Var(pf.var), sigma))
+        _push(
+            stack,
+            [
+                ("lit", f"(ind (fun {base_var} : {CARRIER} => {motive}) "),
+                ("pf", pf.base, {**sigma, pf.var: self.theory.zero}, env),
+                ("lit", f" (fun {step_var} : {CARRIER} => "),
+                ("pf", pf.step, {**sigma, pf.var: Var(step_var)}, env),
+                ("lit", f") {arg})"),
+            ],
+        )
+
+    def _ex_falso(self, pf, sigma, env, out, stack) -> None:
+        concl = render_formula(substitute(pf.concl, sigma))
+        _push(
+            stack,
+            [("lit", "(False.elim "), ("pf", pf.sub, sigma, env), ("lit", f" : {concl})")],
+        )
+
+    def _raa(self, pf, sigma, env, out, stack) -> None:
+        goal = substitute(pf.goal, sigma)
+        negated = Not(goal)
+        name = self.supply.fresh("h")
+        _push(
+            stack,
+            [
+                ("lit", f"(Classical.byContradiction (fun {name} : {render_formula(negated)} => "),
+                ("pf", pf.sub, sigma, {**env, negated: name}),
+                ("lit", f") : {render_formula(goal)})"),
+            ],
+        )
+
+    def _forall_elim(self, pf, sigma, env, out, stack) -> None:
+        arg = self.term_text(substitute(pf.term, sigma))
+        _push(stack, [("lit", "("), ("pf", pf.sub, sigma, env), ("lit", f" {arg})")])
+
+    def _forall_intro(self, pf, sigma, env, out, stack) -> None:
+        if pf.sort:
+            raise LeanError(f"sorted generalization :{pf.sort} is out of scope")
+        name = self.supply.fresh(pf.var)
+        _push(
+            stack,
+            [
+                ("lit", f"(fun {name} : {CARRIER} => "),
+                ("pf", pf.sub, {**sigma, pf.var: Var(name)}, env),
+                ("lit", ")"),
+            ],
+        )
+
+    def _exists_intro(self, pf, sigma, env, out, stack) -> None:
+        claim = render_formula(substitute(pf.claim, sigma))
+        witness = self.term_text(substitute(pf.witness, sigma))
+        _push(
+            stack,
+            [
+                ("lit", f"(Exists.intro {witness} "),
+                ("pf", pf.sub, sigma, env),
+                ("lit", f" : {claim})"),
+            ],
+        )
+
+    def _exists_elim(self, pf, sigma, env, out, stack) -> None:
+        ex = self.conclusion(pf.sub_ex)
+        if type(ex) is not Exists:
+            raise LeanError(f"exists-elim needs an existential, got {ex!r}")
+        name = self.supply.fresh(pf.eigenvar)
+        inner = {**sigma, pf.eigenvar: Var(name)}
+        instance = substitute(instantiate(ex, Var(pf.eigenvar)), inner)
+        hyp = self.supply.fresh("h")
+        phi = render_formula(substitute(self.conclusion(pf.sub_use), inner))
+        _push(
+            stack,
+            [
+                ("lit", "(Exists.elim "),
+                ("pf", pf.sub_ex, sigma, env),
+                ("lit", f" (fun {name} : {CARRIER} => fun {hyp} : {render_formula(instance)} => "),
+                ("pf", pf.sub_use, inner, {**env, instance: hyp}),
+                ("lit", f") : {phi})"),
+            ],
+        )
+
+
 __all__ = [
+    "AXIOM_LABELS",
     "CARRIER",
     "LeanError",
     "closure_names",
+    "export_theorem",
     "lean_name",
     "parse_formula",
     "parse_term",
@@ -585,4 +1002,5 @@ __all__ = [
     "substitute",
     "symbol_name",
     "universal_closure",
+    "uses_induction",
 ]
