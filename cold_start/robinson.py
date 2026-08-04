@@ -12,6 +12,8 @@ identity, rather than buried inside the usual recursive axiom `x·S(y) = x·y + 
 (Undecidability enters exactly when `S` is added to `·`: multiplication alone is
 decidable -- its prime-permuting automorphisms hide addition -- and successor
 rigidifies the integers, kills those automorphisms, and lets `+` be defined.)
+See tests/test_padoa.py for that automorphism, executably: a prime-swapping σ that
+preserves `·`, breaks `+` and `S`, and leaves the bridge's `·`-only subterms fixed.
 
 We keep `cold_start.peano` (with `+` primitive and `×` recursive) as the practical
 trusted base; Robinson herself (§2) called the eliminated-`+` axioms "complicated

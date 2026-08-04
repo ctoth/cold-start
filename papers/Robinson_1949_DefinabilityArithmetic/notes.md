@@ -52,7 +52,9 @@ by bridges. `test_robinson_peano_axioms_true_in_N` confirms all are true in N.
   and that much symmetry hides addition (Robinson cites Padoa, p. 100). Successor
   **rigidifies** the integers — it fixes 1, 2 = S1, 3 = SS1, … — killing those
   automorphisms, and only then is `+` definable. So undecidability enters exactly
-  when `S` meets `·`.
+  when `S` meets `·`. **Mechanised** in `tests/test_padoa.py`: σ swaps the exponents
+  of 2 and 3 (σ2=3, σ3=2, σ4=9, σ6=6, σp=p for p≥5), preserves `·` on a grid, and
+  breaks `+` at 2+2=4 (σ2+σ2=6 ≠ 9=σ4) and `S` at σ(S1)=3 ≠ 2=S(σ1).
 - **For a proof checker:** Robinson herself (§2) calls the eliminated-`+` axioms
   "complicated and artificial." We therefore keep `+`-primitive with recursive `×`
   (`cold_start.peano`) as the small, readable trusted base, and *exhibit* the
@@ -64,6 +66,15 @@ by bridges. `test_robinson_peano_axioms_true_in_N` confirms all are true in N.
 - Every `(1, S, ·)` Peano axiom is true in N over the positive integers.
 - `check(Inst(Axiom(A4'), "a", 2), ROBINSON_PEANO)` derives `bridge(2, 1, 3)` — a
   closed theorem with no `+` symbol, verified by the trusted checker.
+
+## Testable properties (mechanised in tests/test_padoa.py — Padoa's method)
+- σ is multiplicative and an involution: an automorphism of `(N⁺, ·)`.
+- σ moves the graph of `+` (most of the sampled grid), and moves `S` at 1.
+- The maximal `·`-only subterms of `bridge` (`a·c`, `b·c`, `c·c`, `a·b`) ARE
+  σ-equivariant; the `S`-wrapped ones are not, and `bridge(2,2,4)` is true while
+  `bridge(σ2,σ2,σ4) = bridge(3,3,9)` is false. The σ-variance enters through `S`.
+- Honesty: these are *witnesses*. "Definable ⇒ automorphism-invariant" is a
+  metatheorem we do not mechanise; the tests supply the automorphism half.
 
 ## Open follow-ups
 - [ ] Mechanise Theorem 1.2 (`+`, `·` from `S` and `|`) — needs a divisibility-based
