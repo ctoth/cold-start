@@ -114,3 +114,30 @@ def test_successor_remains_visible_in_the_expanded_product_definition():
     formula = robinson_product(Var("a"), Var("b"), Var("c"))
 
     assert any(type(n) is Fun and n == S(n.args[0]) for n in subnodes(formula))
+
+
+def test_constructors_accept_an_interpreted_divisibility_relation():
+    from cold_start.divisibility import peano_divides
+
+    a, b, c = Var("a"), Var("b"), Var("c")
+    formula = robinson_product(a, b, c, via=peano_divides)
+    nodes = tuple(subnodes(formula))
+
+    validate(formula)
+    assert formula.free_vars() == frozenset({"a", "b", "c"})
+    # every | atom became the PEANO existential graph: no relation symbols left
+    assert not any(type(n) is Rel for n in nodes)
+    assert {n.name for n in nodes if type(n) is Fun} == {"S", "*"}
+    # the interpreted formula keeps the shape of the pure one exactly
+    pure = robinson_product(a, b, c)
+    interpreted_units = unit_case(a, b, c, via=peano_divides)
+    assert interpreted_units == forall(
+        "x",
+        "",
+        And(
+            peano_divides(a, Var("x")),
+            peano_divides(b, Var("x")),
+            peano_divides(c, Var("x")),
+        ),
+    )
+    assert len(nodes) > len(tuple(subnodes(pure)))
