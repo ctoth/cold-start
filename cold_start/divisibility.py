@@ -10,14 +10,16 @@ PEANO.
 from __future__ import annotations
 
 from .peano import mul
-from .presburger import ZERO, S
+from .presburger import ZERO, S, add
 from .proof import MP, Assume, Cong, ExistsElim, ExistsIntro, ImpIntro, Inst, Pf, Refl, Sym, Trans
 from .proofs import (
     ADD_RULES,
+    DISTRIB_LEFT,
     LEFT_IDENTITY,
     MUL_ASSOC,
     MUL_COMM,
     MUL_RULES,
+    distrib_left,
     left_identity,
     mul_assoc,
     mul_comm,
@@ -59,6 +61,14 @@ DIVIDES_TRANS: Formula = Implies(
 DIVIDES_PRODUCT: Formula = Implies(
     peano_divides(_a, _b),
     peano_divides(_a, mul(_b, _c)),
+)
+DIVIDES_ADD: Formula = Implies(
+    peano_divides(_a, _b),
+    Implies(peano_divides(_a, _c), peano_divides(_a, add(_b, _c))),
+)
+DIVIDES_MUL_LEFT: Formula = Implies(
+    peano_divides(_a, _b),
+    peano_divides(mul(_c, _a), mul(_c, _b)),
 )
 
 
@@ -135,15 +145,59 @@ def divides_product() -> Pf:
     return ImpIntro(ab, MP(MP(transitive, Assume(ab)), factor))
 
 
+def divides_add() -> Pf:
+    """PEANO proves ``a|b -> a|c -> a|(b+c)``.
+
+    From witnesses ``a*k=b`` and ``a*l=c``, distributivity certifies
+    ``a*(k+l) = a*k + a*l = b + c``; ``k+l`` is the composite witness.
+    """
+    ab, ac = peano_divides(_a, _b), peano_divides(_a, _c)
+    goal = peano_divides(_a, add(_b, _c))
+    k, ell = Var("k!"), Var("l!")
+    ab_instance = instantiate(ab, k)
+    ac_instance = instantiate(ac, ell)
+
+    distribute = lemma_rule(DISTRIB_LEFT, distrib_left()).instance({"x": _a, "y": k, "z": ell})
+    sum_of_witnesses = Cong("+", (Assume(ab_instance), Assume(ac_instance)))
+    product_eq_sum = Trans(distribute, sum_of_witnesses)
+    packed = ExistsIntro(goal, add(k, ell), product_eq_sum)
+
+    use_ac = ExistsElim("l!", Assume(ac), packed)
+    use_ab = ExistsElim("k!", Assume(ab), use_ac)
+    return ImpIntro(ab, ImpIntro(ac, use_ab))
+
+
+def divides_mul_left() -> Pf:
+    """PEANO proves ``a|b -> c*a|c*b``: a common left factor is harmless.
+
+    From the witness ``a*k=b``, associativity certifies
+    ``(c*a)*k = c*(a*k) = c*b``; the witness survives unchanged.
+    """
+    ab = peano_divides(_a, _b)
+    goal = peano_divides(mul(_c, _a), mul(_c, _b))
+    k = Var("k!")
+    ab_instance = instantiate(ab, k)
+
+    assoc = lemma_rule(MUL_ASSOC, mul_assoc()).instance({"x": _c, "y": _a, "z": k})
+    scale = Cong("*", (Refl(_c), Assume(ab_instance)))
+    packed = ExistsIntro(goal, k, Trans(assoc, scale))
+
+    return ImpIntro(ab, ExistsElim("k!", Assume(ab), packed))
+
+
 __all__ = [
+    "DIVIDES_ADD",
     "DIVIDES_FACTOR",
+    "DIVIDES_MUL_LEFT",
     "DIVIDES_PRODUCT",
     "DIVIDES_PRODUCT_RIGHT",
     "DIVIDES_REFL",
     "DIVIDES_TRANS",
     "DIVIDES_ZERO",
     "ONE_DIVIDES",
+    "divides_add",
     "divides_factor",
+    "divides_mul_left",
     "divides_product",
     "divides_product_right",
     "divides_refl",
