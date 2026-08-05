@@ -10,6 +10,7 @@ from .. import robinson as _robinson
 from ..peano_proofs import mul_cancel_right_succ, mul_proof
 from ..presburger_proofs import add_proof, left_identity_proof
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
+from .models import model_for
 from .proof import _Export
 
 # ---------------------------------------------------------------------------
@@ -17,20 +18,6 @@ from .proof import _Export
 # ---------------------------------------------------------------------------
 
 CORPUS_PATH = Path(__file__).resolve().parents[2] / "lean_export" / "ColdStart.lean"
-
-# Discharging each abstract hypothesis at Lean's `Nat`. The recursion axioms are
-# `rfl`: `Nat.add`/`Nat.mul` recurse on their second argument exactly as our
-# axioms say, so the two sides are definitionally equal. The successor axioms are
-# `noConfusion`, the injectivity/disjointness of constructors.
-NAT_AXIOM_PROOFS: dict = {
-    "ax_add_zero": "fun x => rfl",
-    "ax_add_succ": "fun x y => rfl",
-    "ax_mul_zero": "fun x => rfl",
-    "ax_mul_succ": "fun x y => rfl",
-    "ax_succ_ne_zero": "fun x h => Nat.noConfusion h",
-    "ax_succ_inj": "fun x y h => Nat.noConfusion h (fun h' => h')",
-}
-NAT_INDUCTION = "fun P h0 hs n => Nat.rec (motive := P) h0 hs n"
 
 _HEADER = """/-
   ColdStart.lean
@@ -47,8 +34,9 @@ _HEADER = """/-
   proofs and no tactics: each theorem is CONDITIONAL, taking the operations and
   the axioms of its theory (and, where the proof uses induction, the induction
   principle) as hypotheses over an abstract carrier `M`. The epilogue then
-  instantiates them at Lean's own `Nat`, discharging every hypothesis with a
-  core lemma, which turns them into unconditional facts about the naturals.
+  instantiates each theorem whose exact theory has a registered semantic model,
+  discharging every hypothesis with a Lean proof term. The current registry
+  contains the Presburger and Peano models at `Nat`.
 
   Lean core only: this file needs no `import`, no Std and no Mathlib.
 -/
@@ -61,8 +49,8 @@ set_option linter.unusedVariables false
 """
 
 _EPILOGUE_HEADER = """/-
-  The epilogue: `M := Nat`, with every hypothesis discharged, so the conditional
-  theorems above become unconditional facts about Lean's own naturals.
+  The epilogue: registered semantic models discharge every hypothesis, so the
+  corresponding conditional theorems become unconditional facts.
 
   Robinson's theory is deliberately absent here. Its axioms describe the
   POSITIVE integers (A1 says `succ a ≠ 1`, which is false at `a := 0`), so `Nat`
@@ -72,46 +60,47 @@ _EPILOGUE_HEADER = """/-
 
 
 def corpus_entries() -> list:
-    """The proofs the generated file carries: `(name, proof, theory, at_nat)`.
-    `at_nat` says whether the epilogue may instantiate it at Lean's `Nat`."""
+    """The proofs the generated file carries: `(name, proof, theory)`.
+
+    Cash-out is decided only by the exact semantic model registry; entries do
+    not carry an ad hoc boolean permission.
+    """
     return [
-        ("coldstart_left_identity", left_identity_proof(), _presburger.PRESBURGER, True),
-        ("coldstart_add_two_three", add_proof(2, 3), _presburger.PRESBURGER, True),
-        ("coldstart_mul_two_three", mul_proof(2, 3), _peano.PEANO, True),
+        ("coldstart_left_identity", left_identity_proof(), _presburger.PRESBURGER),
+        ("coldstart_add_two_three", add_proof(2, 3), _presburger.PRESBURGER),
+        ("coldstart_mul_two_three", mul_proof(2, 3), _peano.PEANO),
         (
             "coldstart_mul_cancel_right_positive",
             mul_cancel_right_succ(),
             _peano.PEANO,
-            True,
         ),
         (
             "coldstart_robinson_bridge_converse_positive",
             bridge_converse_positive(),
             _peano.PEANO,
-            True,
         ),
         (
             "coldstart_robinson_add_two_three",
             robinson_add_proof(2, 3),
             _robinson.ROBINSON_PEANO,
-            False,
         ),
     ]
 
 
-CORPUS_NAMES = tuple(name for name, _pf, _theory, _nat in corpus_entries())
+CORPUS_NAMES = tuple(name for name, _pf, _theory in corpus_entries())
 
 
 def export_corpus() -> str:
     """The whole `ColdStart.lean`: header, one conditional theorem per corpus
-    proof, then the `Nat` epilogue."""
+    proof, then the semantic-model epilogue."""
     parts = [_HEADER]
     epilogue = [_EPILOGUE_HEADER]
-    for name, pf, theory, at_nat in corpus_entries():
+    for name, pf, theory in corpus_entries():
         export = _Export(pf, theory)
         parts.append(export.theorem(name))
-        if at_nat:
-            epilogue.append(export.nat_example(name, NAT_AXIOM_PROOFS, NAT_INDUCTION))
+        model = model_for(theory)
+        if model is not None:
+            epilogue.append(export.model_example(name, model))
     return "\n".join([*parts, *epilogue])
 
 
@@ -128,8 +117,6 @@ def write_corpus(path: Path | str | None = None) -> Path:
 __all__ = [
     "CORPUS_NAMES",
     "CORPUS_PATH",
-    "NAT_AXIOM_PROOFS",
-    "NAT_INDUCTION",
     "corpus_entries",
     "export_corpus",
     "write_corpus",

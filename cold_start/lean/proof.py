@@ -40,16 +40,17 @@ from ..syntax import (
     children,
     instantiate,
 )
+from .models import LeanModel
 from .syntax import (
     _ABSTRACT,
     _L_ATOM,
-    _NAT,
     CARRIER,
     LeanError,
     _free_names,
     _Names,
     _render,
     _render_statement,
+    _Style,
     closure_names,
     lean_name,
     render_formula,
@@ -231,23 +232,40 @@ class _Export(
         rest = "".join(f"\n    {p}" for p in params[4:])
         return f"{head}{rest}\n    : {statement} :=\n  {body}\n"
 
-    def nat_example(self, name: str, axiom_proofs: dict[str, str], induction_proof: str) -> str:
-        """The same theorem, instantiated at Lean's `Nat`: every hypothesis is
-        supplied by a core lemma, so what remains is an unconditional `example`.
-        Arguments are passed by NAME, so this never depends on parameter order."""
+    def model_example(self, name: str, model: LeanModel) -> str:
+        """Instantiate the theorem in a completely registered semantic model.
+
+        Arguments are passed by name, so neither axiom nor symbol ordering can
+        change the meaning. Registrations are tied to an exact theory object;
+        an unregistered or merely equal theory remains conditional.
+        """
+        if model.theory is not self.theory:
+            raise LeanError(f"model {model.name!r} is not registered for this theory")
         if self.seq.hyps:
-            raise LeanError("cannot instantiate a theorem with open hypotheses at Nat")
-        statement = _render_statement(self.subst(self.seq.concl), _NAT)
-        args = [f"({CARRIER} := Nat)"]
-        args += [f"({_ABSTRACT.symbol(s)} := {_NAT.symbol(s)})" for s in self.symbol_order()]
+            raise LeanError("cannot instantiate a theorem with open hypotheses in a model")
+        symbol_map = model.symbol_map()
+        if set(symbol_map) != set(self.symbols):
+            raise LeanError(
+                f"model {model.name!r} symbols do not match the exported theorem: "
+                f"expected {sorted(self.symbols)!r}, got {sorted(symbol_map)!r}"
+            )
+        style = _Style(model.carrier, symbol_map)
+        statement = _render_statement(self.subst(self.seq.concl), style)
+        args = [f"({CARRIER} := {model.carrier})"]
+        args += [
+            f"({_ABSTRACT.symbol(s)} := {symbol_map[s]})" for s in self.symbol_order()
+        ]
+        axiom_proofs = model.axiom_map()
         for ax in sorted(self.theory.axioms, key=lambda a: self.axiom_names[a]):
             label = self.axiom_names[ax]
-            proof = axiom_proofs.get(label)
+            proof = axiom_proofs.get(ax)
             if proof is None:
-                raise LeanError(f"no Nat proof for the hypothesis {label}")
+                raise LeanError(f"model {model.name!r} has no proof for {label}")
             args.append(f"({label} := {proof})")
         if uses_induction(self.pf):
-            args.append(f"(ind := {induction_proof})")
+            if model.induction_proof is None:
+                raise LeanError(f"model {model.name!r} has no induction proof")
+            args.append(f"(ind := {model.induction_proof})")
         applied = "\n    ".join([f"  {name} {args[0]}", *args[1:]])
         return f"example : {statement} :=\n{applied}\n"
 

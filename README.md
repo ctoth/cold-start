@@ -158,11 +158,13 @@ The code is the `cold_start/` package (flat, no src-layout):
   (`uv run python -m cold_start.ledger`).
 - **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
   process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
-- **`cold_start/lean/syntax.py`**, **`cold_start/lean/proof.py`**, and
-  **`cold_start/lean/corpus.py`** — untrusted Lean 4 statement, proof-export, and
-  corpus owners. Checked proofs become *conditional* Lean theorems (axioms become
-  hypotheses, never Lean `axiom` declarations); `python -m cold_start.lean`
-  writes `lean_export/ColdStart.lean`, which a pinned Lean 4 kernel compiles.
+- **`cold_start/lean/syntax.py`**, **`cold_start/lean/proof.py`**,
+  **`cold_start/lean/models.py`**, and **`cold_start/lean/corpus.py`** — untrusted
+  Lean 4 statement, proof-export, exact semantic-model registry, and corpus
+  owners. Checked proofs become *conditional* Lean theorems (axioms become
+  hypotheses, never Lean `axiom` declarations); exact registered models cash
+  them out unconditionally. `python -m cold_start.lean` writes
+  `lean_export/ColdStart.lean`, which a pinned Lean 4 kernel compiles.
 - **`tests/test_checker.py`** — example tests: rules, the soundness attacks,
   serialization round-trip, cross-process verification.
 - **`tests/test_properties.py`** — Hypothesis property tests: round-trips, checker

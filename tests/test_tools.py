@@ -104,6 +104,7 @@ def test_durable_docs_name_current_architecture_owners():
         "cold_start/codec.py",
         "cold_start/presburger_proofs.py",
         "cold_start/peano_proofs.py",
+        "cold_start/lean/models.py",
         "cold_start/lean/corpus.py",
     ):
         assert current in readme

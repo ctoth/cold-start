@@ -115,12 +115,17 @@ each checked proof as a
 explicit hypotheses (never a Lean `axiom`), induction becomes an `ind` hypothesis,
 and the proof term maps rule-for-rule onto Lean primitives (`Eq.trans`, `congrArg`,
 application, lambda, `Nat.rec` at the ℕ instantiation). `lean_export/ColdStart.lean`
-carries the `lean/corpus.py` corpus plus an epilogue instantiating
-Presburger/Peano at ℕ — and it
-compiles under Lean 4, so a foreign kernel re-derives what our checker accepted.
-Robinson stays conditional on purpose (`S a ≠ 1` fails at 0, so ℕ is not a model of
-the positive-integer axioms). Importing Lean *proofs* is out of scope (that would
-mean swallowing CIC); only the emitted statement fragment parses back.
+carries the `lean/corpus.py` corpus plus a semantic-model epilogue.
+`lean/models.py` is the single owner of those model registrations: each is tied to
+one exact `Theory` object and must interpret every function symbol, pay every axiom,
+and supply the induction principle when present. PRESBURGER and PEANO are registered
+at ℕ, so their exported theorems cash out unconditionally; a structurally equal but
+unregistered theory stays conditional. Robinson also stays conditional on purpose
+(`S a ≠ 1` fails at 0, so ℕ is not a model of the positive-integer axioms). The
+generated corpus compiles under Lean 4, so a foreign kernel re-derives both the
+conditional proof and every registered semantic discharge. Importing Lean *proofs*
+is out of scope (that would mean swallowing CIC); only the emitted statement
+fragment parses back.
 
 ## The theories
 - `presburger.py` — the addition fragment `(0, S, +)` with induction: **Presburger

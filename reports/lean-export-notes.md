@@ -7,8 +7,10 @@ The Lean adapter is deliberately split by responsibility:
 - `cold_start/lean/syntax.py` owns Lean names, substitution, statement rendering,
   parsing, and universal closure.
 - `cold_start/lean/proof.py` owns checked proof-term rendering.
-- `cold_start/lean/corpus.py` owns corpus entries, Nat discharge data, generated
-  headers, and `lean_export/ColdStart.lean`.
+- `cold_start/lean/models.py` owns exact-theory semantic model registrations,
+  including operation interpretations, axiom payments, and induction.
+- `cold_start/lean/corpus.py` owns corpus entries, generated headers, registry
+  lookup, and `lean_export/ColdStart.lean`.
 - `cold_start/lean/__main__.py` owns `python -m cold_start.lean`.
 
 There is no `cold_start/lean.py` compatibility module and no package initializer
@@ -19,8 +21,10 @@ that re-exports the deleted combined surface.
 Every emitted theorem is conditional. Object-language function symbols, theory
 axioms, and (when used) induction are Lean theorem parameters; the exporter never
 creates a Lean `axiom`, `sorry`, or tactic escape. The Presburger and Peano
-epilogue instantiates those hypotheses at Lean's `Nat` using core lemmas.
-Robinson remains conditional because its positive-integer axiom
+epilogue looks up the theorem's exact `Theory` object in the fail-closed model
+registry. PRESBURGER and PEANO instantiate at Lean's `Nat` using core lemmas;
+an equal but unregistered theory does not inherit that authority. Robinson
+remains conditional because its positive-integer axiom
 `succ a != 1` is false in `Nat` at `a = 0`.
 
 Proof instantiation is rendered through a substitution environment, so axiom
@@ -65,6 +69,16 @@ and conditional Robinson export. Immutable proof/corpus setup is shared across
 assertions, but neither kernel execution is skipped or replaced by string checks.
 
 ## Verified execution
+
+On 2026-08-05, after the exact semantic-model registry landed:
+
+- the full owned gate passed 1,330 tests with zero skips;
+- Ruff passed;
+- Pyright basic reported 0 errors and 0 warnings;
+- corpus regeneration matched the committed generated form;
+- the generated corpus compiled and the corrupted negative control was rejected;
+- focused model tests proved that structurally equal and unregistered theories
+  do not inherit `Nat` cash-out.
 
 On 2026-08-04, after the repository architecture cleanup:
 

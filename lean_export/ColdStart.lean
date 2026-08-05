@@ -13,8 +13,9 @@
   proofs and no tactics: each theorem is CONDITIONAL, taking the operations and
   the axioms of its theory (and, where the proof uses induction, the induction
   principle) as hypotheses over an abstract carrier `M`. The epilogue then
-  instantiates them at Lean's own `Nat`, discharging every hypothesis with a
-  core lemma, which turns them into unconditional facts about the naturals.
+  instantiates each theorem whose exact theory has a registered semantic model,
+  discharging every hypothesis with a Lean proof term. The current registry
+  contains the Presburger and Peano models at `Nat`.
 
   Lean core only: this file needs no `import`, no Std and no Mathlib.
 -/
@@ -88,8 +89,8 @@ theorem coldstart_robinson_add_two_three {M : Type} (zero : M) (succ : M → M) 
   ((ax_add_succ (succ (succ zero)) (succ (succ zero)) (succ (succ (succ (succ zero))))) ((ax_add_succ (succ (succ zero)) (succ zero) (succ (succ (succ zero)))) (ax_add_one (succ (succ zero)))))
 
 /-
-  The epilogue: `M := Nat`, with every hypothesis discharged, so the conditional
-  theorems above become unconditional facts about Lean's own naturals.
+  The epilogue: registered semantic models discharge every hypothesis, so the
+  corresponding conditional theorems become unconditional facts.
 
   Robinson's theory is deliberately absent here. Its axioms describe the
   POSITIVE integers (A1 says `succ a ≠ 1`, which is false at `a := 0`), so `Nat`
