@@ -199,6 +199,13 @@ def test_unknown_symbols_round_trip_as_uninterpreted_functions():
     assert parse_formula(render_statement(f)) == universal_closure(f)
 
 
+def test_proof_export_renames_escaped_object_variables_only_once():
+    text = export_theorem("escaped", Refl(Var("x!1")), PRESBURGER)
+    assert "««" not in text
+    assert "x!1" not in text
+    assert ": ∀ x" in text
+
+
 # --- proof export: conditional theorems over an abstract carrier -----------
 
 LEFT_IDENTITY_PROOF = left_identity_proof()
@@ -317,6 +324,9 @@ def test_corpus_epilogue_instantiates_the_arithmetic_theorems_at_Nat(corpus_text
     # Robinson's axioms hold of the POSITIVE integers (S a != 1 fails at a := 0),
     # so that theorem stays conditional -- it must not be instantiated at Nat.
     assert "coldstart_robinson_add_two_three (M := Nat)" not in text
+    assert "coldstart_square_product_total (M := Nat)" in text
+    assert "coldstart_square_product_unique (M := Nat)" in text
+    assert "(sq := (fun n => Nat.mul n n))" in text
 
 
 def test_the_committed_corpus_file_is_up_to_date(corpus_text: str):

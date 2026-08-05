@@ -19,6 +19,7 @@ from ..presburger import (
     SUCC_INJ,
     SUCC_NEQ_ZERO,
 )
+from ..squaring import SQUARE_ARITHMETIC, SQUARE_SUCC_F, SQUARE_ZERO_F
 from ..syntax import Formula, Fun, children
 
 
@@ -124,7 +125,26 @@ NAT_PEANO = LeanModel(
     induction_proof=_NAT_INDUCTION,
 )
 
-REGISTERED_MODELS = (NAT_PRESBURGER, NAT_PEANO)
+NAT_SQUARE = LeanModel(
+    name="nat-addition-and-square",
+    theory=SQUARE_ARITHMETIC,
+    carrier="Nat",
+    symbols=(*_NAT_SYMBOLS, ("sq", "(fun n => Nat.mul n n)")),
+    axiom_proofs=(
+        *_NAT_PRESBURGER_AXIOMS,
+        (SQUARE_ZERO_F, "rfl"),
+        (
+            SQUARE_SUCC_F,
+            """fun x => Eq.trans (Nat.succ_mul x (Nat.succ x))
+  (Eq.trans
+    (congrArg (fun t => Nat.add t (Nat.succ x)) (Nat.mul_succ x x))
+    (Nat.add_assoc (Nat.mul x x) x (Nat.succ x)))""",
+        ),
+    ),
+    induction_proof=_NAT_INDUCTION,
+)
+
+REGISTERED_MODELS = (NAT_PRESBURGER, NAT_PEANO, NAT_SQUARE)
 
 
 def model_for(theory: object) -> LeanModel | None:
@@ -136,6 +156,7 @@ __all__ = [
     "LeanModel",
     "NAT_PEANO",
     "NAT_PRESBURGER",
+    "NAT_SQUARE",
     "REGISTERED_MODELS",
     "model_for",
 ]

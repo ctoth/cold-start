@@ -8,17 +8,20 @@ from cold_start.checker import Theory
 from cold_start.lean.models import (
     NAT_PEANO,
     NAT_PRESBURGER,
+    NAT_SQUARE,
     LeanModel,
     model_for,
 )
 from cold_start.peano import PEANO
 from cold_start.presburger import PRESBURGER
 from cold_start.robinson import ROBINSON_PEANO
+from cold_start.squaring import SQUARE_ARITHMETIC
 
 
 def test_only_exact_registered_theories_cash_out() -> None:
     assert model_for(PRESBURGER) is NAT_PRESBURGER
     assert model_for(PEANO) is NAT_PEANO
+    assert model_for(SQUARE_ARITHMETIC) is NAT_SQUARE
     assert model_for(ROBINSON_PEANO) is None
     assert model_for(replace(PRESBURGER)) is None
     assert model_for(Theory(axioms=frozenset())) is None

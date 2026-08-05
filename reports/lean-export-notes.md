@@ -22,9 +22,10 @@ Every emitted theorem is conditional. Object-language function symbols, theory
 axioms, and (when used) induction are Lean theorem parameters; the exporter never
 creates a Lean `axiom`, `sorry`, or tactic escape. The Presburger and Peano
 epilogue looks up the theorem's exact `Theory` object in the fail-closed model
-registry. PRESBURGER and PEANO instantiate at Lean's `Nat` using core lemmas;
-an equal but unregistered theory does not inherit that authority. Robinson
-remains conditional because its positive-integer axiom
+registry. PRESBURGER, PEANO, and SQUARE_ARITHMETIC instantiate at Lean's `Nat`
+using core lemmas; square is interpreted as `(fun n => Nat.mul n n)`. An equal
+but unregistered theory does not inherit that authority. Robinson remains
+conditional because its positive-integer axiom
 `succ a != 1` is false in `Nat` at `a = 0`.
 
 Proof instantiation is rendered through a substitution environment, so axiom

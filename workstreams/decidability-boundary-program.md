@@ -19,7 +19,7 @@ imports of untrusted code, and `notes-breakthrough*` staying uncommitted.
 - Baseline artifact ledger: seven artifacts reverified; Robinson formula (2)
   remains honestly open at `totality:*` and `uniqueness:*` on its literal
   empty-theory shore.
-- A1 status: **complete, awaiting milestone commit**. `lean/models.py` now owns
+- A1 status: **complete** in `e6f4403`. `lean/models.py` now owns
   complete exact-identity registrations for PRESBURGER-at-`Nat` and
   PEANO-at-`Nat`. Registrations cover every operation, axiom, and induction;
   structurally equal or unregistered theories remain conditional. The corpus
@@ -28,9 +28,18 @@ imports of untrusted code, and `notes-breakthrough*` staying uncommitted.
   46 focused Lean/model tests and the full 1,330-test gate passed; Ruff and
   Pyright are clean; the generated corpus compiled, including the negative
   corrupted-proof control.
-- B1 status: **queued after the A1 commit**. Its multiplication graph will be stated
-  without subtraction as `2z + x² + y² = (x+y)²` and measured as an
-  interpretation artifact.
+- B1 status: **complete**.
+  `SQUARE_ARITHMETIC` extends PRESBURGER with the two addition-only square
+  recursions. The 14-node subtraction-free multiplication graph has both debts
+  paid: totality toll 15,186; uniqueness toll 5,044; total 20,230; open `()`.
+  A proof-tree audit admits only `0`, `S`, `+`, and `sq`, while bounded standard
+  semantics checks the graph exactly against `z=x*y`. The exact Lean model maps
+  `sq(n)` to `Nat.mul n n`; focused foreign-kernel replay is green. Canonical
+  bridge names also exposed and regressed a double-quoting defect in the Lean
+  exporter before promotion. Final gate: 1,337 tests passed; Ruff clean;
+  Pyright 0 errors/0 warnings; generated Lean compile and corrupted-proof
+  negative control both passed. The eight-artifact ledger reverified the same
+  14/20,230 measurement with both B1 obligations paid.
 
 ## The Program in One Paragraph
 

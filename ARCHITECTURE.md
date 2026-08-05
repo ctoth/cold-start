@@ -118,9 +118,10 @@ application, lambda, `Nat.rec` at the ℕ instantiation). `lean_export/ColdStart
 carries the `lean/corpus.py` corpus plus a semantic-model epilogue.
 `lean/models.py` is the single owner of those model registrations: each is tied to
 one exact `Theory` object and must interpret every function symbol, pay every axiom,
-and supply the induction principle when present. PRESBURGER and PEANO are registered
-at ℕ, so their exported theorems cash out unconditionally; a structurally equal but
-unregistered theory stays conditional. Robinson also stays conditional on purpose
+and supply the induction principle when present. PRESBURGER, PEANO, and
+SQUARE_ARITHMETIC are registered at ℕ, so their exported theorems cash out
+unconditionally; a structurally equal but unregistered theory stays conditional.
+Robinson also stays conditional on purpose
 (`S a ≠ 1` fails at 0, so ℕ is not a model of the positive-integer axioms). The
 generated corpus compiles under Lean 4, so a foreign kernel re-derives both the
 conditional proof and every registered semantic discharge. Importing Lean *proofs*
@@ -132,6 +133,8 @@ fragment parses back.
   arithmetic**, complete and decidable.
 - `peano.py` — `PEANO = PRESBURGER + {x·0=0, x·S(y)=x·y+x}`. Multiplication defined
   recursively from addition; with induction this is where incompleteness begins.
+- `squaring.py` — PRESBURGER plus primitive `sq`, recursively characterized using
+  only addition; multiplication is recovered through a paid polarization graph.
 - `presburger_proofs.py` — addition, induction, cancellation, and zero-case proof
   builders whose smallest complete checking theory is Presburger.
 - `peano_proofs.py` — multiplication laws and positive cancellation, consuming the
@@ -198,6 +201,15 @@ relativized — nonemptiness and closure of the domain. `verify` pushes each off
 payment through the trusted `check()` and reports **bridge size** (translation
 nodes) against **toll** (proof nodes), with unpaid obligations ledgered openly: an
 interpretation with open debts is a conjecture with a ledger, not a theorem.
+
+`squaring_bridges.py` is the smallest complete seed currently measured. It maps
+`x*y=z` to the subtraction-free 14-node graph
+`(z+z)+sq(x)+sq(y)=sq(x+y)` in `SQUARE_ARITHMETIC`. Totality is an induction whose
+witness advances from `z` to `z+x`; uniqueness cancels the square terms and uses
+an addition-only proof that doubling is injective. Both debts are paid (toll:
+20,230), and a proof-tree audit admits only `0`, `S`, `+`, and `sq`. The Lean model
+registry interprets `sq(n)` as `Nat.mul n n`, so both payments cash out at the
+standard naturals.
 
 Predicate symbols cross the same layer without fake function obligations. In
 particular, atomic `a | b` translates to PEANO's `∃k. a·k=b`; seven elementary

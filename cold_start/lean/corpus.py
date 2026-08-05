@@ -10,6 +10,8 @@ from .. import robinson as _robinson
 from ..peano_proofs import mul_cancel_right_succ, mul_proof
 from ..presburger_proofs import add_proof, left_identity_proof
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
+from ..squaring import SQUARE_ARITHMETIC
+from ..squaring_proofs import square_product_total, square_product_unique
 from .models import model_for
 from .proof import _Export
 
@@ -36,7 +38,7 @@ _HEADER = """/-
   principle) as hypotheses over an abstract carrier `M`. The epilogue then
   instantiates each theorem whose exact theory has a registered semantic model,
   discharging every hypothesis with a Lean proof term. The current registry
-  contains the Presburger and Peano models at `Nat`.
+  contains the Presburger, Peano, and addition-plus-square models at `Nat`.
 
   Lean core only: this file needs no `import`, no Std and no Mathlib.
 -/
@@ -84,6 +86,16 @@ def corpus_entries() -> list:
             robinson_add_proof(2, 3),
             _robinson.ROBINSON_PEANO,
         ),
+        (
+            "coldstart_square_product_total",
+            square_product_total(),
+            SQUARE_ARITHMETIC,
+        ),
+        (
+            "coldstart_square_product_unique",
+            square_product_unique(),
+            SQUARE_ARITHMETIC,
+        ),
     ]
 
 
@@ -94,14 +106,14 @@ def export_corpus() -> str:
     """The whole `ColdStart.lean`: header, one conditional theorem per corpus
     proof, then the semantic-model epilogue."""
     parts = [_HEADER]
-    epilogue = [_EPILOGUE_HEADER]
+    model_examples: list[str] = []
     for name, pf, theory in corpus_entries():
         export = _Export(pf, theory)
         parts.append(export.theorem(name))
         model = model_for(theory)
         if model is not None:
-            epilogue.append(export.model_example(name, model))
-    return "\n".join([*parts, *epilogue])
+            model_examples.append(export.model_example(name, model))
+    return "\n".join([*parts, _EPILOGUE_HEADER, *model_examples])
 
 
 def write_corpus(path: Path | str | None = None) -> Path:

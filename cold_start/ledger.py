@@ -29,6 +29,7 @@ from .quotient import QuotientInterpretation
 from .quotient import verify as verify_quotient
 from .ring_z import ring_z_interpretation
 from .skolem import skolem_interpretation
+from .squaring_bridges import squaring_interpretation
 
 Artifact = Interpretation | QuotientInterpretation
 
@@ -40,6 +41,7 @@ ARTIFACTS: tuple[Callable[[], Artifact], ...] = (
     skolem_interpretation,
     integers_interpretation,
     ring_z_interpretation,
+    squaring_interpretation,
 )
 """Every interpretation artifact the repository has landed."""
 

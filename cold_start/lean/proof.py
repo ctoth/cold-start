@@ -8,6 +8,7 @@ from typing import cast
 from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
+from .. import squaring as _squaring
 from ..checker import Theory, check
 from ..emitter import Emitter, Visit, case
 from ..proof import (
@@ -78,6 +79,8 @@ AXIOM_LABELS: dict = {
     _robinson.ADD_SUCC: "ax_add_succ",
     _robinson.MUL_ONE: "ax_mul_one",
     _robinson.MUL_SUCC: "ax_mul_succ",
+    _squaring.SQUARE_ZERO_F: "ax_square_zero",
+    _squaring.SQUARE_SUCC_F: "ax_square_succ",
 }
 
 
@@ -175,7 +178,12 @@ class _Export(
         # (or is already a parameter); everything else keeps the name it had.
         self.sigma0 = {}
         for v in sorted(_var_names(roots)):
-            target = self.supply.fresh(v)
+            # `_Names` returns Lean identifiers. A French-quoted rendering is
+            # not an object-language variable name that may safely be stored in
+            # `Var` and rendered again: doing so would double-quote names such
+            # as the interpretation layer's canonical `x!1`. Rename any name
+            # that needs escaping to an ordinary fresh identifier instead.
+            target = self.fresh_binder(v)
             if target != v:
                 self.sigma0[v] = Var(target)
         self.open_names = {}
@@ -183,6 +191,15 @@ class _Export(
             self.open_names[self.subst(hyp)] = self.supply.fresh("h")
 
     # --- naming and substitution -------------------------------------------
+
+    def fresh_binder(self, object_name: str) -> str:
+        """A fresh ordinary Lean binder safe to store back in ``Var``.
+
+        French-quoted identifiers are a final rendering form, not canonical
+        object-language names. Internal substitution environments therefore
+        receive a plain fallback whenever the source name needs escaping.
+        """
+        return self.supply.fresh(object_name if lean_name(object_name) == object_name else "x")
 
     def subst(self, node):
         return substitute(node, self.sigma0)
@@ -369,8 +386,8 @@ class _Export(
         Our `Induct` proves `pred` with `var` still free -- read as universally
         quantified -- so the Lean term applies the principle back to `var`'s
         current image, and base/step render under `var := zero` / `var := n`."""
-        base_var = self.supply.fresh(pf.var)
-        step_var = self.supply.fresh(pf.var)
+        base_var = self.fresh_binder(pf.var)
+        step_var = self.fresh_binder(pf.var)
         motive = render_formula(substitute(pf.pred, {**context.sigma, pf.var: Var(base_var)}))
         arg = self.term_text(substitute(Var(pf.var), context.sigma))
         return (
@@ -412,7 +429,7 @@ class _Export(
     def _forall_intro(self, pf: ForallIntro, context: _ProofContext) -> tuple[object, ...]:
         if pf.sort:
             raise LeanError(f"sorted generalization :{pf.sort} is out of scope")
-        name = self.supply.fresh(pf.var)
+        name = self.fresh_binder(pf.var)
         return (
             f"(fun {name} : {CARRIER} => ",
             Visit(
@@ -433,7 +450,7 @@ class _Export(
         ex = self.conclusion(pf.sub_ex)
         if type(ex) is not Exists:
             raise LeanError(f"exists-elim needs an existential, got {ex!r}")
-        name = self.supply.fresh(pf.eigenvar)
+        name = self.fresh_binder(pf.eigenvar)
         inner = {**context.sigma, pf.eigenvar: Var(name)}
         instance = substitute(instantiate(ex, Var(pf.eigenvar)), inner)
         hyp = self.supply.fresh("h")

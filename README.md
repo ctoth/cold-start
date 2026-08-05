@@ -131,6 +131,12 @@ The code is the `cold_start/` package (flat, no src-layout):
   divisibility only (`every divisor ≠ 1 is even`). A 16-node bridge into
   PEANO, **every obligation paid** (toll: 116,358): product closure fell to
   course-of-values descent through the dyadic layers.
+- **`cold_start/squaring.py`**, **`cold_start/squaring_proofs.py`**, and
+  **`cold_start/squaring_bridges.py`** — multiplication recovered inside
+  addition plus primitive square by the subtraction-free graph
+  `2z+sq(x)+sq(y)=sq(x+y)`. The 14-node bridge is complete (toll: 20,230), its
+  payment terms contain no `*` or `-`, and its exact `Nat` model interprets
+  `sq(n)` as `Nat.mul n n` for unconditional Lean replay.
 - **`cold_start/quotient.py`** — **k-dimensional quotient interpretations**,
   the general Tarski–Mostowski–Robinson bridge: a source element becomes a
   k-tuple of target elements and source equality lands on a DEFINED
