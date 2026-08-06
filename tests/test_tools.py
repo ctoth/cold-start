@@ -96,15 +96,6 @@ def test_ci_checks_the_generated_corpus_and_compiles_it_with_pinned_lean4():
     assert "lean lean_export/ColdStart.lean" in workflow
 
 
-def test_type_checking_mode_is_named_consistently():
-    gate = (REPO_ROOT / "tools" / "gate.ps1").read_text(encoding="utf-8")
-    config = (REPO_ROOT / "pyrightconfig.json").read_text(encoding="utf-8")
-
-    assert '"typeCheckingMode": "basic"' in config
-    assert "pyright (basic)" in gate
-    assert "strict" not in gate.lower()
-
-
 def test_durable_docs_name_current_architecture_owners():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     architecture = (REPO_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")

@@ -40,6 +40,7 @@ from .syntax import (
     Fun,
     Implies,
     Not,
+    Term,
     Var,
     forall,
     instantiate,
@@ -195,8 +196,8 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
     if proof_type is Cong:
         node = cast(Cong, proof)
         hypotheses: frozenset[Formula] = frozenset()
-        left_terms = []
-        right_terms = []
+        left_terms: list[Term] = []
+        right_terms: list[Term] = []
         for subproof in node.args:
             sequent = derived(subproof)
             if type(sequent.concl) is not Eq:

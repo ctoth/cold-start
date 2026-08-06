@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .syntax import Formula
+from .syntax import Formula, SignatureProtocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class Sequent:
     returning one without raising.
     """
 
-    hyps: frozenset  # frozenset[Formula]
+    hyps: frozenset[Formula]
     concl: Formula
 
     def __repr__(self) -> str:
@@ -31,7 +31,7 @@ class Sequent:
             return f"{ctx} |- {self.concl!r}"
         return f"|- {self.concl!r}"
 
-    def sort_check(self, sig) -> None:
+    def sort_check(self, sig: SignatureProtocol) -> None:
         """The rule invariant: every formula is structurally well-sorted, and a
         variable name has one sort across all hypotheses and the conclusion
         together (substitution targets names, so a name at two sorts would let
@@ -45,7 +45,7 @@ class Sequent:
         for h in self.hyps:
             h.sort_check(sig)
             pairs |= h.free_var_sorts()
-        seen: dict = {}
+        seen: dict[str, str] = {}
         for name, sort in pairs:
             prev = seen.get(name)
             if prev is not None and prev != sort:

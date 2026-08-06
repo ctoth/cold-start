@@ -3,5 +3,12 @@
   "exclude": [".claude", "**/__pycache__", ".venv"],
   "pythonVersion": "3.11",
   "typeCheckingMode": "basic",
+  "strict": [
+    "cold_start/syntax.py",
+    "cold_start/proof.py",
+    "cold_start/theory.py",
+    "cold_start/checker.py",
+    "cold_start/sequent.py"
+  ],
   "executionEnvironments": [{ "root": "." }]
 }

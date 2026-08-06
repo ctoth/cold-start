@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TypeAlias, cast
@@ -13,7 +14,16 @@ FunctionRank: TypeAlias = tuple[str, tuple[str, ...], str]
 RelationRank: TypeAlias = tuple[str, tuple[str, ...]]
 _FunctionLookup: TypeAlias = dict[str, tuple[tuple[str, ...], str]]
 _RelationLookup: TypeAlias = dict[str, tuple[str, ...]]
-_MAPPING_PROXY_TYPE = type(MappingProxyType({}))
+_FunctionView: TypeAlias = Mapping[str, tuple[tuple[str, ...], str]]
+_RelationView: TypeAlias = Mapping[str, tuple[str, ...]]
+
+
+def _empty_function_view() -> _FunctionView:
+    return MappingProxyType({})
+
+
+def _empty_relation_view() -> _RelationView:
+    return MappingProxyType({})
 
 
 def _require_name(value: object, label: str) -> str:
@@ -29,14 +39,14 @@ class Signature:
     sorts: frozenset[str]
     ranks: tuple[FunctionRank, ...]
     relations: tuple[RelationRank, ...] = ()
-    _by_name: object = field(
-        default_factory=lambda: MappingProxyType({}),
+    _by_name: _FunctionView = field(
+        default_factory=_empty_function_view,
         init=False,
         compare=False,
         repr=False,
     )
-    _relations_by_name: object = field(
-        default_factory=lambda: MappingProxyType({}),
+    _relations_by_name: _RelationView = field(
+        default_factory=_empty_relation_view,
         init=False,
         compare=False,
         repr=False,
@@ -91,23 +101,28 @@ class Signature:
 
     def validate(self) -> None:
         functions, relations = self._validated_lookups()
-        if type(self._by_name) is not _MAPPING_PROXY_TYPE or dict(self._by_name) != functions:
+        raw_functions: object = self._by_name
+        if type(raw_functions) is not MappingProxyType:
             raise TypeError("Signature function lookup is not canonical")
-        if (
-            type(self._relations_by_name) is not _MAPPING_PROXY_TYPE
-            or dict(self._relations_by_name) != relations
-        ):
+        if dict(cast(_FunctionView, raw_functions)) != functions:
+            raise TypeError("Signature function lookup is not canonical")
+        raw_relations: object = self._relations_by_name
+        if type(raw_relations) is not MappingProxyType:
+            raise TypeError("Signature relation lookup is not canonical")
+        if dict(cast(_RelationView, raw_relations)) != relations:
             raise TypeError("Signature relation lookup is not canonical")
 
     def rank(self, name: str) -> tuple[tuple[str, ...], str] | None:
-        if type(self._by_name) is not _MAPPING_PROXY_TYPE:
+        raw_functions: object = self._by_name
+        if type(raw_functions) is not MappingProxyType:
             raise TypeError("Signature function lookup is not canonical")
-        return self._by_name.get(name)
+        return cast(_FunctionView, raw_functions).get(name)
 
     def relation(self, name: str) -> tuple[str, ...] | None:
-        if type(self._relations_by_name) is not _MAPPING_PROXY_TYPE:
+        raw_relations: object = self._relations_by_name
+        if type(raw_relations) is not MappingProxyType:
             raise TypeError("Signature relation lookup is not canonical")
-        return self._relations_by_name.get(name)
+        return cast(_RelationView, raw_relations).get(name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,17 +140,18 @@ class Theory:
     def validate(self) -> None:
         if type(self.axioms) is not frozenset:
             raise TypeError("Theory.axioms must be a frozenset")
-        for axiom in self.axioms:
-            validate(axiom)
-            if not isinstance(axiom, Formula):
-                raise TypeError(f"Theory axiom is not a formula: {axiom!r}")
+        for raw_axiom in cast(frozenset[object], self.axioms):
+            validate(raw_axiom)
+            if not isinstance(raw_axiom, Formula):
+                raise TypeError(f"Theory axiom is not a formula: {raw_axiom!r}")
 
         if (self.zero is None) != (self.succ is None):
             raise ValueError("theory zero and successor must be declared together")
         if self.zero is not None:
-            validate(self.zero)
-            if not isinstance(self.zero, Term):
-                raise TypeError(f"Theory.zero is not a term: {self.zero!r}")
+            raw_zero = cast(object, self.zero)
+            validate(raw_zero)
+            if not isinstance(raw_zero, Term):
+                raise TypeError(f"Theory.zero is not a term: {raw_zero!r}")
             successor = _require_name(self.succ, "Theory.succ")
         else:
             successor = None

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 from .checker import check
 from .interp import BridgeReport, InterpError, Obligation, ObligationStatus
@@ -178,7 +179,7 @@ def _translate_eq(
         symbol = names.get(node.name)
         if symbol is None:
             raise InterpError(f"no translation for source symbol {node.name!r}")
-        args = tuple(vectors[a.name] for a in node.args)  # all Vars, by choice
+        args = tuple(vectors[cast(Var, arg).name] for arg in node.args)  # all Vars, by choice
         marker = _fresh(avoid)
         avoid.add(marker)
         vectors[marker] = vec(marker, dim)
