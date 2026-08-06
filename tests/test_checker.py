@@ -8,6 +8,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from typing import cast
+
+import pytest
 
 import cold_start.proof as P
 from cold_start.checker import CHECKER_PROOF_TYPES, check, validate_proof
@@ -25,6 +28,7 @@ from cold_start.proof import CANONICAL_PROOF_TYPES, Pf
 from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
+from cold_start.theory import Signature, Theory
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)  # `cold_start` package lives at the repo root, not in tests/
@@ -323,6 +327,14 @@ def test_induction_rejects_var_free_in_hypothesis():
     raise AssertionError("induction allowed its variable free in a hypothesis")
 
 
+def test_induction_preserves_a_hypothesis_without_the_induction_variable():
+    pred, _base, step = _left_identity_base_and_step()
+    base_claim = pred.subst("n", ZERO)
+    seq = check(P.Induct("n", pred, P.Assume(base_claim), step), PEANO)
+    assert seq.concl == pred
+    assert seq.hyps == frozenset({base_claim})
+
+
 # --- serialization & cross-process verification ---------------------------
 
 
@@ -343,6 +355,30 @@ def test_proof_terms_are_inert_and_checker_dispatch_is_exhaustive():
         assert not hasattr(proof_type, "_derive_rule")
         assert not hasattr(proof_type, "_validate")
     assert CHECKER_PROOF_TYPES == CANONICAL_PROOF_TYPES
+
+
+def test_forall_intro_validates_var_and_sort_independently():
+    subproof = P.Refl(Var("x"))
+    with pytest.raises(TypeError, match="genuine strs"):
+        validate_proof(P.ForallIntro(cast(str, 7), "", subproof))
+    with pytest.raises(TypeError, match="genuine strs"):
+        validate_proof(P.ForallIntro("x", cast(str, 7), subproof))
+
+
+def test_inst_handles_open_theories_and_an_absent_target_variable():
+    source = Eq(Var("x", "N"), Var("x", "N"))
+    open_theory = Theory(axioms=frozenset({source}))
+    open_result = check(P.Inst(P.Axiom(source), "x", Var("z", "M")), open_theory)
+    assert open_result.concl == Eq(Var("z", "M"), Var("z", "M"))
+
+    signature = Signature(sorts=frozenset({"N", "M"}), ranks=())
+    unrelated = Eq(Var("y", "M"), Var("y", "M"))
+    closed_theory = Theory(axioms=frozenset({unrelated}), signature=signature)
+    closed_result = check(
+        P.Inst(P.Axiom(unrelated), "x", Var("z", "N")),
+        closed_theory,
+    )
+    assert closed_result.concl == unrelated
 
 
 def _run_verify(stdin_bytes: bytes, *args: str):

@@ -1,10 +1,12 @@
 """The Hamblin wire boundary has one explicit, untrusted owner."""
 
+from dataclasses import dataclass
 from typing import cast
 
 import hamblin
 import pytest
 
+import cold_start.codec as codec
 from cold_start.codec import (
     decode_formula,
     decode_proof,
@@ -13,8 +15,31 @@ from cold_start.codec import (
     encode_proof,
     encode_term,
 )
-from cold_start.proof import Refl
-from cold_start.syntax import Eq, Formula, Fun, Term, Var
+from cold_start.proof import CANONICAL_PROOF_TYPES, Pf, Refl
+from cold_start.syntax import CANONICAL_NODE_TYPES, Eq, Formula, Fun, Term, Var
+
+
+@dataclass(frozen=True, slots=True)
+class _ForeignProof(Pf):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class _ForeignTerm(Term):
+    pass
+
+
+def test_codec_registry_rejects_noncanonical_proof_and_syntax_classes():
+    with pytest.raises(TypeError, match="noncanonical proof type"):
+        codec._build_registry(
+            CANONICAL_NODE_TYPES,
+            CANONICAL_PROOF_TYPES | {_ForeignProof},
+        )
+    with pytest.raises(TypeError, match="noncanonical syntax type"):
+        codec._build_registry(
+            CANONICAL_NODE_TYPES | {_ForeignTerm},
+            CANONICAL_PROOF_TYPES,
+        )
 
 
 def test_each_root_kind_round_trips_through_its_explicit_entrypoint():

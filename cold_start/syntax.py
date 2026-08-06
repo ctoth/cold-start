@@ -228,7 +228,7 @@ class Node:
         def open_bvar(n, d):
             if n.index == d:
                 return repl
-            return BVar(n.index - 1) if n.index > d else n
+            return BVar(n.index - 1) if n.index >= d + 1 else n
 
         return cast(Node, _rebuild(self, depth, on_bvar=open_bvar))
 

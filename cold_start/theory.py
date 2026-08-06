@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 from .sequent import Sequent
 from .syntax import Formula, Term, validate
@@ -146,9 +146,9 @@ class Theory:
             self.signature.validate()
             for axiom in self.axioms:
                 Sequent(frozenset(), axiom).sort_check(self.signature)
-            if self.zero is not None and successor is not None:
+            if self.zero is not None:
                 induction_sort = self.zero.sort_of(self.signature)
-                successor_rank = self.signature.rank(successor)
+                successor_rank = self.signature.rank(cast(str, successor))
                 if successor_rank != ((induction_sort,), induction_sort):
                     raise ValueError(
                         f"induction successor {successor!r} must have rank "

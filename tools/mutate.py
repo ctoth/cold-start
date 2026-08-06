@@ -5,7 +5,10 @@ creates a detached temporary Git worktree, mutates the corresponding file there,
 runs the focused tests there, removes the worktree, and leaves the caller's
 checkout untouched even if a mutant or test run fails.
 
-Usage:  uv run python tools/mutate.py cold_start/checker.py
+With no arguments the complete declared trusted base is mutated.  Pass one or
+more repository-relative paths for a focused kernel campaign.
+
+Usage:  uv run python tools/mutate.py [cold_start/checker.py ...]
 """
 
 from __future__ import annotations
@@ -13,13 +16,22 @@ from __future__ import annotations
 import argparse
 import ast
 import copy
+import os
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+TRUSTED_SOURCES = (
+    Path("cold_start/checker.py"),
+    Path("cold_start/proof.py"),
+    Path("cold_start/sequent.py"),
+    Path("cold_start/syntax.py"),
+    Path("cold_start/theory.py"),
+)
 
 CMP_SWAP = {
     ast.Is: ast.IsNot,
@@ -65,6 +77,18 @@ def resolve_source(repo_root: Path, requested: str) -> Path:
     if tracked.returncode != 0:
         raise ValueError(f"mutation source is not tracked: {relative}")
     return relative
+
+
+def resolve_campaign_sources(repo_root: Path, requested: list[str]) -> tuple[Path, ...]:
+    """Resolve an explicit focused campaign or the complete trusted base."""
+    sources = (
+        tuple(resolve_source(repo_root, source) for source in requested)
+        if requested
+        else TRUSTED_SOURCES
+    )
+    if len(sources) != len(set(sources)):
+        raise ValueError("duplicate mutation source")
+    return sources
 
 
 @contextmanager
@@ -159,19 +183,24 @@ def _build(tree: ast.AST, target: int):
     return new, (desc[0] if desc else ""), counter[0]
 
 
-def _test_command(repo_root: Path) -> list[str]:
+def _test_command() -> list[str]:
     return [
-        "uv",
-        "run",
-        "--project",
-        str(repo_root),
+        sys.executable,
+        "-m",
         "pytest",
         "-q",
         "-x",
+        "-k",
+        "not deep and not iterative",
         "tests/test_checker.py",
+        "tests/test_kernel_boundaries.py",
+        "tests/test_theory.py",
         "tests/test_quantifiers.py",
+        "tests/test_quant_soundness.py",
         "tests/test_logic.py",
         "tests/test_sorts.py",
+        "tests/test_relations.py",
+        "tests/test_properties.py",
         "tests/test_rings.py",
     ]
 
@@ -188,17 +217,23 @@ def run_mutations(repo_root: Path, relative: Path) -> int:
             for k in range(total):
                 mutant, desc, _ = _build(tree, k)
                 target.write_text(ast.unparse(mutant), encoding="utf-8")
-                result = subprocess.run(
-                    _test_command(repo_root),
-                    cwd=workspace,
-                    capture_output=True,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    survivors.append(desc)
-                    print(f"  SURVIVED  {desc}")
+                try:
+                    result = subprocess.run(
+                        _test_command(),
+                        cwd=workspace,
+                        capture_output=True,
+                        check=False,
+                        env={**os.environ, "HYPOTHESIS_PROFILE": "fast"},
+                        timeout=60,
+                    )
+                except subprocess.TimeoutExpired:
+                    print(f"  killed    {desc} (test timeout)")
                 else:
-                    print(f"  killed    {desc}")
+                    if result.returncode == 0:
+                        survivors.append(desc)
+                        print(f"  SURVIVED  {desc}")
+                    else:
+                        print(f"  killed    {desc}")
         finally:
             target.write_text(original, encoding="utf-8")
 
@@ -210,13 +245,16 @@ def run_mutations(repo_root: Path, relative: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", nargs="?", default="cold_start/checker.py")
+    parser.add_argument("sources", nargs="*")
     args = parser.parse_args(argv)
     try:
-        relative = resolve_source(REPO_ROOT, args.source)
+        sources = resolve_campaign_sources(REPO_ROOT, args.sources)
     except ValueError as exc:
         parser.error(str(exc))
-    return run_mutations(REPO_ROOT, relative)
+    failed = False
+    for source in sources:
+        failed = bool(run_mutations(REPO_ROOT, source)) or failed
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

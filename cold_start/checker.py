@@ -248,8 +248,9 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         return Sequent(sequent.hyps, sequent.concl.subst(node.var, node.term))
     if proof_type is Induct:
         node = cast(Induct, proof)
-        if theory.zero is None or type(theory.succ) is not str:
+        if theory.zero is None:
             raise ValueError("theory defines no induction principle (no zero/succ)")
+        successor = cast(str, theory.succ)
         base = derived(node.base)
         step = derived(node.step)
         predicate_at_zero = node.pred.subst(node.var, theory.zero)
@@ -257,7 +258,7 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         induction_variable = Var(node.var, induction_sort)
         predicate_at_successor = node.pred.subst(
             node.var,
-            Fun(theory.succ, (induction_variable,)),
+            Fun(successor, (induction_variable,)),
         )
         if base.concl != predicate_at_zero:
             raise ValueError(
@@ -293,7 +294,7 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         if type(sequent.concl) is not Forall:
             raise ValueError(f"forall-elim needs a universal, got {sequent.concl!r}")
         signature = theory.signature
-        if signature is not None and sequent.concl.sort:
+        if signature is not None:
             term_sort = node.term.sort_of(signature)
             if term_sort != sequent.concl.sort:
                 raise ValueError(
@@ -321,7 +322,7 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
                 f"exists-intro: sub-proof must prove {expected!r}, got {sequent.concl!r}"
             )
         signature = theory.signature
-        if signature is not None and node.claim.sort:
+        if signature is not None:
             witness_sort = node.witness.sort_of(signature)
             if witness_sort != node.claim.sort:
                 raise ValueError(

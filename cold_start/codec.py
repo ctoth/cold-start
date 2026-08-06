@@ -18,11 +18,40 @@ from .syntax import CANONICAL_NODE_TYPES, BVar, Formula, Term, children, validat
 
 _TERM_TYPES = frozenset(cls for cls in CANONICAL_NODE_TYPES if issubclass(cls, Term))
 _FORMULA_TYPES = frozenset(cls for cls in CANONICAL_NODE_TYPES if issubclass(cls, Formula))
-_SYNTAX_REGISTRY = {cls.__name__: cls for cls in CANONICAL_NODE_TYPES}
-_PROOF_REGISTRY = {
-    **_SYNTAX_REGISTRY,
-    **{cls.__name__: cls for cls in CANONICAL_PROOF_TYPES},
-}
+
+
+def _build_registry(
+    syntax_types: Collection[type],
+    proof_types: Collection[type],
+) -> tuple[dict[str, type], dict[str, type]]:
+    syntax_set = frozenset(syntax_types)
+    proof_set = frozenset(proof_types)
+    if syntax_set != CANONICAL_NODE_TYPES:
+        extras = syntax_set - CANONICAL_NODE_TYPES
+        if extras:
+            raise TypeError(f"noncanonical syntax type: {next(iter(extras))!r}")
+        raise TypeError("syntax registry omits a canonical type")
+    if proof_set != CANONICAL_PROOF_TYPES:
+        extras = proof_set - CANONICAL_PROOF_TYPES
+        if extras:
+            raise TypeError(f"noncanonical proof type: {next(iter(extras))!r}")
+        raise TypeError("proof registry omits a canonical type")
+
+    combined = (*syntax_set, *proof_set)
+    names = [proof_type.__name__ for proof_type in combined]
+    if len(names) != len(set(names)):
+        raise ValueError("duplicate canonical codec type name")
+    syntax_registry = {node_type.__name__: node_type for node_type in syntax_set}
+    return syntax_registry, {
+        **syntax_registry,
+        **{proof_type.__name__: proof_type for proof_type in proof_set},
+    }
+
+
+_SYNTAX_REGISTRY, _PROOF_REGISTRY = _build_registry(
+    CANONICAL_NODE_TYPES,
+    CANONICAL_PROOF_TYPES,
+)
 
 
 def _require_root(value: object, kinds: Collection[type], label: str, error: type[Exception]):

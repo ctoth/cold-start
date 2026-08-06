@@ -15,6 +15,7 @@ from cold_start.syntax import (
     exists,
     forall,
 )
+from cold_start.theory import Theory
 
 
 def test_alpha_equivalence_is_structural_equality():
@@ -75,6 +76,17 @@ def test_exists_intro_from_witness():
     seq = check(P.ExistsIntro(claim, S(ZERO), P.Refl(S(ZERO))), PEANO)
     assert seq.concl == claim
     assert seq.hyps == frozenset()
+
+
+def test_quantifier_rules_remain_untyped_for_an_explicit_open_theory():
+    theory = Theory(axioms=frozenset())
+    universal = forall("x", "N", Eq(Var("x", "N"), Var("x", "N")))
+    eliminated = check(P.ForallElim(P.Assume(universal), Var("z", "M")), theory)
+    assert eliminated.concl == Eq(Var("z", "M"), Var("z", "M"))
+
+    claim = exists("x", "N", Eq(Var("x", "N"), Var("x", "N")))
+    introduced = check(P.ExistsIntro(claim, Var("z", "M"), P.Refl(Var("z", "M"))), theory)
+    assert introduced.concl == claim
 
 
 def test_exists_elim_proves_no_successor_is_zero():

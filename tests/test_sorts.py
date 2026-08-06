@@ -281,6 +281,16 @@ def test_quantified_sorted_theorem_checks():
     assert seq.hyps == frozenset()
 
 
+def test_sorted_quantifier_elimination_and_introduction_accept_matching_sorts():
+    universal = forall("m", "M", Eq(Var("m", "M"), Var("m", "M")))
+    eliminated = check(P.ForallElim(P.Assume(universal), E), MONOID_ACTION)
+    assert eliminated.concl == Eq(E, E)
+
+    claim = exists("m", "M", Eq(Var("m", "M"), Var("m", "M")))
+    introduced = check(P.ExistsIntro(claim, E, P.Refl(E)), MONOID_ACTION)
+    assert introduced.concl == claim
+
+
 def test_many_sorted_induction_uses_the_theory_induction_sort():
     nat = "N"
     zero = Fun("0", ())

@@ -11,6 +11,26 @@ import pytest
 from tools import mutate
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+EXPECTED_TRUSTED_SOURCES = (
+    Path("cold_start/checker.py"),
+    Path("cold_start/proof.py"),
+    Path("cold_start/sequent.py"),
+    Path("cold_start/syntax.py"),
+    Path("cold_start/theory.py"),
+)
+
+
+def test_mutation_campaign_equals_the_declared_trusted_base():
+    assert mutate.TRUSTED_SOURCES == EXPECTED_TRUSTED_SOURCES
+    assert mutate.resolve_campaign_sources(REPO_ROOT, []) == EXPECTED_TRUSTED_SOURCES
+
+
+def test_mutation_campaign_rejects_duplicate_sources():
+    with pytest.raises(ValueError, match="duplicate mutation source"):
+        mutate.resolve_campaign_sources(
+            REPO_ROOT,
+            ["cold_start/checker.py", "cold_start/checker.py"],
+        )
 
 
 def test_mutation_source_must_be_a_safe_repository_relative_file(tmp_path: Path):

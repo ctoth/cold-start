@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import MappingProxyType
+from typing import cast
+
 import pytest
 
 from cold_start.algebra import (
@@ -62,6 +65,57 @@ def test_signature_rejects_noncanonical_containers() -> None:
 
     with pytest.raises(TypeError, match="ranks must be a tuple"):
         Signature(sorts=frozenset({"N"}), ranks=[])  # type: ignore[arg-type]
+
+
+def test_signature_rejects_each_malformed_rank_shape_independently() -> None:
+    with pytest.raises(TypeError, match="function rank"):
+        Signature(
+            sorts=frozenset({"N"}),
+            ranks=(cast(tuple, ["f", (), "N"]),),
+        )
+    with pytest.raises(TypeError, match="function rank"):
+        Signature(sorts=frozenset({"N"}), ranks=(("f", ()),))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="relation rank"):
+        Signature(
+            sorts=frozenset({"N"}),
+            ranks=(),
+            relations=(cast(tuple, ["R", ("N",)]),),
+        )
+    with pytest.raises(TypeError, match="relation rank"):
+        Signature(
+            sorts=frozenset({"N"}),
+            ranks=(),
+            relations=(("R", ("N",), "extra"),),  # type: ignore[arg-type]
+        )
+
+
+def test_signature_rejects_empty_symbol_names_and_nonstr_relation_sorts() -> None:
+    with pytest.raises(TypeError, match="nonempty genuine str"):
+        Signature(sorts=frozenset({"N"}), ranks=(("", (), "N"),))
+    with pytest.raises(TypeError, match="nonempty genuine str"):
+        Signature(
+            sorts=frozenset({"N"}),
+            ranks=(),
+            relations=(("", ("N",)),),
+        )
+    with pytest.raises(ValueError, match="undeclared sort"):
+        Signature(
+            sorts=frozenset({"N"}),
+            ranks=(),
+            relations=(("R", (cast(str, 7),)),),
+        )
+
+
+def test_signature_revalidates_lookup_type_and_contents_independently() -> None:
+    signature = Signature(sorts=frozenset({"N"}), ranks=(("f", (), "N"),))
+    object.__setattr__(signature, "_by_name", {"f": ((), "N")})
+    with pytest.raises(TypeError, match="function lookup"):
+        signature.validate()
+
+    signature = Signature(sorts=frozenset({"N"}), ranks=(("f", (), "N"),))
+    object.__setattr__(signature, "_by_name", MappingProxyType({"wrong": ((), "N")}))
+    with pytest.raises(TypeError, match="function lookup"):
+        signature.validate()
 
 
 @pytest.mark.parametrize(
