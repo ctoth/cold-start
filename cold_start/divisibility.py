@@ -56,7 +56,7 @@ ONE = S(ZERO)
 
 
 def _fresh(stem: str, *terms: Term) -> str:
-    used = set().union(*(term.free_vars() for term in terms))
+    used = {name for term in terms for name in term.free_vars()}
     if stem not in used:
         return stem
     index = 0

@@ -15,11 +15,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import ClassVar, Generic, TypeVar, cast
+from typing import Any, ClassVar, Generic, TypeVar, cast
 
 _Value = TypeVar("_Value")
 _Context = TypeVar("_Context")
-_Handler = TypeVar("_Handler", bound=Callable)
+_Handler = TypeVar("_Handler", bound=Callable[..., object])
+_CaseHandler = Callable[..., tuple[object, ...]]
 _CASE_TYPES = "__cold_start_emitter_case_types__"
 
 
@@ -55,16 +56,18 @@ class Emitter(Generic[_Value, _Context]):
     """Base for closed-family external text emitters."""
 
     __slots__ = ()
-    _case_table: ClassVar[MappingProxyType] = MappingProxyType({})
+    _case_table: ClassVar[MappingProxyType[type[object], _CaseHandler]] = MappingProxyType(
+        {}
+    )
 
     def __init_subclass__(
         cls,
         *,
         covers: Iterable[type[object]] | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        table: dict[type[object], Callable] = {}
+        table: dict[type[object], _CaseHandler] = {}
 
         for base in cls.__bases__:
             for handled, handler in getattr(base, "_case_table", {}).items():
@@ -77,7 +80,7 @@ class Emitter(Generic[_Value, _Context]):
             for handled in handled_types:
                 if handled in table:
                     raise TypeError(f"duplicate emitter case for {handled.__name__}")
-                table[handled] = member
+                table[handled] = cast(_CaseHandler, member)
 
         if covers is not None:
             expected = frozenset(covers)
@@ -100,16 +103,18 @@ class Emitter(Generic[_Value, _Context]):
         while stack:
             piece = stack.pop()
             if type(piece) is str:
-                output.append(cast(str, piece))
+                output.append(piece)
             elif type(piece) is Visit:
-                visit = cast(Visit, piece)
-                expanded = self.dispatch(visit.value, visit.context)
+                visit = cast(Visit[Any, Any], piece)
+                expanded = self.dispatch(
+                    cast(_Value, visit.value), cast(_Context, visit.context)
+                )
                 stack.extend(reversed(expanded))
             else:
                 raise TypeError(f"invalid emitter piece: {type(piece).__name__}")
         return "".join(output)
 
-    def dispatch(self, value: object, context: object) -> tuple[object, ...]:
+    def dispatch(self, value: _Value, context: _Context) -> tuple[object, ...]:
         """Expand one exact canonical value into forward-order pieces."""
         handler = self._case_table.get(type(value))
         if handler is None:
@@ -119,7 +124,7 @@ class Emitter(Generic[_Value, _Context]):
             raise TypeError(
                 f"emitter case for {type(value).__name__} must return a tuple of pieces"
             )
-        return cast(tuple[object, ...], pieces)
+        return pieces
 
     def unsupported(self, value: object, context: object) -> tuple[object, ...]:
         """Reject a value with no exact handler; adapters may customize the error."""

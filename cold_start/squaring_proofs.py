@@ -28,15 +28,15 @@ from .squaring import (
     double,
     square_product,
 )
-from .syntax import Eq, Formula, Implies, Var, exists, forall
-from .tactics import axiom_rule, normalize_equality, prove_eq
+from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
+from .tactics import Rule, axiom_rule, normalize_equality, prove_eq
 from .vocabulary import ZERO, S, add
 
 _x, _y = Var("x"), Var("y")
 _x0, _x1, _c, _d = Var("x!0"), Var("x!1"), Var("c!"), Var("d!")
 
 
-def square_kit() -> tuple:
+def square_kit() -> tuple[Rule, ...]:
     """Additive canonicalization plus the two square recursions."""
     return (
         *add_kit(),
@@ -121,7 +121,7 @@ def double_injective() -> Pf:
     return ForallElim(all_y, _y)
 
 
-def _totality_at(right) -> Formula:
+def _totality_at(right: Term) -> Formula:
     return exists("c!", "", square_product(_x0, right, Var("c!")))
 
 

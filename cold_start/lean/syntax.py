@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TypeVar, cast
+from typing import Any, NoReturn, TypeAlias, TypeVar, cast
 
 from ..emitter import Emitter, Visit, case
 from ..syntax import (
@@ -27,6 +28,9 @@ from ..syntax import (
 )
 
 _N = TypeVar("_N", bound=Node)  # substitution preserves the node's kind
+_ControlFrame: TypeAlias = tuple[Any, ...]
+_ControlStack: TypeAlias = list[_ControlFrame]
+_QuantifierCtor: TypeAlias = Callable[[str, str, Formula], Formula]
 
 
 class LeanError(ValueError):
@@ -37,7 +41,13 @@ CARRIER = "M"  # the abstract carrier type every exported theorem quantifies ove
 
 # Object-language function symbols -> Lean identifiers. A symbol outside this
 # map is exported under a sanitized version of its own name.
-SYMBOL_NAMES: dict[str, str] = {"0": "zero", "S": "succ", "+": "add", "*": "mul"}
+SYMBOL_NAMES: dict[str, str] = {
+    "0": "zero",
+    "1": "one",
+    "S": "succ",
+    "+": "add",
+    "*": "mul",
+}
 
 # Names the exported code binds itself; a binder we generate must dodge them.
 RESERVED = frozenset(
@@ -83,12 +93,12 @@ def lean_name(name: str) -> str:
 
 
 @dataclass(slots=True)
-class _Names:
+class LeanNames:
     """A fresh-name supply. `taken` grows monotonically, so a name handed out is
     never handed out again -- which is what lets the emitters be iterative: no
     scope has to be *restored*, because nothing is ever reused."""
 
-    taken: set = field(default_factory=set)
+    taken: set[str] = field(default_factory=set[str])
 
     def fresh(self, base: str = "x") -> str:
         base = lean_name(base)
@@ -107,7 +117,7 @@ class _Names:
 # ---------------------------------------------------------------------------
 
 
-def substitute(node: _N, sigma: dict) -> _N:
+def substitute(node: _N, sigma: dict[str, Term]) -> _N:
     """Simultaneously replace free `Var`s by name, per `sigma: name -> Term`.
 
     Iterative (post-order over a heap agenda), and simultaneous -- so mapping
@@ -117,18 +127,21 @@ def substitute(node: _N, sigma: dict) -> _N:
     and a node's image is independent of the binder depth it sits at."""
     if not sigma:
         return node
-    order: list = []
-    stack: list = [node]
+    order: list[Node] = []
+    stack: list[Node] = [node]
     while stack:
         n = stack.pop()
         order.append(n)
-        stack.extend(children(n))
-    done: dict = {}
+        stack.extend(cast(list[Node], children(n)))
+    done: dict[int, Node] = {}
     for n in reversed(order):
         if type(n) is Var and n.name in sigma:
             done[id(n)] = sigma[n.name]
         else:
-            done[id(n)] = map_children(n, lambda c: done[id(c)])
+            rebuilt = map_children(n, lambda c: done[id(c)])
+            if not isinstance(rebuilt, Node):
+                raise TypeError("syntax child mapping changed the node family")
+            done[id(n)] = rebuilt
     return cast(_N, done[id(node)])
 
 
@@ -143,11 +156,11 @@ def substitute(node: _N, sigma: dict) -> _N:
 _L_IMPL = 1
 _L_EQ = 3
 _L_APP = 9
-_L_ATOM = 10
+ATOM_PRECEDENCE = 10
 
 
 @dataclass(frozen=True, slots=True)
-class _Style:
+class LeanStyle:
     """How the carrier and the function symbols are spelled. The abstract style
     is what a conditional theorem is stated over (`M`, with `zero`/`succ`/... as
     its parameters); the `Nat` style re-renders the very same formulas at Lean's
@@ -155,26 +168,26 @@ class _Style:
     without any string surgery."""
 
     carrier: str
-    symbols: dict
+    symbols: dict[str, str]
 
     def symbol(self, name: str) -> str:
         return self.symbols.get(name) or lean_name(name)
 
 
-_ABSTRACT = _Style(CARRIER, SYMBOL_NAMES)
-_NAT = _Style("Nat", {"0": "Nat.zero", "S": "Nat.succ", "+": "Nat.add", "*": "Nat.mul"})
+ABSTRACT_STYLE = LeanStyle(CARRIER, SYMBOL_NAMES)
+_NAT = LeanStyle("Nat", {"0": "Nat.zero", "S": "Nat.succ", "+": "Nat.add", "*": "Nat.mul"})
 
 
 def render_term(term: Term) -> str:
     """Render a term as a Lean 4 expression over the carrier's operations."""
-    return _render(term, _Names(_free_names(term)), _L_IMPL)
+    return render_node(term, LeanNames(free_lean_names(term)), _L_IMPL)
 
 
 def render_formula(formula: Formula) -> str:
     """Render a formula as a Lean 4 `Prop`, leaving free variables as free Lean
     identifiers (our implicit universal quantification is NOT applied here --
     see `render_statement`)."""
-    return _render(formula, _Names(_free_names(formula)), _L_IMPL)
+    return render_node(formula, LeanNames(free_lean_names(formula)), _L_IMPL)
 
 
 def render_statement(formula: Formula) -> str:
@@ -182,18 +195,18 @@ def render_statement(formula: Formula) -> str:
     our theories read as implicitly universal, become leading `forall` binders in
     lexicographic order. That order is the contract instantiation relies on --
     `Inst` on the k-th name must line up with the k-th binder."""
-    return _render_statement(formula, _ABSTRACT)
+    return render_statement_with_style(formula, ABSTRACT_STYLE)
 
 
-def _render_statement(formula: Formula, style: _Style) -> str:
+def render_statement_with_style(formula: Formula, style: LeanStyle) -> str:
     names = closure_names(formula)
-    supply = _Names(_free_names(formula))
-    body = _render(formula, supply, _L_IMPL, style)
+    supply = LeanNames(free_lean_names(formula))
+    body = render_node(formula, supply, _L_IMPL, style)
     prefix = "".join(f"∀ {lean_name(n)} : {style.carrier}, " for n in names)
     return prefix + body
 
 
-def closure_names(formula: Formula) -> tuple:
+def closure_names(formula: Formula) -> tuple[str, ...]:
     """The free variable names of `formula`, in the order `render_statement`
     binds them (lexicographic)."""
     return tuple(sorted(formula.free_vars()))
@@ -209,11 +222,16 @@ def universal_closure(formula: Formula) -> Formula:
     return out
 
 
-def _free_names(node: Node) -> set:
+def free_lean_names(node: Node) -> set[str]:
     return {lean_name(n) for n in node.free_vars()}
 
 
-def _render(node: Node, supply: _Names, prec: int, style: _Style = _ABSTRACT) -> str:
+def render_node(
+    node: Node,
+    supply: LeanNames,
+    prec: int,
+    style: LeanStyle = ABSTRACT_STYLE,
+) -> str:
     """Emit `node` as Lean text iteratively through exact external cases."""
     return _LeanSyntaxEmitter(supply, style).render(node, _LeanSyntaxContext(prec))
 
@@ -224,7 +242,7 @@ class _LeanSyntaxContext:
     scope: tuple[str, ...] = ()
 
 
-def _wrapped(level: int, prec: int, pieces: list[object]) -> tuple[object, ...]:
+def _wrapped(level: int, prec: int, pieces: Sequence[object]) -> tuple[object, ...]:
     return ("(", *pieces, ")") if level < prec else tuple(pieces)
 
 
@@ -234,7 +252,7 @@ class _LeanSyntaxEmitter(
 ):
     __slots__ = ("style", "supply")
 
-    def __init__(self, supply: _Names, style: _Style) -> None:
+    def __init__(self, supply: LeanNames, style: LeanStyle) -> None:
         self.supply = supply
         self.style = style
 
@@ -260,7 +278,7 @@ class _LeanSyntaxEmitter(
             return (name,)
         pieces: list[object] = [name]
         for arg in node.args:
-            pieces += [" ", Visit(arg, _LeanSyntaxContext(_L_ATOM, context.scope))]
+            pieces += [" ", Visit(arg, _LeanSyntaxContext(ATOM_PRECEDENCE, context.scope))]
         return _wrapped(_L_APP, context.prec, pieces)
 
     @case(Bottom)
@@ -302,7 +320,7 @@ class _LeanSyntaxEmitter(
         raise LeanError(f"cannot render {type(node).__name__} in Lean")
 
 
-def _binder_base(supply: _Names) -> str:
+def _binder_base(supply: LeanNames) -> str:
     """The next readable binder name that is still free."""
     for cand in _NAME_CANDIDATES:
         if cand not in supply.taken and cand not in RESERVED:
@@ -319,7 +337,7 @@ def _binder_base(supply: _Names) -> str:
 # well short of Lean's real grammar, let alone its proof terms.
 
 _SYMBOLS_BY_LEAN = {v: k for k, v in SYMBOL_NAMES.items()}
-_ARITY = {"0": 0, "S": 1, "+": 2, "*": 2}
+_ARITY = {"0": 0, "1": 0, "S": 1, "+": 2, "*": 2}
 
 _P_IMPL = 1
 _P_EQ = 2
@@ -363,8 +381,8 @@ def parse_formula(text: str) -> Formula:
     return node
 
 
-def _tokenize(text: str) -> list:
-    tokens: list = []
+def _tokenize(text: str) -> list[_Token]:
+    tokens: list[_Token] = []
     i = 0
     while i < len(text):
         ch = text[i]
@@ -407,7 +425,7 @@ class _Parser:
     def __init__(self, text: str) -> None:
         self.tokens = _tokenize(text)
         self.i = 0
-        self.bound: list = []  # enclosing binder names, nearest last
+        self.bound: list[str] = []  # enclosing binder names, nearest last
 
     # --- token helpers ------------------------------------------------------
 
@@ -438,7 +456,7 @@ class _Parser:
         if not self.at_eof():
             self.error(f"unexpected token {self.peek().text!r}")
 
-    def error(self, message: str):
+    def error(self, message: str) -> NoReturn:
         raise LeanError(f"{message} at column {self.peek().pos + 1}")
 
     def starts_atom(self) -> bool:
@@ -447,8 +465,8 @@ class _Parser:
 
     # --- the iterative Pratt core -------------------------------------------
 
-    def run(self, min_prec: int):
-        ctrl: list = [("expr", min_prec)]
+    def run(self, min_prec: int) -> Term | Formula:
+        ctrl: _ControlStack = [("expr", min_prec)]
         result: object = _PENDING
         while ctrl:
             tag, *rest = ctrl.pop()
@@ -477,7 +495,7 @@ class _Parser:
                 result = self._finish_quant(rest[0], rest[1], result)
             elif tag == "arg":
                 result = self._continue_app(ctrl, rest[0], rest[1], result)
-        return result
+        return cast(Term | Formula, result)
 
     def _infix_prec(self, text: str) -> int | None:
         if text in _ARROWS:
@@ -486,7 +504,7 @@ class _Parser:
             return _P_EQ
         return None
 
-    def _nud(self, ctrl: list, min_prec: int) -> object:
+    def _nud(self, ctrl: _ControlStack, min_prec: int) -> object:
         tok = self.peek()
         if self.at_eof():
             self.error("unexpected end of input")
@@ -509,7 +527,7 @@ class _Parser:
             return _PENDING
         return self._build(name, ())
 
-    def _begin_quant(self, ctrl: list, ctor) -> object:
+    def _begin_quant(self, ctrl: _ControlStack, ctor: _QuantifierCtor) -> object:
         self.advance()  # the quantifier symbol
         name = self.expect_name()
         self.expect(":")
@@ -527,14 +545,22 @@ class _Parser:
         ctrl.append(("expr", 0))  # the body is greedy
         return _PENDING
 
-    def _finish_quant(self, name: str, ctor, body: object) -> Formula:
+    def _finish_quant(
+        self, name: str, ctor: _QuantifierCtor, body: object
+    ) -> Formula:
         self.bound.pop()
         if not isinstance(body, Formula):
             self.error("a quantifier body must be a formula")
         # The body already carries `name` as a free `Var`; `ctor` abstracts it.
         return ctor(name, "", body)
 
-    def _continue_app(self, ctrl: list, name: str, acc: tuple, arg: object) -> object:
+    def _continue_app(
+        self,
+        ctrl: _ControlStack,
+        name: str,
+        acc: tuple[Term, ...],
+        arg: object,
+    ) -> object:
         if not isinstance(arg, Term):
             self.error("function arguments must be terms")
         acc = (*acc, arg)
@@ -544,7 +570,7 @@ class _Parser:
             return _PENDING
         return self._build(name, acc)
 
-    def _build(self, name: str, args: tuple) -> Term:
+    def _build(self, name: str, args: tuple[Term, ...]) -> Term:
         """A name applied to `args`: a known symbol at its arity, an uninterpreted
         function, or (unapplied) a variable -- free, or a binder's own name, which
         `_finish_quant` later abstracts into its de Bruijn index."""
@@ -555,7 +581,7 @@ class _Parser:
             return Fun(symbol, args)
         return Fun(name, args) if args else Var(name)
 
-    def _combine(self, op: str, left: object, right: object):
+    def _combine(self, op: str, left: object, right: object) -> Formula:
         if op in _ARROWS:
             if not (isinstance(left, Formula) and isinstance(right, Formula)):
                 self.error("an implication needs formulas on both sides")
@@ -566,14 +592,21 @@ class _Parser:
 
 
 __all__ = [
+    "ABSTRACT_STYLE",
+    "ATOM_PRECEDENCE",
     "CARRIER",
+    "LeanNames",
     "LeanError",
+    "LeanStyle",
     "closure_names",
+    "free_lean_names",
     "lean_name",
     "parse_formula",
     "parse_term",
     "render_formula",
+    "render_node",
     "render_statement",
+    "render_statement_with_style",
     "render_term",
     "substitute",
     "universal_closure",

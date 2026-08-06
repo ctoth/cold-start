@@ -20,7 +20,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -33,7 +33,7 @@ TRUSTED_SOURCES = (
     Path("cold_start/theory.py"),
 )
 
-CMP_SWAP = {
+CMP_SWAP: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.Is: ast.IsNot,
     ast.IsNot: ast.Is,
     ast.Eq: ast.NotEq,
@@ -45,7 +45,7 @@ CMP_SWAP = {
     ast.In: ast.NotIn,
     ast.NotIn: ast.In,
 }
-BOOL_SWAP = {ast.And: ast.Or, ast.Or: ast.And}
+BOOL_SWAP: dict[type[ast.boolop], type[ast.boolop]] = {ast.And: ast.Or, ast.Or: ast.And}
 
 
 def resolve_source(repo_root: Path, requested: str) -> Path:
@@ -92,7 +92,7 @@ def resolve_campaign_sources(repo_root: Path, requested: list[str]) -> tuple[Pat
 
 
 @contextmanager
-def disposable_worktree(repo_root: Path) -> Iterator[Path]:
+def disposable_worktree(repo_root: Path) -> Generator[Path, None, None]:
     """Yield a verified detached worktree owned by this invocation."""
     root = repo_root.resolve()
     temp_parent = Path(tempfile.gettempdir()).resolve()
@@ -141,34 +141,36 @@ def disposable_worktree(repo_root: Path) -> Iterator[Path]:
         temp_root.rmdir()
 
 
-def _build(tree: ast.AST, target: int):
+def _build(tree: ast.AST, target: int) -> tuple[ast.AST, str, int]:
     """Return ``(mutated_tree, description, total_sites)`` for one mutation."""
     counter = [0]
     desc: list[str] = []
 
     class T(ast.NodeTransformer):
-        def visit_Compare(self, node):
+        def visit_Compare(self, node: ast.Compare) -> ast.AST:
             self.generic_visit(node)
             for i, op in enumerate(node.ops):
-                if type(op) in CMP_SWAP:
+                replacement = CMP_SWAP.get(type(op))
+                if replacement is not None:
                     if counter[0] == target:
                         old = type(op).__name__
-                        node.ops[i] = CMP_SWAP[type(op)]()
+                        node.ops[i] = replacement()
                         desc.append(f"line {node.lineno}: {old} -> {type(node.ops[i]).__name__}")
                     counter[0] += 1
             return node
 
-        def visit_BoolOp(self, node):
+        def visit_BoolOp(self, node: ast.BoolOp) -> ast.AST:
             self.generic_visit(node)
-            if type(node.op) in BOOL_SWAP:
+            replacement = BOOL_SWAP.get(type(node.op))
+            if replacement is not None:
                 if counter[0] == target:
                     old = type(node.op).__name__
-                    node.op = BOOL_SWAP[type(node.op)]()
+                    node.op = replacement()
                     desc.append(f"line {node.lineno}: {old} -> {type(node.op).__name__}")
                 counter[0] += 1
             return node
 
-        def visit_UnaryOp(self, node):
+        def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.AST:
             self.generic_visit(node)
             if isinstance(node.op, ast.Not):
                 if counter[0] == target:
@@ -212,7 +214,7 @@ def run_mutations(repo_root: Path, relative: Path) -> int:
         tree = ast.parse(original)
         _, _, total = _build(tree, -1)
         print(f"{total} mutation sites in {relative}\n")
-        survivors = []
+        survivors: list[str] = []
         try:
             for k in range(total):
                 mutant, desc, _ = _build(tree, k)

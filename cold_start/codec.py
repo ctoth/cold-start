@@ -54,7 +54,12 @@ _SYNTAX_REGISTRY, _PROOF_REGISTRY = _build_registry(
 )
 
 
-def _require_root(value: object, kinds: Collection[type], label: str, error: type[Exception]):
+def _require_root(
+    value: object,
+    kinds: Collection[type[object]],
+    label: str,
+    error: type[Exception],
+) -> None:
     if type(value) not in kinds:
         raise error(f"expected {label}, got {type(value).__name__}")
 

@@ -396,7 +396,12 @@ def _pay_totality_succ() -> Pf:
     return ImpIntro(pow2(x0), ExistsIntro(claim, image, packed))
 
 
-def _uniqueness(graph: Formula, graph_at_d: Formula, guards: tuple, core: Pf) -> Pf:
+def _uniqueness(
+    graph: Formula,
+    graph_at_d: Formula,
+    guards: tuple[Term, ...],
+    core: Pf,
+) -> Pf:
     """The common shape: two graph hypotheses, transitivity, delta wrappers."""
     out = ImpIntro(graph, ImpIntro(graph_at_d, core))
     for g in reversed(guards):

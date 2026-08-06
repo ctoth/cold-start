@@ -51,12 +51,12 @@ from .proof import (
 )
 from .prop import Or, and_left, or_elim, or_left, or_right
 from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
-from .tactics import lemma_rule, prove_eq, transport
+from .tactics import Rule, lemma_rule, prove_eq, transport
 from .vocabulary import ZERO, S, add, mul
 
 
 def _fresh(stem: str, *terms: Term) -> str:
-    used = set().union(*(term.free_vars() for term in terms))
+    used = {name for term in terms for name in term.free_vars()}
     if stem not in used:
         return stem
     index = 0
@@ -129,7 +129,7 @@ def le_succ_split() -> Pf:
     return ImpIntro(hyp, ExistsElim("w!", Assume(hyp), cases))
 
 
-def _double_rules() -> tuple:
+def _double_rules() -> tuple[Rule, ...]:
     return (*ADD_RULES, *MUL_RULES, lemma_rule(LEFT_IDENTITY, left_identity()))
 
 

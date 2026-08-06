@@ -36,7 +36,7 @@ def divides(divisor: Term, dividend: Term) -> Rel:
 
 
 def _fresh(stem: str, *nodes: Term | Formula) -> str:
-    used = set().union(*(node.free_vars() for node in nodes))
+    used = {name for node in nodes for name in node.free_vars()}
     if stem not in used:
         return stem
     index = 0

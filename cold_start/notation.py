@@ -7,8 +7,9 @@ or proved.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import NoReturn, cast
+from typing import Any, NoReturn, TypeAlias, cast
 
 from .emitter import Emitter, Visit, case
 from .syntax import (
@@ -157,6 +158,14 @@ _PREC_ADD = 3  # also: function args and top-level terms
 _OP_FUNC_NAMES = ("+", "-", "*", "/")
 _PENDING = object()  # a nud that pushed sub-goals rather than producing a value now
 
+# The parser is a small bytecode interpreter: frames deliberately carry
+# different payloads according to their leading opcode.  Keeping that dynamic
+# boundary in one named type is clearer than leaking partially-known tuples
+# through every continuation helper.
+_ControlFrame: TypeAlias = tuple[Any, ...]
+_ControlStack: TypeAlias = list[_ControlFrame]
+_QuantifierCtor: TypeAlias = Callable[[str, str, Formula], Formula]
+
 
 class _Parser:
     """Iterative precedence-climbing (Pratt) parser. The recursion of a hand-rolled
@@ -245,7 +254,7 @@ class _Parser:
         # The control stack interleaves goals ("expr"/"atom") with continuations
         # ("loop"/"combine"/"close"/"not"/"quant"/"arg"). `result` carries the most
         # recently completed node from a goal to the continuation that consumes it.
-        ctrl: list = [("expr", min_prec)]
+        ctrl: _ControlStack = [("expr", min_prec)]
         result: object = _PENDING
         while ctrl:
             tag, *rest = ctrl.pop()
@@ -281,7 +290,7 @@ class _Parser:
                 result = self._continue_call(rest[0], rest[1], result, ctrl)
         return cast(Term | Formula, result)
 
-    def _nud(self, ctrl: list) -> object:
+    def _nud(self, ctrl: _ControlStack) -> object:
         """Parse a nud (atom / prefix). Returns the node, or `_PENDING` after pushing
         sub-goals whose result will be filled in later."""
         tok = self.peek()
@@ -325,7 +334,7 @@ class _Parser:
             return Var(name, sort)
         self.error(f"expected term or formula, got {text!r}")
 
-    def _begin_quant(self, ctrl: list, ctor) -> object:
+    def _begin_quant(self, ctrl: _ControlStack, ctor: _QuantifierCtor) -> object:
         self.advance()  # the quantifier symbol
         specs: list[tuple[str, str]] = []
         while True:
@@ -344,7 +353,12 @@ class _Parser:
         ctrl.append(("expr", 0))  # body is greedy: a full implication
         return _PENDING
 
-    def _finish_quant(self, specs: list, ctor, body: object) -> Formula:
+    def _finish_quant(
+        self,
+        specs: list[tuple[str, str]],
+        ctor: _QuantifierCtor,
+        body: object,
+    ) -> Formula:
         if not isinstance(body, Formula):
             self.error("quantifier body must be a formula")
         for name, _sort in reversed(specs):
@@ -353,9 +367,15 @@ class _Parser:
                 del self.bound[name]
         for name, sort in reversed(specs):
             body = ctor(name, sort, body)
-        return cast(Formula, body)
+        return body
 
-    def _continue_call(self, name: str, acc: list, arg: object, ctrl: list) -> object:
+    def _continue_call(
+        self,
+        name: str,
+        acc: list[Term],
+        arg: object,
+        ctrl: _ControlStack,
+    ) -> object:
         if not isinstance(arg, Term):
             self.error("function arguments must be terms")
         acc = [*acc, arg]
@@ -407,7 +427,7 @@ class _Printer:
 
     constants: frozenset[str]
     free: frozenset[str] = frozenset()  # free var names of the whole formula
-    _names: list[str] = field(default_factory=list)  # binder name by depth (cached)
+    _names: list[str] = field(default_factory=list[str])  # binder name by depth (cached)
     _raw_pos: int = 0  # cursor into the raw candidate sequence
 
     def name(self, s: str) -> str:

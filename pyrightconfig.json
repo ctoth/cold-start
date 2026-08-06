@@ -1,14 +1,8 @@
 {
-  "include": ["."],
+  "include": ["cold_start", "tools"],
   "exclude": [".claude", "**/__pycache__", ".venv"],
+  "stubPath": "typings",
   "pythonVersion": "3.11",
-  "typeCheckingMode": "basic",
-  "strict": [
-    "cold_start/syntax.py",
-    "cold_start/proof.py",
-    "cold_start/theory.py",
-    "cold_start/checker.py",
-    "cold_start/sequent.py"
-  ],
+  "typeCheckingMode": "strict",
   "executionEnvironments": [{ "root": "." }]
 }

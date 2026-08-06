@@ -53,8 +53,9 @@ from .presburger import ADD_SUCC_F, SUCC_INJ
 from .presburger_proofs import ADD_ASSOC, add_assoc, add_cancel_right, add_kit
 from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Sym, Trans
 from .robinson import ADD_ONE, ADD_SUCC, bridge, positive_numeral
-from .syntax import Eq, Formula, Implies, Var
+from .syntax import Eq, Formula, Implies, Term, Var
 from .tactics import (
+    Rule,
     axiom_rule,
     hypothesis_rule,
     lemma_rule,
@@ -127,7 +128,7 @@ POLY_BUDGET = 400
 variables, so its normal form is eight monomials wide."""
 
 
-def poly_kit() -> tuple:
+def poly_kit() -> tuple[Rule, ...]:
     """Every law of `+` and `·` proved in the theory-owned libraries, as one rewrite
     kit that normalises a term to a canonical polynomial.
 
@@ -270,7 +271,7 @@ def robinson_add_succ_positive() -> Pf:
     return ImpIntro(hyp, MP(forward, next_sum))
 
 
-def _instance_at(sigma: dict, rewrite: tuple) -> Pf:
+def _instance_at(sigma: dict[str, Term], rewrite: tuple[Rule, ...]) -> Pf:
     """The bridge theorem at `sigma`, with `rewrite` applied to the sum that
     `c := a + b` leaves behind.
 

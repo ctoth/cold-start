@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TypeVar
 
 from .. import peano as _peano
 from .. import presburger as _presburger
@@ -36,7 +37,9 @@ from ..syntax import (
     Exists,
     Formula,
     Fun,
+    Node,
     Not,
+    Term,
     Var,
     children,
     instantiate,
@@ -44,21 +47,23 @@ from ..syntax import (
 from ..theory import Theory
 from .models import LeanModel
 from .syntax import (
-    _ABSTRACT,
-    _L_ATOM,
+    ABSTRACT_STYLE,
+    ATOM_PRECEDENCE,
     CARRIER,
     LeanError,
-    _free_names,
-    _Names,
-    _render,
-    _render_statement,
-    _Style,
+    LeanNames,
+    LeanStyle,
     closure_names,
+    free_lean_names,
     lean_name,
     render_formula,
+    render_node,
     render_statement,
+    render_statement_with_style,
     substitute,
 )
+
+_N = TypeVar("_N", bound=Node)
 
 # ---------------------------------------------------------------------------
 # Proof export: one conditional theorem per checked proof
@@ -67,7 +72,7 @@ from .syntax import (
 # Readable names for the axioms of the theories we export. Anything unrecognised
 # gets `ax<n>` from a deterministic ordering, so the export never depends on a
 # theory's `frozenset` iteration order.
-AXIOM_LABELS: dict = {
+AXIOM_LABELS: dict[Formula, str] = {
     _presburger.ADD_ZERO_F: "ax_add_zero",
     _presburger.ADD_SUCC_F: "ax_add_succ",
     _presburger.SUCC_NEQ_ZERO: "ax_succ_ne_zero",
@@ -85,7 +90,7 @@ AXIOM_LABELS: dict = {
 }
 
 
-def export_theorem(name: str, pf: object, theory: Theory) -> str:
+def export_theorem(name: str, pf: Pf, theory: Theory) -> str:
     """Render a checked proof as a self-contained Lean 4 `theorem`.
 
     The proof is re-checked here (`check`), so an unproved recipe never reaches
@@ -93,27 +98,27 @@ def export_theorem(name: str, pf: object, theory: Theory) -> str:
     axioms -- and the induction principle, if the proof uses `Induct` -- are
     hypotheses of the theorem, over an abstract carrier `M`. No `axiom`, no
     `sorry`: Lean is asked to verify the entailment, not to believe us."""
-    return _Export(pf, theory).theorem(name)
+    return LeanProofExport(pf, theory).theorem(name)
 
 
-def uses_induction(pf: object) -> bool:
+def uses_induction(pf: Pf) -> bool:
     """Whether the proof cites the `Induct` rule (so needs the `ind` hypothesis)."""
     return any(type(n) is Induct for n in _tree(pf))
 
 
-def _tree(node: object):
+def _tree(node: object) -> Iterator[object]:
     """Every dataclass node under `node` -- proof terms and the syntax they embed --
     iteratively (a proof term is a dataclass, so `children` walks it too)."""
-    stack: list = [node]
+    stack: list[object] = [node]
     while stack:
         n = stack.pop()
         yield n
         stack.extend(children(n))
 
 
-def _symbols(nodes) -> dict:
+def _symbols(nodes: Iterable[object]) -> dict[str, int]:
     """`name -> arity` for every function symbol occurring in `nodes`."""
-    arities: dict = {}
+    arities: dict[str, int] = {}
     for root in nodes:
         for n in _tree(root):
             if type(n) is Fun:
@@ -123,7 +128,7 @@ def _symbols(nodes) -> dict:
     return arities
 
 
-def _var_names(nodes) -> set:
+def _var_names(nodes: Iterable[object]) -> set[str]:
     return {n.name for root in nodes for n in _tree(root) if type(n) is Var}
 
 
@@ -133,12 +138,12 @@ def _fun_type(arity: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class _ProofContext:
-    sigma: dict
-    env: dict
+    sigma: dict[str, Term]
+    env: dict[Formula, str]
 
 
 @dataclass(slots=True)
-class _Export(
+class LeanProofExport(
     Emitter[Pf, _ProofContext],
     covers=CANONICAL_PROOF_TYPES,
 ):
@@ -153,23 +158,28 @@ class _Export(
     its own free variables, in `closure_names` order -- the one place where the
     lexicographic closure order is load-bearing."""
 
-    pf: object
+    pf: Pf
     theory: Theory
     seq: Sequent = field(init=False)
-    supply: _Names = field(init=False)
-    axiom_names: dict = field(init=False)
-    open_names: dict = field(init=False)
-    symbols: dict = field(init=False)
-    sigma0: dict = field(init=False)
-    concls: dict = field(init=False, default_factory=dict)
+    supply: LeanNames = field(init=False)
+    axiom_names: dict[Formula, str] = field(init=False)
+    open_names: dict[Formula, str] = field(init=False)
+    symbols: dict[str, int] = field(init=False)
+    sigma0: dict[str, Term] = field(init=False)
+    concls: dict[int, Formula] = field(init=False, default_factory=dict[int, Formula])
 
     def __post_init__(self) -> None:
         self.seq = check(self.pf, self.theory)
-        roots = [self.pf, self.seq.concl, *self.seq.hyps, *self.theory.axioms]
+        roots: list[object] = [
+            self.pf,
+            self.seq.concl,
+            *self.seq.hyps,
+            *self.theory.axioms,
+        ]
         if self.theory.zero is not None:
             roots.append(self.theory.zero)
         self.symbols = _symbols(roots)
-        self.supply = _Names({_ABSTRACT.symbol(s) for s in self.symbols})
+        self.supply = LeanNames({ABSTRACT_STYLE.symbol(s) for s in self.symbols})
         self.axiom_names = {}
         for i, ax in enumerate(sorted(self.theory.axioms, key=render_statement)):
             self.axiom_names[ax] = self.supply.fresh(AXIOM_LABELS.get(ax, f"ax{i + 1}"))
@@ -179,7 +189,7 @@ class _Export(
         # (or is already a parameter); everything else keeps the name it had.
         self.sigma0 = {}
         for v in sorted(_var_names(roots)):
-            # `_Names` returns Lean identifiers. A French-quoted rendering is
+            # `LeanNames` returns Lean identifiers. A French-quoted rendering is
             # not an object-language variable name that may safely be stored in
             # `Var` and rendered again: doing so would double-quote names such
             # as the interpretation layer's canonical `x!1`. Rename any name
@@ -202,10 +212,10 @@ class _Export(
         """
         return self.supply.fresh(object_name if lean_name(object_name) == object_name else "x")
 
-    def subst(self, node):
+    def subst(self, node: _N) -> _N:
         return substitute(node, self.sigma0)
 
-    def conclusion(self, pf: object) -> Formula:
+    def conclusion(self, pf: Pf) -> Formula:
         """A sub-proof's derived conclusion (cached). Only the rules that cannot
         read their own conclusion off their fields -- `ExistsElim` -- need it."""
         hit = self.concls.get(id(pf))
@@ -216,11 +226,14 @@ class _Export(
 
     # --- the theorem --------------------------------------------------------
 
-    def symbol_order(self) -> list:
+    def symbol_order(self) -> list[str]:
         """The theory's function symbols as the theorem takes them: constants
         first, then by name -- so an arithmetic signature reads zero, succ, add,
         mul. Deterministic, and shared by the theorem and its `Nat` instance."""
-        return sorted(self.symbols, key=lambda s: (self.symbols[s], _ABSTRACT.symbol(s)))
+        return sorted(
+            self.symbols,
+            key=lambda s: (self.symbols[s], ABSTRACT_STYLE.symbol(s)),
+        )
 
     def theorem(self, name: str) -> str:
         concl = self.subst(self.seq.concl)
@@ -230,7 +243,8 @@ class _Export(
 
         params = [f"{{{CARRIER} : Type}}"]
         params += [
-            f"({_ABSTRACT.symbol(s)} : {_fun_type(self.symbols[s])})" for s in self.symbol_order()
+            f"({ABSTRACT_STYLE.symbol(s)} : {_fun_type(self.symbols[s])})"
+            for s in self.symbol_order()
         ]
         params += [f"({lean_name(v)} : {CARRIER})" for v in hyp_vars]
         params += [f"({self.open_names[h]} : {render_formula(h)})" for h in hyps]
@@ -267,11 +281,11 @@ class _Export(
                 f"model {model.name!r} symbols do not match the exported theorem: "
                 f"expected {sorted(self.symbols)!r}, got {sorted(symbol_map)!r}"
             )
-        style = _Style(model.carrier, symbol_map)
-        statement = _render_statement(self.subst(self.seq.concl), style)
+        style = LeanStyle(model.carrier, symbol_map)
+        statement = render_statement_with_style(self.subst(self.seq.concl), style)
         args = [f"({CARRIER} := {model.carrier})"]
         args += [
-            f"({_ABSTRACT.symbol(s)} := {symbol_map[s]})" for s in self.symbol_order()
+            f"({ABSTRACT_STYLE.symbol(s)} := {symbol_map[s]})" for s in self.symbol_order()
         ]
         axiom_proofs = model.axiom_map()
         for ax in sorted(self.theory.axioms, key=lambda a: self.axiom_names[a]):
@@ -290,21 +304,28 @@ class _Export(
     def induction_type(self) -> str:
         """The induction principle as a hypothesis: exactly the schema our
         `Induct` rule implements, with the theory's own base term."""
-        zero = self.term_text(self.theory.zero, _L_ATOM)
-        succ = _ABSTRACT.symbol(self.theory.succ or "S")
+        if self.theory.zero is None or self.theory.succ is None:
+            raise LeanError("induction export requires an explicit base and successor")
+        zero = self.term_text(self.theory.zero, ATOM_PRECEDENCE)
+        succ = ABSTRACT_STYLE.symbol(self.theory.succ)
         return (
             f"∀ P : {CARRIER} → Prop, P {zero} → "
             f"(∀ n : {CARRIER}, P n → P ({succ} n)) → ∀ n : {CARRIER}, P n"
         )
 
-    def term_text(self, term, prec: int = _L_ATOM) -> str:
-        return _render(term, _Names(_free_names(term)), prec)
+    def term_text(self, term: Term, prec: int = ATOM_PRECEDENCE) -> str:
+        return render_node(term, LeanNames(free_lean_names(term)), prec)
 
     # --- the proof term -----------------------------------------------------
 
-    def proof_text(self, pf: object, sigma: dict, env: dict) -> str:
+    def proof_text(
+        self,
+        pf: Pf,
+        sigma: dict[str, Term],
+        env: dict[Formula, str],
+    ) -> str:
         """Render a proof iteratively with environments carried on each visit."""
-        return self.render(cast(Pf, pf), _ProofContext(sigma, env))
+        return self.render(pf, _ProofContext(sigma, env))
 
     def unsupported(self, value: object, context: object) -> tuple[object, ...]:
         raise LeanError(f"cannot export the rule {type(value).__name__}")
@@ -315,7 +336,7 @@ class _Export(
         if name is None:
             raise LeanError(f"not an axiom of the exported theory: {pf.formula!r}")
         args = [
-            self.term_text(substitute(Var(v), context.sigma), _L_ATOM)
+            self.term_text(substitute(Var(v), context.sigma), ATOM_PRECEDENCE)
             for v in closure_names(pf.formula)
         ]
         return (f"({name} {' '.join(args)})" if args else name,)
@@ -350,7 +371,7 @@ class _Export(
     def _cong(self, pf: Cong, context: _ProofContext) -> tuple[object, ...]:
         """`congrArg f h₁` gives `f a₁ = f b₁` (partially applied for an n-ary f);
         each further argument is folded on with `congr : f = g → a = b → f a = g b`."""
-        name = _ABSTRACT.symbol(pf.fun)
+        name = ABSTRACT_STYLE.symbol(pf.fun)
         if not pf.args:
             return (f"(Eq.refl {name})",)
         pieces: list[object] = ["(congr " * (len(pf.args) - 1)]
@@ -387,6 +408,8 @@ class _Export(
         Our `Induct` proves `pred` with `var` still free -- read as universally
         quantified -- so the Lean term applies the principle back to `var`'s
         current image, and base/step render under `var := zero` / `var := n`."""
+        if self.theory.zero is None:
+            raise LeanError("induction export requires an explicit base term")
         base_var = self.fresh_binder(pf.var)
         step_var = self.fresh_binder(pf.var)
         motive = render_formula(substitute(pf.pred, {**context.sigma, pf.var: Var(base_var)}))
@@ -465,4 +488,4 @@ class _Export(
         )
 
 
-__all__ = ["AXIOM_LABELS", "export_theorem", "uses_induction"]
+__all__ = ["AXIOM_LABELS", "LeanProofExport", "export_theorem", "uses_induction"]

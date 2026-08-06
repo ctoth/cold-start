@@ -9,11 +9,13 @@ from .. import presburger as _presburger
 from .. import robinson as _robinson
 from ..peano_proofs import mul_cancel_right_succ, mul_proof
 from ..presburger_proofs import add_proof, left_identity_proof
+from ..proof import Pf
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
 from ..squaring import SQUARE_ARITHMETIC
 from ..squaring_proofs import square_product_total, square_product_unique
+from ..theory import Theory
 from .models import model_for
-from .proof import _Export
+from .proof import LeanProofExport
 
 # ---------------------------------------------------------------------------
 # The corpus: one self-contained Lean file
@@ -61,7 +63,7 @@ _EPILOGUE_HEADER = """/-
 """
 
 
-def corpus_entries() -> list:
+def corpus_entries() -> list[tuple[str, Pf, Theory]]:
     """The proofs the generated file carries: `(name, proof, theory)`.
 
     Cash-out is decided only by the exact semantic model registry; entries do
@@ -108,7 +110,7 @@ def export_corpus() -> str:
     parts = [_HEADER]
     model_examples: list[str] = []
     for name, pf, theory in corpus_entries():
-        export = _Export(pf, theory)
+        export = LeanProofExport(pf, theory)
         parts.append(export.theorem(name))
         model = model_for(theory)
         if model is not None:

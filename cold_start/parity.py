@@ -20,6 +20,8 @@ into ``d = S(j*2)`` where needed.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .divisibility import peano_divides
 from .peano import MUL_SUCC_F
 from .peano_proofs import (
@@ -64,8 +66,8 @@ from .proof import (
     Trans,
 )
 from .prop import Or, or_elim, or_left, or_right
-from .syntax import Bottom, Eq, Formula, Implies, Not, Var, exists, forall
-from .tactics import lemma_rule, normalize_equality, prove_eq
+from .syntax import Bottom, Eq, Formula, Implies, Not, Term, Var, exists, forall
+from .tactics import Rule, lemma_rule, normalize_equality, prove_eq
 from .vocabulary import ZERO, S, add, mul
 
 ONE = S(ZERO)
@@ -74,12 +76,12 @@ TWO = S(ONE)
 _a, _b, _d, _n, _x = Var("a"), Var("b"), Var("d"), Var("n"), Var("x")
 
 
-def double(t):
+def double(t: Term) -> Term:
     """``t*2`` -- the canonical doubling, recursing where the axioms unfold."""
     return mul(t, TWO)
 
 
-def _rules() -> tuple:
+def _rules() -> tuple[Rule, ...]:
     """The rewrite kit that evaluates doublings: ``t*2`` normalizes to
     ``t + t`` (through ``t*1 + t`` and the left identity), and a successor
     escapes a sum's first argument through ``succ_add``."""
@@ -145,13 +147,13 @@ def parity() -> Pf:
 EVEN_NE_ODD: Formula = Not(Eq(double(_a), S(double(_b))))
 
 
-def _all_a_even_ne_odd(b) -> Formula:
+def _all_a_even_ne_odd(b: Term) -> Formula:
     """``forall a, not(a*2 = S(b*2))`` -- the induction predicate on ``b``."""
     a = Var("a")
     return forall("a", "", Not(Eq(double(a), S(double(b)))))
 
 
-def _even_ne_odd_case_zero(hyp: Formula, offender) -> Pf:
+def _even_ne_odd_case_zero(hyp: Formula, offender: Term) -> Pf:
     """From ``a = 0`` and ``hyp : a*2 = S(offender)``, absurdity: the left side
     collapses to zero, which is no successor."""
     a_zero = Eq(_a, ZERO)
@@ -173,7 +175,11 @@ def even_ne_odd() -> Pf:
     the same equation one ``b`` lower -- the induction hypothesis's territory."""
     pred = _all_a_even_ne_odd(_b)
 
-    def _step_down(hyp: Formula, rhs_head, use_smaller) -> Pf:
+    def _step_down(
+        hyp: Formula,
+        rhs_head: Term,
+        use_smaller: Callable[[Term, Pf], Pf],
+    ) -> Pf:
         """Common successor case: from ``a = S(m!)`` and ``hyp``, normalize,
         peel successors, and hand ``m! + m! = rhs`` to `use_smaller`."""
         m = Var("m!")
@@ -188,7 +194,7 @@ def even_ne_odd() -> Pf:
     # peeled form is a successor equal to zero.
     base_hyp = Eq(double(_a), S(double(ZERO)))
 
-    def base_smaller(m, normal: Pf) -> Pf:
+    def base_smaller(m: Term, normal: Pf) -> Pf:
         # normal : S(S(m!+m!)) = S(0*2-normal-form) = S(0)
         peeled = MP(Inst(Inst(Axiom(SUCC_INJ), "x", S(add(m, m))), "y", ZERO), normal)
         boom = MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", add(m, m)), peeled)
@@ -207,7 +213,7 @@ def even_ne_odd() -> Pf:
     # step: assume forall a at b; conclude it at S(b).
     step_hyp = Eq(double(_a), S(double(S(_b))))
 
-    def step_smaller(m, normal: Pf) -> Pf:
+    def step_smaller(m: Term, normal: Pf) -> Pf:
         # normal : S(S(m!+m!)) = S(S(S(b+b))) -- peel twice, then rebuild the
         # doubling shapes and refute via the induction hypothesis at m!.
         first = MP(
