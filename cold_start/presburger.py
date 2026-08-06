@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from .proof import Induct, Pf
 from .syntax import Eq, Formula, Fun, Implies, Not, Term, Var
-from .theory import Theory
+from .theory import Signature, Theory
 
 # --- signature: the shared arithmetic vocabulary --------------------------
 
@@ -55,10 +55,16 @@ SUCC_INJ: Formula = Implies(Eq(S(Var("x")), S(Var("y"))), Eq(Var("x"), Var("y"))
 # Induction is a *rule*, not an axiom (encoding the schema as an axiom formula
 # is unsound here -- see checker.Theory). The theory just declares its zero and
 # successor so the checker's Induct rule knows the recursion structure.
+PRESBURGER_SIG = Signature(
+    sorts=frozenset({""}),
+    ranks=(("0", (), ""), ("S", ("",), ""), ("+", ("", ""), "")),
+)
+
 PRESBURGER = Theory(
     axioms=frozenset({ADD_ZERO_F, ADD_SUCC_F, SUCC_NEQ_ZERO, SUCC_INJ}),
     zero=ZERO,
     succ="S",
+    signature=PRESBURGER_SIG,
 )
 
 

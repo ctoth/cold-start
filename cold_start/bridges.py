@@ -61,7 +61,7 @@ from .robinson_proofs import (
 )
 from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import Rule, normalize_equality
-from .theory import Theory
+from .theory import Signature, Theory
 
 _a, _b, _c, _d = Var("a"), Var("b"), Var("c"), Var("d")
 
@@ -77,6 +77,10 @@ PRESBURGER_ONE = Theory(
     axioms=frozenset({SUCC_NEQ_ONE, SUCC_INJ, ADD_ONE_F, ADD_SUCC_F}),
     zero=ONE,
     succ="S",
+    signature=Signature(
+        sorts=frozenset({""}),
+        ranks=(("0", (), ""), ("S", ("",), ""), ("+", ("", ""), "")),
+    ),
 )
 
 

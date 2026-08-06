@@ -51,7 +51,8 @@ class Signature:
         if type(self.sorts) is not frozenset:
             raise TypeError("Signature.sorts must be a frozenset")
         for sort in self.sorts:
-            _require_name(sort, "signature sort")
+            if type(sort) is not str:
+                raise TypeError("signature sort must be a genuine str")
         if type(self.ranks) is not tuple:
             raise TypeError("Signature.ranks must be a tuple")
         if type(self.relations) is not tuple:

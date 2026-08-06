@@ -54,6 +54,7 @@ from .proof import Assume, Axiom, Cong, ImpIntro, Pf, Trans
 from .robinson import ONE, ROBINSON_PEANO
 from .syntax import Eq, Formula, Fun, Term, Var
 from .tactics import lemma_rule, prove_eq
+from .theory import Signature
 
 # --- the extra symbol: a self-map of the positive integers -----------------
 
@@ -73,7 +74,17 @@ F_SUCC: Formula = Eq(f(S(_x)), S(f(_x)))  # f(S x) = S(f x)
 # `dataclasses.replace` -- never a subclass. Zero (= 1), successor, and the
 # induction rule are inherited unchanged; the only change is two more axioms and
 # the `f` symbol they use. Compare `cold_start.peano` extending PRESBURGER.
-ROBINSON_PEANO_F = replace(ROBINSON_PEANO, axioms=ROBINSON_PEANO.axioms | {F_ONE, F_SUCC})
+if ROBINSON_PEANO.signature is None:
+    raise TypeError("ROBINSON_PEANO must have a closed signature")
+ROBINSON_PEANO_F = replace(
+    ROBINSON_PEANO,
+    axioms=ROBINSON_PEANO.axioms | {F_ONE, F_SUCC},
+    signature=Signature(
+        sorts=ROBINSON_PEANO.signature.sorts,
+        ranks=ROBINSON_PEANO.signature.ranks + (("f", ("",), ""),),
+        relations=ROBINSON_PEANO.signature.relations,
+    ),
+)
 
 # --- the theorems ----------------------------------------------------------
 

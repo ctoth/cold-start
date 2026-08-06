@@ -7,9 +7,9 @@ axioms. These are the first rung toward non-commutative algebra (the road to
 Clifford): structures where commutativity is an *extra* assumption, never a
 theorem.
 
-The monoid and ring theories are single-sorted (no `Signature`). MONOID_ACTION
-is many-sorted (sorts `M` and `X`, via `ACTION_SIG`) -- the first place sorts
-earn their keep, on the way to modules and Clifford.
+The monoid and ring theories are closed single-sorted signatures.
+MONOID_ACTION is many-sorted (sorts `M` and `X`, via `ACTION_SIG`) -- the first
+place sorts earn their keep, on the way to modules and Clifford.
 """
 
 from __future__ import annotations
@@ -37,9 +37,21 @@ COMM = Eq(mul(_x, _y), mul(_y, _x))  # x*y = y*x   -- an EXTRA assumption
 
 # --- theories -------------------------------------------------------------
 
-SEMIGROUP = Theory(axioms=frozenset({ASSOC}))
-MONOID = Theory(axioms=frozenset({ASSOC, LEFT_ID, RIGHT_ID}))
-COMM_MONOID = Theory(axioms=frozenset({ASSOC, LEFT_ID, RIGHT_ID, COMM}))
+SEMIGROUP_SIG = Signature(
+    sorts=frozenset({""}),
+    ranks=(("*", ("", ""), ""),),
+)
+MONOID_SIG = Signature(
+    sorts=frozenset({""}),
+    ranks=(("e", (), ""), ("*", ("", ""), "")),
+)
+
+SEMIGROUP = Theory(axioms=frozenset({ASSOC}), signature=SEMIGROUP_SIG)
+MONOID = Theory(axioms=frozenset({ASSOC, LEFT_ID, RIGHT_ID}), signature=MONOID_SIG)
+COMM_MONOID = Theory(
+    axioms=frozenset({ASSOC, LEFT_ID, RIGHT_ID, COMM}),
+    signature=MONOID_SIG,
+)
 
 
 # --- a many-sorted theory: a monoid M acting on a set X -------------------
@@ -118,9 +130,30 @@ RING_AXIOMS = frozenset(
     }
 )
 
-RING = Theory(axioms=RING_AXIOMS)
-COMM_RING = Theory(axioms=RING_AXIOMS | {COMM})  # COMM is x*y = y*x (reused)
+RING_SIG = Signature(
+    sorts=frozenset({""}),
+    ranks=(
+        ("0", (), ""),
+        ("1", (), ""),
+        ("+", ("", ""), ""),
+        ("neg", ("",), ""),
+        ("*", ("", ""), ""),
+    ),
+)
+AB_GROUP_SIG = Signature(
+    sorts=frozenset({""}),
+    ranks=(("0", (), ""), ("+", ("", ""), ""), ("neg", ("",), "")),
+)
 
-AB_GROUP = Theory(axioms=frozenset({ADD_ASSOC, ADD_COMM, ADD_ZERO, ADD_NEG}))
+RING = Theory(axioms=RING_AXIOMS, signature=RING_SIG)
+COMM_RING = Theory(
+    axioms=RING_AXIOMS | {COMM},
+    signature=RING_SIG,
+)  # COMM is x*y = y*x (reused)
+
+AB_GROUP = Theory(
+    axioms=frozenset({ADD_ASSOC, ADD_COMM, ADD_ZERO, ADD_NEG}),
+    signature=AB_GROUP_SIG,
+)
 """The additive fragment of RING on its own: an abelian group (0, +, neg).
 The source theory of the Grothendieck bridge in `cold_start.integers`."""

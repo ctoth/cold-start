@@ -30,7 +30,7 @@ from .peano import PEANO, mul
 from .presburger import ZERO, S
 from .robinson_divisibility import divides, robinson_product
 from .syntax import Formula, Implies, Var
-from .theory import Theory
+from .theory import Signature, Theory
 
 ONE = S(ZERO)
 _a, _b, _c = Var("a"), Var("b"), Var("c")
@@ -60,7 +60,12 @@ DIVISIBILITY_CORE = Theory(
             DIVIDES_PRODUCT_RIGHT_ATOM,
             DIVIDES_PRODUCT_ATOM,
         }
-    )
+    ),
+    signature=Signature(
+        sorts=frozenset({""}),
+        ranks=(("0", (), ""), ("S", ("",), ""), ("*", ("", ""), "")),
+        relations=(("|", ("", "")),),
+    ),
 )
 
 DIVIDES_IN_PEANO = PredicateSymbol(
@@ -96,8 +101,21 @@ PRODUCT_FROM_DIVIDES = GraphSymbol(
     lambda args, result: robinson_product(args[0], args[1], result),
 )
 
-PURE_SUCCESSOR_DIVISIBILITY = Theory(axioms=frozenset())
-BARE_MULTIPLICATION = Theory(axioms=frozenset())
+PURE_SUCCESSOR_DIVISIBILITY = Theory(
+    axioms=frozenset(),
+    signature=Signature(
+        sorts=frozenset({""}),
+        ranks=(("S", ("",), ""),),
+        relations=(("|", ("", "")),),
+    ),
+)
+BARE_MULTIPLICATION = Theory(
+    axioms=frozenset(),
+    signature=Signature(
+        sorts=frozenset({""}),
+        ranks=(("*", ("", ""), ""),),
+    ),
+)
 
 
 def robinson_product_interpretation() -> Interpretation:

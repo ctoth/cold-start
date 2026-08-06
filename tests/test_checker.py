@@ -125,12 +125,12 @@ def test_term_args_snapshotted_against_caller_mutation():
     # The aliasing attack: build a term from a mutable list, use it, then mutate
     # the list. A term that aliased the list would change retroactively.
     args: list[Term] = [Var("x")]
-    term = Fun("f", args)  # pyright: ignore[reportArgumentType]  -- a list is the attack
+    term = Fun("S", args)  # pyright: ignore[reportArgumentType]  -- a list is the attack
     proof = P.Refl(term)
     before = check(proof, PEANO).concl
     args[0] = Fun("0", ())  # mutate the caller's list AFTER proving
     after = check(proof, PEANO).concl
-    expected = Eq(Fun("f", (Var("x"),)), Fun("f", (Var("x"),)))
+    expected = Eq(Fun("S", (Var("x"),)), Fun("S", (Var("x"),)))
     assert term.args == (Var("x"),)  # snapshotted at construction, not aliased
     assert before == after == expected  # the proof did not change under us
 

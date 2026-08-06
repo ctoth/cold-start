@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .presburger import PRESBURGER, ZERO, S, add
+from .presburger import PRESBURGER, PRESBURGER_SIG, ZERO, S, add
 from .syntax import Eq, Formula, Fun, Term, Var
+from .theory import Signature
 
 
 def sq(term: Term) -> Term:
@@ -42,9 +43,14 @@ SQUARE_SUCC_F: Formula = Eq(
     add(sq(_x), S(add(_x, _x))),
 )
 
+SQUARE_ARITHMETIC_SIG = Signature(
+    sorts=PRESBURGER_SIG.sorts,
+    ranks=PRESBURGER_SIG.ranks + (("sq", ("",), ""),),
+)
 SQUARE_ARITHMETIC = replace(
     PRESBURGER,
     axioms=PRESBURGER.axioms | {SQUARE_ZERO_F, SQUARE_SUCC_F},
+    signature=SQUARE_ARITHMETIC_SIG,
 )
 
 

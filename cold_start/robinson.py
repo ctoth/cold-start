@@ -26,7 +26,7 @@ from __future__ import annotations
 from .peano import mul
 from .presburger import ZERO, S
 from .syntax import Eq, Formula, Implies, Not, Term, Var
-from .theory import Theory
+from .theory import Signature, Theory
 
 ONE: Term = S(ZERO)  # the multiplicative identity, 1 = S(0)
 
@@ -61,4 +61,13 @@ ROBINSON_AXIOMS = frozenset({SUCC_NEQ_ONE, SUCC_INJ, ADD_ONE, ADD_SUCC, MUL_ONE,
 
 # Peano over (1, S, ·): the induction base is 1 (Robinson's positive integers), and
 # the only function symbols are S and ·. `+` is not a primitive -- it is `bridge`.
-ROBINSON_PEANO = Theory(axioms=ROBINSON_AXIOMS, zero=ONE, succ="S")
+ROBINSON_SIG = Signature(
+    sorts=frozenset({""}),
+    ranks=(("0", (), ""), ("S", ("",), ""), ("*", ("", ""), "")),
+)
+ROBINSON_PEANO = Theory(
+    axioms=ROBINSON_AXIOMS,
+    zero=ONE,
+    succ="S",
+    signature=ROBINSON_SIG,
+)

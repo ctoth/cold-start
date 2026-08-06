@@ -5,7 +5,7 @@ from __future__ import annotations
 from .interp import GraphSymbol, Interpretation
 from .squaring import SQUARE_ARITHMETIC, square_product
 from .squaring_proofs import square_product_total, square_product_unique
-from .theory import Theory
+from .theory import Signature, Theory
 
 PRODUCT_FROM_SQUARE = GraphSymbol(
     "*",
@@ -13,7 +13,13 @@ PRODUCT_FROM_SQUARE = GraphSymbol(
     lambda args, result: square_product(args[0], args[1], result),
 )
 
-BARE_MULTIPLICATION_FROM_SQUARE = Theory(axioms=frozenset())
+BARE_MULTIPLICATION_FROM_SQUARE = Theory(
+    axioms=frozenset(),
+    signature=Signature(
+        sorts=frozenset({""}),
+        ranks=(("*", ("", ""), ""),),
+    ),
+)
 
 
 def squaring_interpretation() -> Interpretation:
