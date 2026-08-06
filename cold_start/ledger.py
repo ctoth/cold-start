@@ -22,6 +22,7 @@ from .bridges import robinson_interpretation, robinson_into_peano
 from .divisibility_bridges import (
     divisibility_into_peano,
     robinson_product_interpretation,
+    robinson_product_into_positive_peano,
 )
 from .integers import integers_interpretation
 from .interp import BridgeReport, Interpretation, verify
@@ -38,6 +39,7 @@ ARTIFACTS: tuple[Callable[[], Artifact], ...] = (
     robinson_into_peano,
     divisibility_into_peano,
     robinson_product_interpretation,
+    robinson_product_into_positive_peano,
     skolem_interpretation,
     integers_interpretation,
     ring_z_interpretation,

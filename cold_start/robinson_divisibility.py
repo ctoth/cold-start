@@ -28,6 +28,7 @@ from .syntax import Eq, Formula, Implies, Rel, Term, Var, exists, forall
 from .vocabulary import S
 
 Divides = Callable[[Term, Term], Formula]
+Domain = Callable[[Term], Formula]
 
 
 def divides(divisor: Term, dividend: Term) -> Rel:
@@ -45,7 +46,25 @@ def _fresh(stem: str, *nodes: Term | Formula) -> str:
     return f"{stem}{index}"
 
 
-def coprime(a: Term, b: Term, via: Divides = divides) -> Formula:
+def _forall_in(name: str, body: Formula, domain: Domain | None) -> Formula:
+    if domain is not None:
+        body = Implies(domain(Var(name)), body)
+    return forall(name, "", body)
+
+
+def _exists_in(name: str, body: Formula, domain: Domain | None) -> Formula:
+    if domain is not None:
+        body = And(domain(Var(name)), body)
+    return exists(name, "", body)
+
+
+def coprime(
+    a: Term,
+    b: Term,
+    via: Divides = divides,
+    *,
+    domain: Domain | None = None,
+) -> Formula:
     """Robinson's ``a perpendicular b`` using divisibility alone.
 
     Every common divisor of ``a`` and ``b`` divides every positive integer; on
@@ -57,66 +76,100 @@ def coprime(a: Term, b: Term, via: Divides = divides) -> Formula:
     arbitrary = Var(arbitrary_name)
     body = Implies(
         And(via(divisor, a), via(divisor, b)),
-        forall(arbitrary_name, "", via(divisor, arbitrary)),
+        _forall_in(arbitrary_name, via(divisor, arbitrary), domain),
     )
-    return forall(divisor_name, "", body)
+    return _forall_in(divisor_name, body, domain)
 
 
-def lcm(a: Term, b: Term, c: Term, via: Divides = divides) -> Formula:
+def lcm(
+    a: Term,
+    b: Term,
+    c: Term,
+    via: Divides = divides,
+    *,
+    domain: Domain | None = None,
+) -> Formula:
     """The graph ``c = lcm(a,b)`` using divisibility alone."""
     multiple_name = _fresh("x", a, b, c)
     multiple = Var(multiple_name)
-    return forall(
+    return _forall_in(
         multiple_name,
-        "",
         Iff(
             And(via(a, multiple), via(b, multiple)),
             via(c, multiple),
         ),
+        domain,
     )
 
 
-def unit_case(a: Term, b: Term, c: Term, via: Divides = divides) -> Formula:
+def unit_case(
+    a: Term,
+    b: Term,
+    c: Term,
+    via: Divides = divides,
+    *,
+    domain: Domain | None = None,
+) -> Formula:
     """Formula (2)'s first disjunct, true exactly when ``a=b=c=1``."""
     arbitrary_name = _fresh("x", a, b, c)
     arbitrary = Var(arbitrary_name)
-    return forall(
+    return _forall_in(
         arbitrary_name,
-        "",
         And(via(a, arbitrary), via(b, arbitrary), via(c, arbitrary)),
+        domain,
     )
 
 
-def _lcm_successor_multiple(modulus: Term, a: Term, x: Term, via: Divides) -> Formula:
+def _lcm_successor_multiple(
+    modulus: Term,
+    a: Term,
+    x: Term,
+    via: Divides,
+    domain: Domain | None,
+) -> Formula:
     lcm_name = _fresh("l", modulus, a, x)
     value = Var(lcm_name)
-    return exists(
+    return _exists_in(
         lcm_name,
-        "",
-        And(lcm(a, x, value, via), via(modulus, S(value))),
+        And(lcm(a, x, value, via, domain=domain), via(modulus, S(value))),
+        domain,
     )
 
 
-def _successor_is_nested_lcm(u: Term, c: Term, x: Term, y: Term, via: Divides) -> Formula:
+def _successor_is_nested_lcm(
+    u: Term,
+    c: Term,
+    x: Term,
+    y: Term,
+    via: Divides,
+    domain: Domain | None,
+) -> Formula:
     xy_name = _fresh("l", u, c, x, y)
     xy = Var(xy_name)
     cxy_name = _fresh("v", u, c, x, y, xy)
     cxy = Var(cxy_name)
-    return exists(
+    return _exists_in(
         xy_name,
-        "",
         And(
-            lcm(x, y, xy, via),
-            exists(
+            lcm(x, y, xy, via, domain=domain),
+            _exists_in(
                 cxy_name,
-                "",
-                And(lcm(c, xy, cxy, via), Eq(S(u), cxy)),
+                And(lcm(c, xy, cxy, via, domain=domain), Eq(S(u), cxy)),
+                domain,
             ),
         ),
+        domain,
     )
 
 
-def robinson_product(a: Term, b: Term, c: Term, via: Divides = divides) -> Formula:
+def robinson_product(
+    a: Term,
+    b: Term,
+    c: Term,
+    via: Divides = divides,
+    *,
+    domain: Domain | None = None,
+) -> Formula:
     """Formula (2): Robinson's ``a*b=c`` graph in successor and divisibility.
 
     The unit disjunct handles ``a=b=c=1``.  The other disjunct is Robinson's
@@ -133,29 +186,29 @@ def robinson_product(a: Term, b: Term, c: Term, via: Divides = divides) -> Formu
     u = Var(u_name)
 
     hypothesis = And(
-        coprime(a, x, via),
-        coprime(b, y, via),
-        coprime(c, x, via),
-        coprime(c, y, via),
-        coprime(x, y, via),
-        _lcm_successor_multiple(modulus, a, x, via),
-        _lcm_successor_multiple(modulus, b, y, via),
+        coprime(a, x, via, domain=domain),
+        coprime(b, y, via, domain=domain),
+        coprime(c, x, via, domain=domain),
+        coprime(c, y, via, domain=domain),
+        coprime(x, y, via, domain=domain),
+        _lcm_successor_multiple(modulus, a, x, via, domain),
+        _lcm_successor_multiple(modulus, b, y, via, domain),
     )
-    conclusion = exists(
+    conclusion = _exists_in(
         u_name,
-        "",
         And(
             via(modulus, u),
-            _successor_is_nested_lcm(u, c, x, y, via),
+            _successor_is_nested_lcm(u, c, x, y, via, domain),
         ),
+        domain,
     )
-    general_case = forall(
+    general_case = _forall_in(
         x_name,
-        "",
-        forall(
+        _forall_in(
             y_name,
-            "",
-            forall(modulus_name, "", Implies(hypothesis, conclusion)),
+            _forall_in(modulus_name, Implies(hypothesis, conclusion), domain),
+            domain,
         ),
+        domain,
     )
-    return Or(unit_case(a, b, c, via), general_case)
+    return Or(unit_case(a, b, c, via, domain=domain), general_case)

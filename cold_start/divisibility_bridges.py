@@ -7,8 +7,10 @@ Two shores are kept distinct:
   proof from :mod:`cold_start.divisibility`.
 * ``robinson_product_interpretation`` registers Robinson's full 1949 formula
   (2) as a multiplication graph over successor and divisibility. Its empty
-  target theory deliberately proves nothing about the standard integers, so the
-  report exposes exactly the deep remaining debts: totality and uniqueness.
+  target theory deliberately proves nothing about the standard integers.
+* ``robinson_product_into_positive_peano`` composes the graph with ordinary
+  PEANO divisibility and guards Robinson's entire positive-integer universe.
+  This is the shore on which the deep totality and uniqueness proofs belong.
 
 An open bridge is a measured conjecture with a ledger, never a theorem claim.
 """
@@ -27,8 +29,9 @@ from .divisibility import (
 )
 from .interp import GraphSymbol, Interpretation, ObligationKey, PredicateSymbol
 from .peano import PEANO
+from .proof import ExistsIntro, Pf, Refl
 from .robinson_divisibility import divides, robinson_product
-from .syntax import Formula, Implies, Var
+from .syntax import Eq, Formula, Implies, Term, Var, exists
 from .theory import Signature, Theory
 from .vocabulary import ZERO, S, mul
 
@@ -102,6 +105,30 @@ PRODUCT_FROM_DIVIDES = GraphSymbol(
     lambda args, result: robinson_product(args[0], args[1], result),
 )
 
+
+def positive_peano(term: Term) -> Formula:
+    """The positive PEANO domain, ``exists k. term = S(k)``."""
+    used = term.free_vars()
+    name = "p!"
+    index = 0
+    while name in used:
+        index += 1
+        name = f"p!{index}"
+    return exists(name, "", Eq(term, S(Var(name))))
+
+
+PRODUCT_IN_POSITIVE_PEANO = GraphSymbol(
+    "*",
+    2,
+    lambda args, result: robinson_product(
+        args[0],
+        args[1],
+        result,
+        via=peano_divides,
+        domain=positive_peano,
+    ),
+)
+
 PURE_SUCCESSOR_DIVISIBILITY = Theory(
     axioms=frozenset(),
     signature=Signature(
@@ -129,12 +156,39 @@ def robinson_product_interpretation() -> Interpretation:
     )
 
 
+def _positive_nonempty() -> Pf:
+    one_positive = ExistsIntro(positive_peano(ONE), ZERO, Refl(ONE))
+    claim = exists("x!", "", positive_peano(Var("x!")))
+    return ExistsIntro(claim, ONE, one_positive)
+
+
+def robinson_product_into_positive_peano() -> Interpretation:
+    """Robinson formula (2) on its proof-eligible standard arithmetic shore.
+
+    The graph's own bound variables and the interpretation's external
+    arguments/results are all restricted to positive naturals. Divisibility is
+    expanded as ``exists k. a*k=b``. Only the genuine number-theory debts stay
+    open; nonemptiness is checker-paid at 1.
+    """
+    return Interpretation(
+        name="robinson-1949-theorem-1.2-product-into-positive-peano",
+        source=BARE_MULTIPLICATION,
+        target=PEANO,
+        symbols=(PRODUCT_IN_POSITIVE_PEANO,),
+        domain=positive_peano,
+        payments=((ObligationKey.domain("nonempty"), _positive_nonempty()),),
+    )
+
+
 __all__ = [
     "BARE_MULTIPLICATION",
     "DIVIDES_IN_PEANO",
     "DIVISIBILITY_CORE",
     "PRODUCT_FROM_DIVIDES",
+    "PRODUCT_IN_POSITIVE_PEANO",
     "PURE_SUCCESSOR_DIVISIBILITY",
     "divisibility_into_peano",
+    "positive_peano",
+    "robinson_product_into_positive_peano",
     "robinson_product_interpretation",
 ]

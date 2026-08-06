@@ -26,6 +26,7 @@ def test_ledger_covers_every_artifact(reports):
     assert "robinson-1949-s2-into-peano-positives" in names
     assert "integers-into-presburger-pairs" in names
     assert "multiplication-into-addition-and-square" in names
+    assert "robinson-1949-theorem-1.2-product-into-positive-peano" in names
     assert all(isinstance(r, BridgeReport) for r in reports)
 
 
