@@ -12,7 +12,8 @@ from typing import cast
 
 import hamblin
 
-from .proof import CANONICAL_PROOF_TYPES, Pf, validate_proof
+from .checker import validate_proof
+from .proof import CANONICAL_PROOF_TYPES, Pf
 from .syntax import CANONICAL_NODE_TYPES, BVar, Formula, Term, children, validate
 
 _TERM_TYPES = frozenset(cls for cls in CANONICAL_NODE_TYPES if issubclass(cls, Term))

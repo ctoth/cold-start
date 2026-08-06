@@ -210,7 +210,7 @@ class _Export(
         read their own conclusion off their fields -- `ExistsElim` -- need it."""
         hit = self.concls.get(id(pf))
         if hit is None:
-            hit = cast(Pf, pf).derive(self.theory).concl
+            hit = check(pf, self.theory).concl
             self.concls[id(pf)] = hit
         return hit
 

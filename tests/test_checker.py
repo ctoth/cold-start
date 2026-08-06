@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 import cold_start.proof as P
-from cold_start.checker import check, validate_proof
+from cold_start.checker import CHECKER_PROOF_TYPES, check, validate_proof
 from cold_start.codec import decode_proof, encode_proof
 from cold_start.peano import PEANO
 from cold_start.presburger import (
@@ -21,6 +21,7 @@ from cold_start.presburger import (
     add,
 )
 from cold_start.presburger_proofs import left_identity_proof
+from cold_start.proof import CANONICAL_PROOF_TYPES, Pf
 from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
@@ -334,6 +335,14 @@ def test_serialization_roundtrips():
 
 def test_validate_proof_runs_on_wellformed():
     validate_proof(left_identity_proof())  # must not raise
+
+
+def test_proof_terms_are_inert_and_checker_dispatch_is_exhaustive():
+    assert not hasattr(Pf, "derive")
+    for proof_type in CANONICAL_PROOF_TYPES:
+        assert not hasattr(proof_type, "_derive_rule")
+        assert not hasattr(proof_type, "_validate")
+    assert CHECKER_PROOF_TYPES == CANONICAL_PROOF_TYPES
 
 
 def _run_verify(stdin_bytes: bytes, *args: str):
