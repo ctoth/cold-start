@@ -104,6 +104,12 @@ def test_signature_rejects_empty_symbol_names_and_nonstr_relation_sorts() -> Non
             ranks=(),
             relations=(("R", (cast(str, 7),)),),
         )
+    with pytest.raises(ValueError, match="undeclared sort"):
+        Signature(
+            sorts=frozenset({"N"}),
+            ranks=(),
+            relations=(("R", ("Missing",)),),
+        )
 
 
 def test_signature_revalidates_lookup_type_and_contents_independently() -> None:
@@ -115,6 +121,28 @@ def test_signature_revalidates_lookup_type_and_contents_independently() -> None:
     signature = Signature(sorts=frozenset({"N"}), ranks=(("f", (), "N"),))
     object.__setattr__(signature, "_by_name", MappingProxyType({"wrong": ((), "N")}))
     with pytest.raises(TypeError, match="function lookup"):
+        signature.validate()
+
+    signature = Signature(
+        sorts=frozenset({"N"}),
+        ranks=(),
+        relations=(("R", ("N",)),),
+    )
+    object.__setattr__(signature, "_relations_by_name", {"R": ("N",)})
+    with pytest.raises(TypeError, match="relation lookup"):
+        signature.validate()
+
+    signature = Signature(
+        sorts=frozenset({"N"}),
+        ranks=(),
+        relations=(("R", ("N",)),),
+    )
+    object.__setattr__(
+        signature,
+        "_relations_by_name",
+        MappingProxyType({"wrong": ("N",)}),
+    )
+    with pytest.raises(TypeError, match="relation lookup"):
         signature.validate()
 
 

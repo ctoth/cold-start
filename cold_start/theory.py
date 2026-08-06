@@ -159,7 +159,7 @@ class Theory:
         return formula in self.axioms
 
     def induction_sort(self) -> str:
-        if self.zero is None or self.succ is None:
+        if self.zero is None:
             raise ValueError("theory defines no induction principle")
         if self.signature is None:
             return ""
