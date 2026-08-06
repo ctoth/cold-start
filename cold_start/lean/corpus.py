@@ -2,17 +2,34 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
+from .. import algebra as _algebra
 from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
+from ..bridges import PRESBURGER_ONE
+from ..divisibility_bridges import (
+    BARE_MULTIPLICATION,
+    DIVIDES_REFL_ATOM,
+    DIVISIBILITY_CORE,
+    PURE_SUCCESSOR_DIVISIBILITY,
+    divisibility_into_peano,
+)
+from ..integers import integers_interpretation
+from ..order import le_refl
+from ..parity import parity
 from ..peano_proofs import mul_cancel_right_succ, mul_proof
 from ..presburger_proofs import add_proof, left_identity_proof
-from ..proof import Pf
+from ..proof import Axiom, Pf, Refl
+from ..robinson_divisibility_proofs import coprime_one_left
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
+from ..skolem import skolem_interpretation
 from ..squaring import SQUARE_ARITHMETIC
+from ..squaring_bridges import BARE_MULTIPLICATION_FROM_SQUARE
 from ..squaring_proofs import square_product_total, square_product_unique
+from ..syntax import Var
 from ..theory import Theory
 from .models import model_for
 from .proof import LeanProofExport
@@ -63,45 +80,149 @@ _EPILOGUE_HEADER = """/-
 """
 
 
-def corpus_entries() -> list[tuple[str, Pf, Theory]]:
-    """The proofs the generated file carries: `(name, proof, theory)`.
+@dataclass(frozen=True, slots=True)
+class CorpusEntry:
+    """One independently checked theorem and its semantic coverage roles."""
+
+    name: str
+    proof: Pf
+    theory: Theory
+    features: frozenset[str] = frozenset()
+
+
+OFFICIAL_THEORIES: tuple[tuple[str, Theory], ...] = (
+    # Every named theory in Lean's deliberately one-carrier fragment.  The
+    # many-sorted MONOID_ACTION theory is checked by Python but cannot be stated
+    # by this adapter without changing its one-carrier semantics.
+    ("presburger-one", PRESBURGER_ONE),
+    ("presburger", _presburger.PRESBURGER),
+    ("peano", _peano.PEANO),
+    ("robinson", _robinson.ROBINSON_PEANO),
+    ("semigroup", _algebra.SEMIGROUP),
+    ("monoid", _algebra.MONOID),
+    ("commutative-monoid", _algebra.COMM_MONOID),
+    ("ring", _algebra.RING),
+    ("commutative-ring", _algebra.COMM_RING),
+    ("abelian-group", _algebra.AB_GROUP),
+    ("divisibility-core", DIVISIBILITY_CORE),
+    ("successor-divisibility", PURE_SUCCESSOR_DIVISIBILITY),
+    ("bare-multiplication", BARE_MULTIPLICATION),
+    ("addition-and-square", SQUARE_ARITHMETIC),
+    ("multiplication-from-square", BARE_MULTIPLICATION_FROM_SQUARE),
+)
+
+
+def corpus_entries() -> list[CorpusEntry]:
+    """The proofs carried by the generated corpus.
 
     Cash-out is decided only by the exact semantic model registry; entries do
-    not carry an ad hoc boolean permission.
+    not carry an ad hoc boolean permission. Feature labels describe why a proof
+    is present; they do not affect checking or Lean rendering.
     """
-    return [
-        ("coldstart_left_identity", left_identity_proof(), _presburger.PRESBURGER),
-        ("coldstart_add_two_three", add_proof(2, 3), _presburger.PRESBURGER),
-        ("coldstart_mul_two_three", mul_proof(2, 3), _peano.PEANO),
-        (
+    ordinary = divisibility_into_peano()
+    quotient = integers_interpretation()
+    primary = [
+        CorpusEntry(
+            "coldstart_left_identity",
+            left_identity_proof(),
+            _presburger.PRESBURGER,
+            frozenset({"proof-family:presburger"}),
+        ),
+        CorpusEntry(
+            "coldstart_add_two_three",
+            add_proof(2, 3),
+            _presburger.PRESBURGER,
+            frozenset({"proof-family:presburger"}),
+        ),
+        CorpusEntry(
+            "coldstart_mul_two_three",
+            mul_proof(2, 3),
+            _peano.PEANO,
+            frozenset({"proof-family:peano"}),
+        ),
+        CorpusEntry(
             "coldstart_mul_cancel_right_positive",
             mul_cancel_right_succ(),
             _peano.PEANO,
+            frozenset({"proof-family:peano"}),
         ),
-        (
+        CorpusEntry(
             "coldstart_robinson_bridge_converse_positive",
             bridge_converse_positive(),
             _peano.PEANO,
+            frozenset({"proof-family:robinson"}),
         ),
-        (
+        CorpusEntry(
             "coldstart_robinson_add_two_three",
             robinson_add_proof(2, 3),
             _robinson.ROBINSON_PEANO,
+            frozenset({"proof-family:robinson"}),
         ),
-        (
+        CorpusEntry(
             "coldstart_square_product_total",
             square_product_total(),
             SQUARE_ARITHMETIC,
+            frozenset({"proof-family:squaring"}),
         ),
-        (
+        CorpusEntry(
             "coldstart_square_product_unique",
             square_product_unique(),
             SQUARE_ARITHMETIC,
+            frozenset({"proof-family:squaring"}),
+        ),
+        CorpusEntry(
+            "coldstart_relation_reflexive",
+            Axiom(DIVIDES_REFL_ATOM),
+            DIVISIBILITY_CORE,
+            frozenset({"relations"}),
+        ),
+        CorpusEntry(
+            "coldstart_ordinary_interpretation_payment",
+            ordinary.payments[0][1],
+            ordinary.target,
+            frozenset({"ordinary-interpretation", "proof-family:divisibility"}),
+        ),
+        CorpusEntry(
+            "coldstart_quotient_interpretation_payment",
+            quotient.payments[0][1],
+            quotient.target,
+            frozenset({"quotient-interpretation", "proof-family:integer-pairs"}),
+        ),
+        CorpusEntry(
+            "coldstart_order_reflexive",
+            le_refl(),
+            _presburger.PRESBURGER,
+            frozenset({"proof-family:order"}),
+        ),
+        CorpusEntry(
+            "coldstart_parity",
+            parity(),
+            _peano.PEANO,
+            frozenset({"proof-family:parity"}),
+        ),
+        CorpusEntry(
+            "coldstart_robinson_divisibility_unit",
+            coprime_one_left(),
+            _peano.PEANO,
+            frozenset({"proof-family:robinson-divisibility"}),
+        ),
+        CorpusEntry(
+            "coldstart_skolem_payment",
+            skolem_interpretation().payments[0][1],
+            _peano.PEANO,
+            frozenset({"proof-family:skolem", "ordinary-interpretation"}),
         ),
     ]
+    represented = {id(entry.theory) for entry in primary}
+    coverage = [
+        CorpusEntry(f"coldstart_theory_{slug.replace('-', '_')}", Refl(Var("x")), theory)
+        for slug, theory in OFFICIAL_THEORIES
+        if id(theory) not in represented
+    ]
+    return [*primary, *coverage]
 
 
-CORPUS_NAMES = tuple(name for name, _pf, _theory in corpus_entries())
+CORPUS_NAMES = tuple(entry.name for entry in corpus_entries())
 
 
 def export_corpus() -> str:
@@ -109,12 +230,12 @@ def export_corpus() -> str:
     proof, then the semantic-model epilogue."""
     parts = [_HEADER]
     model_examples: list[str] = []
-    for name, pf, theory in corpus_entries():
-        export = LeanProofExport(pf, theory)
-        parts.append(export.theorem(name))
-        model = model_for(theory)
+    for entry in corpus_entries():
+        export = LeanProofExport(entry.proof, entry.theory)
+        parts.append(export.theorem(entry.name))
+        model = model_for(entry.theory)
         if model is not None:
-            model_examples.append(export.model_example(name, model))
+            model_examples.append(export.model_example(entry.name, model))
     return "\n".join([*parts, _EPILOGUE_HEADER, *model_examples])
 
 
@@ -131,6 +252,8 @@ def write_corpus(path: Path | str | None = None) -> Path:
 __all__ = [
     "CORPUS_NAMES",
     "CORPUS_PATH",
+    "CorpusEntry",
+    "OFFICIAL_THEORIES",
     "corpus_entries",
     "export_corpus",
     "write_corpus",

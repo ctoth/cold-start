@@ -24,6 +24,7 @@ from cold_start.lean.corpus import (
     export_corpus,
     write_corpus,
 )
+from cold_start.lean.coverage import corpus_coverage
 from cold_start.lean.proof import export_theorem
 from cold_start.lean.syntax import (
     LeanError,
@@ -306,6 +307,15 @@ def test_corpus_carries_every_proof_and_needs_no_imports(corpus_text: str):
     assert not [ln for ln in lines if ln.startswith("axiom ")]  # nothing asserted
     assert "sorry" not in text
     assert "admit" not in text
+
+
+def test_corpus_semantically_covers_the_proof_language_and_official_theories():
+    report = corpus_coverage()
+
+    assert report.complete
+    assert report.missing_proof_rules == frozenset()
+    assert report.missing_features == frozenset()
+    assert report.missing_theories == frozenset()
 
 
 def test_corpus_epilogue_instantiates_the_arithmetic_theorems_at_Nat(corpus_text: str):

@@ -39,6 +39,7 @@ from ..syntax import (
     Fun,
     Node,
     Not,
+    Rel,
     Term,
     Var,
     children,
@@ -132,8 +133,24 @@ def _var_names(nodes: Iterable[object]) -> set[str]:
     return {n.name for root in nodes for n in _tree(root) if type(n) is Var}
 
 
+def _relations(nodes: Iterable[object]) -> dict[str, int]:
+    """`name -> arity` for every relation symbol occurring in `nodes`."""
+    arities: dict[str, int] = {}
+    for root in nodes:
+        for node in _tree(root):
+            if type(node) is Rel:
+                arity = len(node.args)
+                if arities.setdefault(node.name, arity) != arity:
+                    raise LeanError(f"relation {node.name!r} used at two arities")
+    return arities
+
+
 def _fun_type(arity: int) -> str:
     return " → ".join([CARRIER] * (arity + 1))
+
+
+def _relation_type(arity: int) -> str:
+    return " → ".join([CARRIER] * arity + ["Prop"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +182,7 @@ class LeanProofExport(
     axiom_names: dict[Formula, str] = field(init=False)
     open_names: dict[Formula, str] = field(init=False)
     symbols: dict[str, int] = field(init=False)
+    relations: dict[str, int] = field(init=False)
     sigma0: dict[str, Term] = field(init=False)
     concls: dict[int, Formula] = field(init=False, default_factory=dict[int, Formula])
 
@@ -179,7 +197,16 @@ class LeanProofExport(
         if self.theory.zero is not None:
             roots.append(self.theory.zero)
         self.symbols = _symbols(roots)
-        self.supply = LeanNames({ABSTRACT_STYLE.symbol(s) for s in self.symbols})
+        self.relations = _relations(roots)
+        shared_names = set(self.symbols) & set(self.relations)
+        if shared_names:
+            raise LeanError(
+                "Lean export cannot bind a name as both function and relation: "
+                f"{sorted(shared_names)!r}"
+            )
+        self.supply = LeanNames(
+            {ABSTRACT_STYLE.symbol(s) for s in (*self.symbols, *self.relations)}
+        )
         self.axiom_names = {}
         for i, ax in enumerate(sorted(self.theory.axioms, key=render_statement)):
             self.axiom_names[ax] = self.supply.fresh(AXIOM_LABELS.get(ax, f"ax{i + 1}"))
@@ -246,6 +273,10 @@ class LeanProofExport(
             f"({ABSTRACT_STYLE.symbol(s)} : {_fun_type(self.symbols[s])})"
             for s in self.symbol_order()
         ]
+        params += [
+            f"({ABSTRACT_STYLE.symbol(r)} : {_relation_type(self.relations[r])})"
+            for r in sorted(self.relations)
+        ]
         params += [f"({lean_name(v)} : {CARRIER})" for v in hyp_vars]
         params += [f"({self.open_names[h]} : {render_formula(h)})" for h in hyps]
         params += [
@@ -275,6 +306,8 @@ class LeanProofExport(
             raise LeanError(f"model {model.name!r} is not registered for this theory")
         if self.seq.hyps:
             raise LeanError("cannot instantiate a theorem with open hypotheses in a model")
+        if self.relations:
+            raise LeanError("registered Lean models do not yet interpret relation symbols")
         symbol_map = model.symbol_map()
         if set(symbol_map) != set(self.symbols):
             raise LeanError(

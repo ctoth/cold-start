@@ -317,7 +317,13 @@ class _LeanSyntaxEmitter(
 
     @case(Rel)
     def relation(self, node: Rel, context: _LeanSyntaxContext) -> tuple[object, ...]:
-        raise LeanError(f"cannot render {type(node).__name__} in Lean")
+        name = self.style.symbol(node.name)
+        if not node.args:
+            return (name,)
+        pieces: list[object] = [name]
+        for arg in node.args:
+            pieces += [" ", Visit(arg, _LeanSyntaxContext(ATOM_PRECEDENCE, context.scope))]
+        return _wrapped(_L_APP, context.prec, pieces)
 
 
 def _binder_base(supply: LeanNames) -> str:

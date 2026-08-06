@@ -23,5 +23,15 @@ function Invoke-Gate {
 Invoke-Gate -Label 'pytest'  -Command @('uv', 'run', 'pytest')
 Invoke-Gate -Label 'ruff'    -Command @('uv', 'run', 'ruff', 'check', '.')
 Invoke-Gate -Label 'pyright (strict)' -Command @('uv', 'run', 'pyright')
+Invoke-Gate -Label 'Lean corpus generation' -Command @('uv', 'run', 'python', '-m', 'cold_start.lean')
+Invoke-Gate -Label 'Lean corpus freshness' -Command @('git', 'diff', '--exit-code', '--', 'lean_export/ColdStart.lean')
+
+$LeanToolchain = (Get-Content -LiteralPath 'lean-toolchain' -Raw).Trim()
+Invoke-Gate -Label 'Lean 4 compilation' -Command @(
+    'elan', 'run', $LeanToolchain, 'lean', 'lean_export/ColdStart.lean'
+)
+Invoke-Gate -Label 'trusted-base mutation campaign' -Command @(
+    'uv', 'run', 'python', 'tools/mutate.py'
+)
 
 Write-Host 'GATE GREEN' -ForegroundColor Green

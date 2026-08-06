@@ -11,7 +11,81 @@ permissions:
   contents: read
 
 jobs:
-  gate:
+  python-tests:
+    name: Python / ${{ matrix.slice }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slice: kernel
+            tests: >-
+              tests/test_checker.py tests/test_codec.py tests/test_emitter.py
+              tests/test_kernel_boundaries.py tests/test_logic.py tests/test_notation.py
+              tests/test_properties.py tests/test_prop.py tests/test_quant_soundness.py
+              tests/test_quantifiers.py tests/test_relations.py tests/test_sorts.py
+              tests/test_theory.py tests/test_vocabulary.py
+          - slice: proof-libraries
+            tests: >-
+              tests/test_algebra.py tests/test_brachynomial.py tests/test_combination.py
+              tests/test_divisibility_proofs.py tests/test_model.py tests/test_mul_laws.py
+              tests/test_order.py tests/test_padoa.py tests/test_parity.py
+              tests/test_presburger.py tests/test_rings.py
+              tests/test_robinson_divisibility_proofs.py
+              tests/test_robinson_divisibility.py tests/test_robinson.py
+              tests/test_semantics.py tests/test_tactics.py
+          - slice: interpretations
+            tests: >-
+              tests/test_bridges.py tests/test_divisibility_bridges.py
+              tests/test_integers.py tests/test_interp_metadata.py tests/test_interp.py
+              tests/test_ledger.py tests/test_predicate_interp.py tests/test_quotient.py
+              tests/test_rigidity.py tests/test_ring_z.py tests/test_skolem.py
+              tests/test_squaring_bridges.py
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked development environment
+        run: uv sync --locked --dev
+
+      - name: Run ${{ matrix.slice }} tests
+        run: uv run pytest ${{ matrix.tests }}
+
+  static-analysis:
+    name: Static analysis and tools
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked development environment
+        run: uv sync --locked --dev
+
+      - name: Run repository tool tests
+        run: uv run pytest tests/test_tools.py
+
+      - name: Run Ruff
+        run: uv run ruff check .
+
+      - name: Run strict Pyright
+        run: uv run pyright
+
+  lean:
+    name: Lean export and compilation
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -33,14 +107,35 @@ jobs:
           auto-config: false
           use-github-cache: false
 
-      - name: Run the repository gate
-        shell: pwsh
-        run: pwsh -File tools/gate.ps1
+      - name: Run Lean adapter tests
+        run: uv run pytest tests/test_lean.py tests/test_lean_models.py
 
-      - name: Check generated Lean corpus freshness
+      - name: Check generated corpus freshness
         run: |
           uv run python -m cold_start.lean
           git diff --exit-code -- lean_export/ColdStart.lean
 
-      - name: Compile generated corpus with Lean 4
-        run: lean lean_export/ColdStart.lean
+      - name: Compile generated corpus with pinned Lean 4
+        run: elan run "$(cat lean-toolchain)" lean lean_export/ColdStart.lean
+
+  mutation:
+    name: Trusted-base mutation campaign
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked development environment
+        run: uv sync --locked --dev
+
+      - name: Kill every trusted-base mutant
+        run: uv run python tools/mutate.py
