@@ -19,6 +19,7 @@ from cold_start.checker import check
 from cold_start.codec import encode_proof
 from cold_start.diffring2 import (
     CHAR2,
+    DERIVATIONS,
     DIFF_RING_2,
     GEN_X,
     GEN_Y,
@@ -31,6 +32,8 @@ from cold_start.jacobian2_proofs import (
     COLLISION_VALUE,
     collision_proofs,
     collision_statements,
+    derivation_one_proofs,
+    derivation_zero_proofs,
     derivative_proofs,
     derivative_statements,
     det_proof,
@@ -39,6 +42,8 @@ from cold_start.jacobian2_proofs import (
     f2,
     f3,
     mul_zero_rule,
+    noninjectivity_proof,
+    noninjectivity_statement,
     zero_add_rule,
     zero_mul_rule,
 )
@@ -188,6 +193,24 @@ def test_det_j_is_one() -> None:
     assert check(det_proof(), DIFF_RING_2) == Sequent(
         frozenset(), Eq(det_term(), ONE)
     )
+
+
+def test_derivations_kill_constants() -> None:
+    """D(0) = 0 and D(1) = 0 for all three derivations -- theorems, not
+    axioms: additivity plus CHAR2 for 0, Leibniz plus CHAR2 for 1."""
+    for d, pf0, pf1 in zip(
+        DERIVATIONS, derivation_zero_proofs(), derivation_one_proofs(), strict=True
+    ):
+        assert check(pf0, DIFF_RING_2) == Sequent(frozenset(), Eq(d(ZERO), ZERO))
+        assert check(pf1, DIFF_RING_2) == Sequent(frozenset(), Eq(d(ONE), ZERO))
+
+
+def test_noninjectivity_is_an_existential_theorem() -> None:
+    """The conjecture's conclusion, refuted as one closed sentence: there
+    exist two points with equal images under all three components whose
+    first coordinates differ. Witnesses: (0,0,1) and (1,0,1)."""
+    seq = check(noninjectivity_proof(), DIFF_RING_2)
+    assert seq == Sequent(frozenset(), noninjectivity_statement())
 
 
 def test_collision_proof_verifies_in_a_fresh_process() -> None:

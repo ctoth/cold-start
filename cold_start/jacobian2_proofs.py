@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import reduce
+from typing import cast
 
 from .algebra import (
     ADD_ASSOC,
@@ -34,9 +35,10 @@ from .algebra import (
     MUL_LEFT_ID,
     MUL_RIGHT_ID,
 )
-from .diffring2 import CHAR2, D_AXIOMS, GEN_X, GEN_Y, GEN_Z, dx, dy, dz
-from .proof import Cong, Pf, Refl, Sym, Trans
-from .syntax import Eq, Formula, Term, Var
+from .diffring2 import CHAR2, D_AXIOMS, GEN_X, GEN_Y, GEN_Z, NONTRIVIAL, dx, dy, dz
+from .proof import Axiom, Cong, ExistsIntro, Pf, Refl, Sym, Trans
+from .prop import And, and_intro
+from .syntax import Eq, Formula, Not, Term, Var, exists
 from .tactics import Rule, axiom_rule, lemma_rule, prove_eq
 from .vocabulary import ONE, ZERO, add, mul
 
@@ -235,6 +237,118 @@ def derivative_proofs(budget: int = 20_000) -> tuple[Pf, ...]:
     return tuple(prove_eq(stmt, rules, budget) for stmt in derivative_statements())
 
 
+# --- the derivations kill both constants ----------------------------------
+
+
+def derivation_zero_proofs() -> tuple[Pf, ...]:
+    """D(0) = 0 for DX, DY, DZ:  D(0) = D(0+0) = D(0)+D(0) = 0 by CHAR2."""
+    out: list[Pf] = []
+    for i, d in enumerate((dx, dy, dz)):
+        name = ("DX", "DY", "DZ")[i]
+        additivity = D_AXIOMS[5 * i]
+        out.append(
+            Trans(
+                Trans(
+                    Cong(name, (Sym(axiom_rule(ADD_ZERO).instance({"x": ZERO})),)),
+                    axiom_rule(additivity).instance({"x": ZERO, "y": ZERO}),
+                ),
+                axiom_rule(CHAR2).instance({"x": d(ZERO)}),
+            )
+        )
+    return tuple(out)
+
+
+def derivation_one_proofs() -> tuple[Pf, ...]:
+    """D(1) = 0:  D(1) = D(1*1) = D(1)*1 + 1*D(1) = D(1)+D(1) = 0."""
+    out: list[Pf] = []
+    for i, d in enumerate((dx, dy, dz)):
+        name = ("DX", "DY", "DZ")[i]
+        leibniz = D_AXIOMS[5 * i + 1]
+        d1 = d(ONE)
+        out.append(
+            Trans(
+                Trans(
+                    Trans(
+                        Cong(name, (Sym(axiom_rule(MUL_LEFT_ID).instance({"x": ONE})),)),
+                        axiom_rule(leibniz).instance({"x": ONE, "y": ONE}),
+                    ),
+                    Cong(
+                        "+",
+                        (
+                            axiom_rule(MUL_RIGHT_ID).instance({"x": d1}),
+                            axiom_rule(MUL_LEFT_ID).instance({"x": d1}),
+                        ),
+                    ),
+                ),
+                axiom_rule(CHAR2).instance({"x": d1}),
+            )
+        )
+    return tuple(out)
+
+
+# --- non-injectivity, as one closed sentence ------------------------------
+
+_POINT_NAMES = ("x1", "y1", "z1", "x2", "y2", "z2")
+_WITNESSES = (ZERO, ZERO, ONE, ONE, ZERO, ONE)  # (0,0,1) and (1,0,1)
+
+
+def _noninjectivity_body(args: tuple[Term, ...]) -> Formula:
+    p, q = args[:3], args[3:]
+    return And(
+        Eq(f1(*p), f1(*q)),
+        Eq(f2(*p), f2(*q)),
+        Eq(f3(*p), f3(*q)),
+        Not(Eq(args[0], args[3])),
+    )
+
+
+def noninjectivity_statement() -> Formula:
+    """There are two points, first coordinates distinct, with equal images
+    under every component of F -- the Jacobian conjecture's conclusion,
+    negated, with no free variables and no metatheory."""
+    args: tuple[Term, ...] = tuple(Var(n) for n in _POINT_NAMES)
+    stmt = _noninjectivity_body(args)
+    for name in reversed(_POINT_NAMES):
+        stmt = exists(name, "", stmt)
+    return stmt
+
+
+def noninjectivity_proof() -> Pf:
+    """ExistsIntro six times over the witnesses; the ground body is the
+    collision proofs Trans-joined pairwise, and NONTRIVIAL tells 0 from 1.
+
+    Untrusted like every tactic, but self-diagnosing: the conjunction it
+    builds must equal the statement's body at the witnesses, or we raise
+    here instead of handing `check` a mystery."""
+    proofs = collision_proofs()
+    statements = collision_statements()
+    # collision index: point * 3 + component; points 0 = (0,0,1), 1 = (1,0,1)
+    eq_stmts: list[Formula] = []
+    eq_pfs: list[Pf] = []
+    for component in range(3):
+        ls, rs = statements[component], statements[3 + component]
+        if type(ls) is not Eq or type(rs) is not Eq:
+            raise TypeError("collision statements must be equations")
+        eq_stmts.append(Eq(ls.lhs, rs.lhs))
+        eq_pfs.append(Trans(proofs[component], Sym(proofs[3 + component])))
+
+    pf: Pf = Axiom(NONTRIVIAL)
+    formula: Formula = NONTRIVIAL
+    for stmt, eq_pf in zip(reversed(eq_stmts), reversed(eq_pfs), strict=True):
+        pf = and_intro(stmt, formula, eq_pf, pf)
+        formula = And(stmt, formula)
+    if formula != _noninjectivity_body(_WITNESSES):
+        raise AssertionError("conjunction shape drifted from the statement body")
+
+    for j in reversed(range(6)):
+        args = (*_WITNESSES[:j], *(Var(n) for n in _POINT_NAMES[j:]))
+        opened = _noninjectivity_body(args)
+        for name in reversed(_POINT_NAMES[j + 1 :]):
+            opened = exists(name, "", opened)
+        pf = ExistsIntro(exists(_POINT_NAMES[j], "", opened), _WITNESSES[j], pf)
+    return pf
+
+
 # --- the determinant ------------------------------------------------------
 
 
@@ -289,6 +403,60 @@ def collision_proofs(budget: int = 500) -> tuple[Pf, ...]:
     return tuple(prove_eq(stmt, rules, budget) for stmt in collision_statements())
 
 
+# --- the answer surface ---------------------------------------------------
+
+
+def _toll(pf: Pf) -> int:
+    """Proof nodes in `pf` -- the certificate's cost, counted like the
+    bridge ledger's toll column."""
+    from dataclasses import fields as dc_fields
+    from dataclasses import is_dataclass
+
+    count = 0
+    stack: list[object] = [pf]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, Pf) and is_dataclass(node):
+            count += 1
+            for f in dc_fields(node):
+                value: object = getattr(node, f.name)
+                if type(value) is tuple:
+                    stack.extend(cast("tuple[object, ...]", value))
+                else:
+                    stack.append(value)
+    return count
+
+
+def main() -> None:
+    """Re-check every theorem of the certificate and print its toll.
+    Like the ledger: numbers re-derived by the trusted checker on every
+    run, never quoted from documentation."""
+    from .checker import check
+    from .diffring2 import DIFF_RING_2
+
+    groups: tuple[tuple[str, tuple[Pf, ...]], ...] = (
+        ("collisions (9)", collision_proofs()),
+        ("derivative lemmas (9)", derivative_proofs()),
+        ("det J = 1", (det_proof(),)),
+        ("D(0) = 0 (3)", derivation_zero_proofs()),
+        ("D(1) = 0 (3)", derivation_one_proofs()),
+        ("non-injectivity (closed)", (noninjectivity_proof(),)),
+    )
+    total = 0
+    for label, proofs in groups:
+        toll = 0
+        for pf in proofs:
+            check(pf, DIFF_RING_2)
+            toll += _toll(pf)
+        total += toll
+        print(f"{label:<28} toll {toll:>9,}")
+    print(f"{'TOTAL':<28} toll {total:>9,}")
+
+
+if __name__ == "__main__":
+    main()
+
+
 __all__ = [
     "COLLISION_POINTS",
     "COLLISION_VALUE",
@@ -297,11 +465,15 @@ __all__ = [
     "cancel_pair_rule",
     "collision_proofs",
     "collision_statements",
+    "derivation_one_proofs",
+    "derivation_zero_proofs",
     "derivative_proofs",
     "derivative_rules",
     "derivative_statements",
     "det_proof",
     "det_term",
+    "noninjectivity_proof",
+    "noninjectivity_statement",
     "evaluation_rules",
     "f1",
     "f2",
