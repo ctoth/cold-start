@@ -13,9 +13,9 @@ axiom formula (see checker.Theory for why the schema-as-axiom is unsound).
 
 from __future__ import annotations
 
-from .checker import Theory
 from .proof import Induct, Pf
 from .syntax import Eq, Formula, Fun, Implies, Not, Term, Var
+from .theory import Theory
 
 # --- signature: the shared arithmetic vocabulary --------------------------
 

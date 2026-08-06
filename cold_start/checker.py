@@ -18,69 +18,12 @@ axioms.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import cast
 
 from .proof import Pf, validate_proof
 from .sequent import Sequent
-from .syntax import Formula, Term
-
-
-@dataclass(frozen=True)
-class Signature:
-    """A many-sorted signature: declared sorts, function ranks, and relation
-    ranks. When a `Theory` carries one, the checker rejects ill-sorted syntax
-    and cross-sort instantiation.
-
-    `ranks` stays a (hashable) tuple; an O(1) lookup dict is derived once and
-    excluded from eq/hash so a Signature stays hashable.
-    """
-
-    sorts: frozenset  # frozenset[str]
-    ranks: tuple  # tuple[(name: str, arg_sorts: tuple[str, ...], result: str), ...]
-    relations: tuple = ()  # tuple[(name: str, arg_sorts: tuple[str, ...]), ...]
-    _by_name: dict = field(default_factory=dict, init=False, compare=False, repr=False)
-    _relations_by_name: dict = field(default_factory=dict, init=False, compare=False, repr=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_by_name", {n: (args, res) for n, args, res in self.ranks})
-        object.__setattr__(self, "_relations_by_name", {n: args for n, args in self.relations})
-
-    def rank(self, name: str):
-        return self._by_name.get(name)
-
-    def relation(self, name: str):
-        return self._relations_by_name.get(name)
-
-
-@dataclass(frozen=True, slots=True)
-class Theory:
-    """A choice of axioms -- the mathematics we commit to, hence trusted.
-
-    `axioms` are concrete formulas (with implicitly-universal free variables).
-    `zero` and `succ` name the theory's induction structure: the base term and
-    the successor function symbol used by the first-class `Induct` rule. A
-    theory without them (both None) admits no induction.
-
-    `signature` (optional) makes the theory many-sorted: when present, the
-    checker sort-checks every term and forbids instantiating a variable with a
-    term of a different sort. When None, no sort-checking happens at all.
-
-    NB: induction is a *rule*, not an axiom formula. Asserting the schema
-    `P[0] -> ((P -> P[Sx]) -> P)` as an axiom is UNSOUND here, because under the
-    implicit-universal reading its free `x` quantifies over the whole
-    implication rather than only the step -- which lets `P(n):=n=0`, x:=1 derive
-    `1 = 0`. The `Induct` rule keeps the step quantified correctly and never
-    exposes that formula as a standalone theorem.
-    """
-
-    axioms: frozenset  # frozenset[Formula]
-    zero: Term | None = None
-    succ: str | None = None  # successor function symbol
-    signature: Signature | None = None
-
-    def accepts(self, f: Formula) -> bool:
-        return f in self.axioms
+from .syntax import Formula
+from .theory import Signature, validate_theory
 
 
 def sort_check_formula(f: Formula, sig: Signature) -> None:
@@ -104,10 +47,9 @@ def check(pf: object, theory: object) -> Sequent:
     checked (or cleanly rejected) without a `RecursionError`. The only bound is
     memory, which already held the input.
     """
-    if type(theory) is not Theory:
-        raise TypeError(f"not a theory: {theory!r}")
+    checked_theory = validate_theory(theory)
     validate_proof(pf)  # exact-type gate; after this pf is a genuine Pf tree
-    return cast(Pf, pf).derive(theory)
+    return cast(Pf, pf).derive(checked_theory)
 
 
-__all__ = ["Sequent", "Signature", "Theory", "check", "sort_check_formula", "validate_proof"]
+__all__ = ["check", "sort_check_formula", "validate_proof"]

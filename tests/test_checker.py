@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 import cold_start.proof as P
-from cold_start.checker import Sequent, check, validate_proof
+from cold_start.checker import check, validate_proof
 from cold_start.codec import decode_proof, encode_proof
 from cold_start.peano import PEANO
 from cold_start.presburger import (
@@ -22,6 +22,7 @@ from cold_start.presburger import (
 )
 from cold_start.presburger_proofs import left_identity_proof
 from cold_start.robinson_proofs import robinson_add_proof
+from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 
 HERE = os.path.dirname(os.path.abspath(__file__))

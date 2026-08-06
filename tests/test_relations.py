@@ -10,11 +10,12 @@ from __future__ import annotations
 import pytest
 from semantics import Model, evaluate
 
-from cold_start.checker import Signature, Theory, check
+from cold_start.checker import check
 from cold_start.codec import decode_formula, decode_proof, encode_formula, encode_proof
 from cold_start.notation import format_formula, parse_formula
 from cold_start.proof import Assume, Axiom
 from cold_start.syntax import Rel, Var, validate
+from cold_start.theory import Signature, Theory
 
 
 def test_relation_round_trips_through_syntax_and_proof_bytes():
@@ -80,8 +81,6 @@ def test_sorted_relation_axiom_checks_at_its_declared_rank():
         (Rel("|", (Var("a", "N"), Var("b", "X"))), "arg has sort"),
     ],
 )
-def test_sorted_relations_reject_wrong_arity_symbol_or_sort(claim, message):
-    theory = Theory(axioms=frozenset({claim}), signature=NAT_REL_SIG)
-
+def test_theory_rejects_relation_axioms_with_wrong_arity_symbol_or_sort(claim, message):
     with pytest.raises(ValueError, match=message):
-        check(Axiom(claim), theory)
+        Theory(axioms=frozenset({claim}), signature=NAT_REL_SIG)

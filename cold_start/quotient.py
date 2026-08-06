@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .checker import Theory, check
+from .checker import check
 from .interp import BridgeReport, InterpError, Obligation, ObligationStatus
 from .proof import Pf
 from .syntax import (
@@ -50,6 +50,7 @@ from .syntax import (
     forall,
     subnodes,
 )
+from .theory import Theory
 
 Vec = tuple[Term, ...]
 

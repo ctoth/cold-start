@@ -14,8 +14,8 @@ earn their keep, on the way to modules and Clifford.
 
 from __future__ import annotations
 
-from .checker import Signature, Theory
 from .syntax import Eq, Fun, Term, Var
+from .theory import Signature, Theory
 
 # --- signature ------------------------------------------------------------
 

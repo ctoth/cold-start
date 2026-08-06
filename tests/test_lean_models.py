@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import pytest
 
-from cold_start.checker import Theory
 from cold_start.lean.models import (
     NAT_PEANO,
     NAT_PRESBURGER,
@@ -16,6 +15,7 @@ from cold_start.peano import PEANO
 from cold_start.presburger import PRESBURGER
 from cold_start.robinson import ROBINSON_PEANO
 from cold_start.squaring import SQUARE_ARITHMETIC
+from cold_start.theory import Theory
 
 
 def test_only_exact_registered_theories_cash_out() -> None:

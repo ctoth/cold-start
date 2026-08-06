@@ -15,7 +15,7 @@ import pytest
 
 from cold_start.algebra import R0
 from cold_start.algebra import add as z_add
-from cold_start.checker import Theory, check
+from cold_start.checker import check
 from cold_start.interp import InterpError
 from cold_start.presburger import PRESBURGER, add
 from cold_start.proof import Assume
@@ -29,6 +29,7 @@ from cold_start.quotient import (
 )
 from cold_start.syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from cold_start.tactics import prove_eq
+from cold_start.theory import Theory
 
 Vec = tuple[Term, ...]
 

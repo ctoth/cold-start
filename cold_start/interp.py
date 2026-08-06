@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .checker import Theory, check
+from .checker import check
 from .proof import Pf
 from .prop import And
 from .syntax import (
@@ -55,6 +55,7 @@ from .syntax import (
     forall,
     subnodes,
 )
+from .theory import Theory
 
 
 class InterpError(Exception):

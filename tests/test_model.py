@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 from semantics import Model, evaluate
 
 import cold_start.proof as P
-from cold_start.checker import Theory, check
+from cold_start.checker import check
 from cold_start.peano import PEANO
 from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, numeral
 from cold_start.presburger_proofs import add_proof
@@ -30,6 +30,7 @@ from cold_start.syntax import (
     Implies,
     Var,
 )
+from cold_start.theory import Theory
 
 VAR_POOL = ["x", "y", "z", "n", "m", "a", "b"]
 VAR_NAMES = st.sampled_from(VAR_POOL)

@@ -164,7 +164,7 @@ def test_relativized_obligations_add_domain_debts() -> None:
 
 def _tiny_source() -> object:
     """A one-axiom source theory whose translation is a ROBINSON_PEANO axiom."""
-    from cold_start.checker import Theory
+    from cold_start.theory import Theory
 
     return Theory(axioms=frozenset({Eq(add(_a, ONE), S(_a))}))
 

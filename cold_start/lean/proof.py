@@ -9,7 +9,7 @@ from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
 from .. import squaring as _squaring
-from ..checker import Theory, check
+from ..checker import check
 from ..emitter import Emitter, Visit, case
 from ..proof import (
     CANONICAL_PROOF_TYPES,
@@ -41,6 +41,7 @@ from ..syntax import (
     children,
     instantiate,
 )
+from ..theory import Theory
 from .models import LeanModel
 from .syntax import (
     _ABSTRACT,

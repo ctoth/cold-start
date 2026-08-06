@@ -30,7 +30,6 @@ Untrusted, like every prover module: `check` remains the only judge.
 
 from __future__ import annotations
 
-from .checker import Theory
 from .interp import GraphSymbol, Interpretation
 from .peano import PEANO
 from .presburger import ADD_SUCC_F as P_ADD_SUCC
@@ -62,6 +61,7 @@ from .robinson_proofs import (
 )
 from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import Rule, normalize_equality
+from .theory import Theory
 
 _a, _b, _c, _d = Var("a"), Var("b"), Var("c"), Var("d")
 

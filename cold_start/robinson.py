@@ -23,10 +23,10 @@ Source, read in full: papers/Robinson_1949_DefinabilityArithmetic/.
 
 from __future__ import annotations
 
-from .checker import Theory
 from .peano import mul
 from .presburger import ZERO, S
 from .syntax import Eq, Formula, Implies, Not, Term, Var
+from .theory import Theory
 
 ONE: Term = S(ZERO)  # the multiplicative identity, 1 = S(0)
 

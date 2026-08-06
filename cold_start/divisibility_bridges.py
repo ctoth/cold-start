@@ -15,7 +15,6 @@ An open bridge is a measured conjecture with a ledger, never a theorem claim.
 
 from __future__ import annotations
 
-from .checker import Theory
 from .divisibility import (
     divides_factor,
     divides_product,
@@ -31,6 +30,7 @@ from .peano import PEANO, mul
 from .presburger import ZERO, S
 from .robinson_divisibility import divides, robinson_product
 from .syntax import Formula, Implies, Var
+from .theory import Theory
 
 ONE = S(ZERO)
 _a, _b, _c = Var("a"), Var("b"), Var("c")

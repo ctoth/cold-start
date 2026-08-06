@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..checker import Theory
 from ..peano import MUL_SUCC_F, MUL_ZERO_F, PEANO
 from ..presburger import (
     ADD_SUCC_F,
@@ -21,10 +20,11 @@ from ..presburger import (
 )
 from ..squaring import SQUARE_ARITHMETIC, SQUARE_SUCC_F, SQUARE_ZERO_F
 from ..syntax import Formula, Fun, children
+from ..theory import Theory
 
 
 def _theory_symbols(theory: Theory) -> dict[str, int]:
-    roots = [*theory.axioms]
+    roots: list[object] = [*theory.axioms]
     if theory.zero is not None:
         roots.append(theory.zero)
     symbols: dict[str, int] = {}

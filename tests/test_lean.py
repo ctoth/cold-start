@@ -18,7 +18,6 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from cold_start.checker import Theory
 from cold_start.lean.corpus import (
     CORPUS_NAMES,
     CORPUS_PATH,
@@ -65,6 +64,7 @@ from cold_start.syntax import (
     exists,
     forall,
 )
+from cold_start.theory import Theory
 
 
 def test_render_term_maps_arithmetic_symbols_to_lean_names():

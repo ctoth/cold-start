@@ -30,11 +30,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 
-from .checker import Theory, check
+from .checker import check
 from .codec import decode_proof
 from .peano import PEANO
 from .presburger import PRESBURGER
 from .robinson import ROBINSON_PEANO
+from .theory import Theory
 
 THEORIES: Mapping[str, Theory] = MappingProxyType(
     {

@@ -10,7 +10,7 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 import cold_start.proof as P
-from cold_start.checker import Sequent, check
+from cold_start.checker import check
 from cold_start.codec import (
     decode_formula,
     decode_proof,
@@ -32,6 +32,7 @@ from cold_start.presburger import (
 from cold_start.presburger_proofs import add_proof as prove_add
 from cold_start.robinson import ROBINSON_PEANO, bridge
 from cold_start.robinson_proofs import robinson_add_proof
+from cold_start.sequent import Sequent
 from cold_start.syntax import (
     Bottom,
     BVar,
@@ -211,7 +212,7 @@ def test_deep_proof_survives_serialization_without_recursion():
     still recurses -- that is the output path, not the trust path; tracked separately.)"""
     import sys as _sys
 
-    from cold_start.checker import Theory
+    from cold_start.theory import Theory
 
     t = Var("x")
     for _ in range(50_000):

@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 
 from cold_start.bridges import PLUS
-from cold_start.checker import Theory
 from cold_start.divisibility import divides_factor, divides_refl, peano_divides
 from cold_start.interp import InterpError, Interpretation, PredicateSymbol, translate, verify
 from cold_start.peano import PEANO, mul
 from cold_start.presburger import add
 from cold_start.robinson import bridge
 from cold_start.syntax import Implies, Rel, Var, forall
+from cold_start.theory import Theory
 
 _a, _b, _c = Var("a"), Var("b"), Var("c")
 

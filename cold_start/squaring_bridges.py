@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from .checker import Theory
 from .interp import GraphSymbol, Interpretation
 from .squaring import SQUARE_ARITHMETIC, square_product
 from .squaring_proofs import square_product_total, square_product_unique
+from .theory import Theory
 
 PRODUCT_FROM_SQUARE = GraphSymbol(
     "*",
