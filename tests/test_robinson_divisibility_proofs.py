@@ -28,6 +28,7 @@ from cold_start.robinson_divisibility_proofs import (
     POSITIVE_UNIT_CASE_FORCES_UNITS,
     POSITIVE_UNIT_CASE_UNIT,
     PRODUCT_DIVIDES_BOTH,
+    PRODUCT_POSITIVE,
     UNIT_CASE_FORCES_UNIT_DIVISORS,
     UNIT_CASE_FORCES_UNITS,
     UNIT_CASE_UNIT,
@@ -44,6 +45,7 @@ from cold_start.robinson_divisibility_proofs import (
     positive_unit_case_forces_units,
     positive_unit_case_unit,
     product_divides_both,
+    product_positive,
     totality_witness_at_unit,
     unit_case_forces_unit_divisors,
     unit_case_forces_units,
@@ -120,6 +122,14 @@ def test_a_product_divisor_yields_both_factor_divisors():
     assert PRODUCT_DIVIDES_BOTH == Implies(
         peano_divides(mul(_a, _b), _c),
         And(peano_divides(_a, _c), peano_divides(_b, _c)),
+    )
+
+
+def test_a_product_of_positive_naturals_is_positive():
+    _checked(product_positive, PRODUCT_POSITIVE)
+    assert PRODUCT_POSITIVE == Implies(
+        positive_peano(_a),
+        Implies(positive_peano(_b), positive_peano(mul(_a, _b))),
     )
 
 

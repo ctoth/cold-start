@@ -38,7 +38,7 @@ from .divisibility import (
 from .divisibility_bridges import positive_peano
 from .order import le, le_antisym
 from .peano import MUL_SUCC_F, MUL_ZERO_F
-from .presburger import SUCC_NEQ_ZERO
+from .presburger import ADD_SUCC_F, SUCC_NEQ_ZERO
 from .presburger_proofs import add_comm, zero_or_succ
 from .proof import (
     MP,
@@ -113,6 +113,10 @@ POSITIVE_TOTALITY_AT_UNIT: Formula = exists(
 PRODUCT_DIVIDES_BOTH: Formula = Implies(
     peano_divides(mul(_a, _b), _c),
     And(peano_divides(_a, _c), peano_divides(_b, _c)),
+)
+PRODUCT_POSITIVE: Formula = Implies(
+    positive_peano(_a),
+    Implies(positive_peano(_b), positive_peano(mul(_a, _b))),
 )
 DIVIDES_LE_POSITIVE: Formula = Implies(
     positive_peano(_b),
@@ -320,6 +324,27 @@ def product_divides_both() -> Pf:
     return ImpIntro(hyp, packed)
 
 
+def product_positive() -> Pf:
+    """The ordinary product of two positive PEANO naturals is positive."""
+    pos_a, pos_b = positive_peano(_a), positive_peano(_b)
+    j, k = Var("j!"), Var("k!")
+    a_succ, b_succ = instantiate(pos_a, j), instantiate(pos_b, k)
+
+    expose_b = Cong("*", (Refl(_a), Assume(b_succ)))
+    unfold = Inst(Inst(Axiom(MUL_SUCC_F), "x", _a), "y", k)
+    expose_a = Cong("+", (Refl(mul(_a, k)), Assume(a_succ)))
+    push = Inst(Inst(Axiom(ADD_SUCC_F), "x", mul(_a, k)), "y", j)
+    product_is_succ = Trans(expose_b, Trans(unfold, Trans(expose_a, push)))
+    packed = ExistsIntro(
+        positive_peano(mul(_a, _b)),
+        add(mul(_a, k), j),
+        product_is_succ,
+    )
+    use_b = ExistsElim("k!", Assume(pos_b), packed)
+    use_a = ExistsElim("j!", Assume(pos_a), use_b)
+    return ImpIntro(pos_a, ImpIntro(pos_b, use_a))
+
+
 def divides_le_positive() -> Pf:
     """A divisor of a positive natural is no larger than it."""
     pos = positive_peano(_b)
@@ -473,6 +498,7 @@ __all__ = [
     "LCM_SELF",
     "LCM_UNIQUE_POSITIVE",
     "PRODUCT_DIVIDES_BOTH",
+    "PRODUCT_POSITIVE",
     "POSITIVE_TOTALITY_AT_UNIT",
     "POSITIVE_UNIT_CASE_FORCES_UNITS",
     "POSITIVE_UNIT_CASE_UNIT",
@@ -489,6 +515,7 @@ __all__ = [
     "lcm_self",
     "lcm_unique_positive",
     "product_divides_both",
+    "product_positive",
     "positive_totality_witness_at_unit",
     "positive_unit_case_forces_units",
     "positive_unit_case_unit",
