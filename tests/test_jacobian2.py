@@ -31,6 +31,8 @@ from cold_start.jacobian2_proofs import (
     COLLISION_VALUE,
     collision_proofs,
     collision_statements,
+    derivative_proofs,
+    derivative_statements,
     f1,
     f2,
     f3,
@@ -62,6 +64,16 @@ def _pmul(a: frozenset, b: frozenset) -> frozenset:
     return frozenset(acc)
 
 
+def _pderiv(p: frozenset, var: int) -> frozenset:
+    out: set = set()
+    for e in p:
+        if e[var] % 2 == 1:
+            m = list(e)
+            m[var] -= 1
+            out.symmetric_difference_update({tuple(m)})
+    return frozenset(out)
+
+
 def evaluate(term: Term) -> frozenset:
     if type(term) is Fun:
         args = [evaluate(a) for a in term.args]
@@ -80,6 +92,12 @@ def evaluate(term: Term) -> frozenset:
                 return args[0] ^ args[1]
             case "*":
                 return _pmul(args[0], args[1])
+            case "DX":
+                return _pderiv(args[0], 0)
+            case "DY":
+                return _pderiv(args[0], 1)
+            case "DZ":
+                return _pderiv(args[0], 2)
     raise AssertionError(f"model cannot evaluate {term!r}")
 
 
@@ -134,6 +152,23 @@ def test_three_points_collide_at_one_zero_zero() -> None:
     proofs = collision_proofs()
     assert len(statements) == 9  # three components at three points
     for stmt, pf in zip(statements, proofs, strict=True):
+        assert check(pf, DIFF_RING_2) == Sequent(frozenset(), stmt)
+
+
+def test_derivative_statements_match_the_jc_data() -> None:
+    """Each lemma equates D(component) with an explicit polynomial; the model
+    computes both sides (the left through `_pderiv`) and they must agree."""
+    statements = derivative_statements()
+    assert len(statements) == 9
+    for stmt in statements:
+        assert isinstance(stmt, Eq)
+        assert evaluate(stmt.lhs) == evaluate(stmt.rhs)
+    lhs_names = [stmt.lhs.name for stmt in statements if type(stmt.lhs) is Fun]
+    assert lhs_names == ["DX", "DY", "DZ"] * 3
+
+
+def test_derivative_lemmas_check() -> None:
+    for stmt, pf in zip(derivative_statements(), derivative_proofs(), strict=True):
         assert check(pf, DIFF_RING_2) == Sequent(frozenset(), stmt)
 
 

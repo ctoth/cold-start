@@ -80,7 +80,8 @@ for _d, _values in zip(
     for _g, _v in zip(GENERATORS, _values, strict=True):
         _D_AXIOMS.append(Eq(_d(_g), _v))
 
-D_ADDITIVITY, D_LEIBNIZ = _D_AXIOMS[0], _D_AXIOMS[1]  # the DX pair, for callers
+D_AXIOMS: tuple[Formula, ...] = tuple(_D_AXIOMS)
+D_ADDITIVITY, D_LEIBNIZ = D_AXIOMS[0], D_AXIOMS[1]  # the DX pair, for callers
 
 # --- the theory -----------------------------------------------------------
 
@@ -123,6 +124,7 @@ DIFF_RING_2 = Theory(
 __all__ = [
     "CHAR2",
     "D_ADDITIVITY",
+    "D_AXIOMS",
     "D_LEIBNIZ",
     "DERIVATIONS",
     "DIFF_RING_2",
