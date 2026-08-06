@@ -33,6 +33,8 @@ from cold_start.jacobian2_proofs import (
     collision_statements,
     derivative_proofs,
     derivative_statements,
+    det_proof,
+    det_term,
     f1,
     f2,
     f3,
@@ -170,6 +172,22 @@ def test_derivative_statements_match_the_jc_data() -> None:
 def test_derivative_lemmas_check() -> None:
     for stmt, pf in zip(derivative_statements(), derivative_proofs(), strict=True):
         assert check(pf, DIFF_RING_2) == Sequent(frozenset(), stmt)
+
+
+def test_det_term_evaluates_to_one_in_the_model() -> None:
+    """The statement guard: the determinant term -- D symbols and all --
+    computes to the polynomial 1 in the exact model, independently of any
+    proof. jc's det_j of this map is the same computation."""
+    assert evaluate(det_term()) == P_ONE
+
+
+def test_det_j_is_one() -> None:
+    """The headline: det J(F) = 1 as a theorem of DIFF_RING_2, with the
+    derivatives *inside the statement* -- nothing about the Jacobian matrix
+    is trusted code, only the differential-ring axioms."""
+    assert check(det_proof(), DIFF_RING_2) == Sequent(
+        frozenset(), Eq(det_term(), ONE)
+    )
 
 
 def test_collision_proof_verifies_in_a_fresh_process() -> None:

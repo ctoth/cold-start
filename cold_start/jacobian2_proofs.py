@@ -235,6 +235,37 @@ def derivative_proofs(budget: int = 20_000) -> tuple[Pf, ...]:
     return tuple(prove_eq(stmt, rules, budget) for stmt in derivative_statements())
 
 
+# --- the determinant ------------------------------------------------------
+
+
+def det_term() -> Term:
+    """det of the Jacobian matrix of F, with the derivatives in the term:
+    the 3x3 cofactor expansion, all signs + because the characteristic is 2."""
+    a, b, c, d, e, f, g, h, i = (
+        derivation(component(GEN_X, GEN_Y, GEN_Z))
+        for component in COMPONENTS
+        for derivation in (dx, dy, dz)
+    )
+    return add(
+        mul(a, add(mul(e, i), mul(f, h))),
+        add(
+            mul(b, add(mul(d, i), mul(f, g))),
+            mul(c, add(mul(d, h), mul(e, g))),
+        ),
+    )
+
+
+def det_proof(budget: int = 200_000) -> Pf:
+    """det J(F) = 1: rewrite each matrix entry by its derivative lemma, then
+    it is a polynomial identity the normal-form rules decide."""
+    entry_rules = tuple(
+        lemma_rule(stmt, pf)
+        for stmt, pf in zip(derivative_statements(), derivative_proofs(), strict=True)
+    )
+    rules = (*entry_rules, *evaluation_rules(), *normal_form_rules())
+    return prove_eq(Eq(det_term(), ONE), rules, budget)
+
+
 # --- the collisions -------------------------------------------------------
 
 COLLISION_POINTS = ((0, 0, 1), (1, 0, 1), (1, 1, 1))
@@ -269,6 +300,8 @@ __all__ = [
     "derivative_proofs",
     "derivative_rules",
     "derivative_statements",
+    "det_proof",
+    "det_term",
     "evaluation_rules",
     "f1",
     "f2",
