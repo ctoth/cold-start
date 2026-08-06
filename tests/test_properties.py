@@ -27,7 +27,7 @@ from cold_start.presburger import (
     induction,
 )
 from cold_start.presburger_proofs import add_proof as prove_add
-from cold_start.robinson import ROBINSON_PEANO, bridge
+from cold_start.robinson import ROBINSON_PEANO, bridge, positive_numeral
 from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.sequent import Sequent
 from cold_start.syntax import (
@@ -325,7 +325,11 @@ def test_the_worked_proof_builders_are_iterative_too():
 
     assert isinstance(robinson_add_proof(1, DEEP), P.Pf)  # builds at all: the fix
     seq = check(robinson_add_proof(1, 300), ROBINSON_PEANO)
-    assert seq.concl == bridge(numeral(1), numeral(300), numeral(301))
+    assert seq.concl == bridge(
+        positive_numeral(1),
+        positive_numeral(300),
+        positive_numeral(301),
+    )
     assert seq.hyps == frozenset()
 
 
