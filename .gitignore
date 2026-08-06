@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 .mypy_cache/
+build/
+dist/
+*.egg-info/
 
 # stray non-project artifacts that appeared in this dir (not ours)
 pyghidra_mcp_projects/

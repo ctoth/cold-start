@@ -79,8 +79,13 @@ def format_ledger(reports: tuple[BridgeReport, ...]) -> str:
     return "\n".join(lines)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Verify and print every registered interpretation artifact."""
     print(format_ledger(ledger()))
 
 
-__all__ = ["ARTIFACTS", "format_ledger", "ledger"]
+if __name__ == "__main__":
+    main()
+
+
+__all__ = ["ARTIFACTS", "format_ledger", "ledger", "main"]

@@ -48,7 +48,7 @@ THEORIES: Mapping[str, Theory] = MappingProxyType(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m cold_start.verify",
+        prog="cold-start-verify",
         description="Decode and independently check one Hamblin proof term.",
     )
     parser.add_argument("path", nargs="?", help="proof file; omit to read standard input")
@@ -91,5 +91,10 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """Console-script adapter using the process argument vector."""
     raise SystemExit(main(sys.argv[1:]))
+
+
+if __name__ == "__main__":
+    cli()

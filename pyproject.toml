@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "cold-start"
 version = "0.1.0"
@@ -5,11 +9,20 @@ description = "Number theory from scratch: a De Bruijn-style proof checker in Py
 requires-python = ">=3.11"
 dependencies = ["hamblin"]
 
+[project.scripts]
+cold-start-verify = "cold_start.verify:cli"
+cold-start-ledger = "cold_start.ledger:main"
+cold-start-lean = "cold_start.lean.__main__:main"
+
 [tool.uv]
-package = false
+package = true
 
 [tool.uv.sources]
 hamblin = { git = "https://github.com/ctoth/hamblin" }
+
+[tool.setuptools.packages.find]
+include = ["cold_start", "cold_start.*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 addopts = "-q"
