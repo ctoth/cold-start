@@ -32,8 +32,6 @@ from .divisibility import (
     one_divides,
     peano_divides,
 )
-from .peano import mul
-from .presburger import S, add
 from .proof import (
     MP,
     Assume,
@@ -53,6 +51,7 @@ from .robinson_divisibility import coprime, lcm, robinson_product, unit_case
 from .robinson_proofs import POLY_BUDGET, poly_kit
 from .syntax import Eq, Formula, Implies, Var, exists
 from .tactics import prove_eq
+from .vocabulary import S, add, mul
 
 _a, _b, _c, _d, _x, _y = Var("a"), Var("b"), Var("c"), Var("d"), Var("x"), Var("y")
 _m, _k, _l = Var("m"), Var("k"), Var("l")

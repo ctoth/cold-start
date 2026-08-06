@@ -7,7 +7,7 @@ from __future__ import annotations
 import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import PEANO
-from cold_start.presburger import SUCC_NEQ_ZERO, ZERO, S
+from cold_start.presburger import SUCC_NEQ_ZERO
 from cold_start.syntax import (
     Eq,
     Not,
@@ -16,6 +16,7 @@ from cold_start.syntax import (
     forall,
 )
 from cold_start.theory import Theory
+from cold_start.vocabulary import ZERO, S
 
 
 def test_alpha_equivalence_is_structural_equality():

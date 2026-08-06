@@ -13,11 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from cold_start.algebra import R0
-from cold_start.algebra import add as z_add
 from cold_start.checker import check
-from cold_start.interp import InterpError
-from cold_start.presburger import PRESBURGER, add
+from cold_start.interp import InterpError, ObligationKey
+from cold_start.presburger import PRESBURGER
 from cold_start.proof import Assume
 from cold_start.quotient import (
     QuotientInterpretation,
@@ -30,6 +28,10 @@ from cold_start.quotient import (
 from cold_start.syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from cold_start.tactics import prove_eq
 from cold_start.theory import Theory
+from cold_start.vocabulary import ZERO as R0
+from cold_start.vocabulary import add, mul
+
+z_add = add
 
 Vec = tuple[Term, ...]
 
@@ -124,8 +126,6 @@ def test_translate_structure_and_rejections() -> None:
     f = Implies(Eq(_x, _y), Eq(_y, _x))
     got = translate(f, SYMBOLS, eps, 2)
     assert got == Implies(eps(vec("x", 2), vec("y", 2)), eps(vec("y", 2), vec("x", 2)))
-    from cold_start.peano import mul
-
     with pytest.raises(InterpError):
         translate(Eq(mul(_x, _y), _x), SYMBOLS, eps, 2)
     with pytest.raises(InterpError):
@@ -184,9 +184,10 @@ def test_definedness_obligations_quantify_component_wise() -> None:
 def test_verify_accepts_payment_reports_toll_and_open_debts() -> None:
     from cold_start.presburger_proofs import add_kit
 
-    label = f"axiom:{Eq(_x, _x)!r}"
+    key = ObligationKey.axiom(Eq(_x, _x))
+    label = key.label
     refl_goal = eps(vec("x", 2), vec("x", 2))
-    interp = _interp(_tiny(), payments=((label, prove_eq(refl_goal, add_kit())),))
+    interp = _interp(_tiny(), payments=((key, prove_eq(refl_goal, add_kit())),))
     report = verify(interp)
     by_label = {s.obligation.label: s for s in report.statuses}
     assert by_label[label].paid and by_label[label].toll > 0
@@ -194,18 +195,21 @@ def test_verify_accepts_payment_reports_toll_and_open_debts() -> None:
     assert "equivalence:trans" in report.open_labels()
     assert report.bridge_size > 0
     # The payment really is a target theorem of the owed shape.
-    seq = check(dict(interp.payments)[label], PRESBURGER)
+    seq = check(dict(interp.payments)[key], PRESBURGER)
     assert not seq.hyps and seq.concl == by_label[label].obligation.formula
 
 
 def test_verify_rejects_wrong_conditional_and_unknown_payments() -> None:
-    label = f"axiom:{Eq(_x, _x)!r}"
-    wrong = _interp(_tiny(), payments=((label, prove_eq(Eq(_x, _x), ())),))
+    key = ObligationKey.axiom(Eq(_x, _x))
+    wrong = _interp(_tiny(), payments=((key, prove_eq(Eq(_x, _x), ())),))
     with pytest.raises(InterpError):
         verify(wrong)
-    conditional = _interp(_tiny(), payments=((label, Assume(eps(vec("x", 2), vec("x", 2)))),))
+    conditional = _interp(_tiny(), payments=((key, Assume(eps(vec("x", 2), vec("x", 2)))),))
     with pytest.raises(InterpError):
         verify(conditional)
-    unknown = _interp(_tiny(), payments=(("axiom:nonsense", prove_eq(Eq(_x, _x), ())),))
+    unknown = _interp(
+        _tiny(),
+        payments=((ObligationKey.axiom(Eq(_y, _y)), prove_eq(Eq(_x, _x), ())),),
+    )
     with pytest.raises(InterpError):
         verify(unknown)

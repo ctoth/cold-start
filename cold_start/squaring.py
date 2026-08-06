@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .presburger import PRESBURGER, PRESBURGER_SIG, ZERO, S, add
+from .presburger import PRESBURGER, PRESBURGER_SIG
 from .syntax import Eq, Formula, Fun, Term, Var
 from .theory import Signature
+from .vocabulary import ZERO, S, add
 
 
 def sq(term: Term) -> Term:

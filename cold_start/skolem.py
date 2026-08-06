@@ -30,10 +30,10 @@ Untrusted, like every prover module: `check` remains the only judge.
 from __future__ import annotations
 
 from .divisibility import divides_one, divides_product, divides_refl, peano_divides
-from .interp import GraphSymbol, Interpretation
+from .interp import GraphSymbol, Interpretation, ObligationKey
 from .order import course_of_values, pos_half_le, reach
 from .parity import TWO, cancel_two, euclid_two, even_ne_odd
-from .peano import MUL_ZERO_F, PEANO, mul
+from .peano import MUL_ZERO_F, PEANO
 from .peano_proofs import MUL_ASSOC, MUL_COMM, mul_assoc, mul_comm
 from .peano_proofs import MUL_RULES as _MUL_RULES
 from .presburger import (
@@ -42,8 +42,6 @@ from .presburger import (
     PRESBURGER,
     SUCC_INJ,
     SUCC_NEQ_ZERO,
-    ZERO,
-    S,
 )
 from .presburger_proofs import ADD_RULES, LEFT_IDENTITY, left_identity, zero_or_succ
 from .proof import (
@@ -67,6 +65,7 @@ from .proof import (
 from .prop import And, and_intro, or_elim
 from .syntax import Bottom, Eq, Formula, Implies, Not, Term, Var, exists, forall
 from .tactics import lemma_rule, prove_eq, transport
+from .vocabulary import ZERO, S, mul
 
 ONE = S(ZERO)
 _x, _y = Var("x"), Var("y")
@@ -457,17 +456,17 @@ def skolem_interpretation() -> Interpretation:
         symbols=(ZERO_AS_ONE, SUCC_AS_DOUBLE, ADD_AS_MUL),
         domain=pow2,
         payments=(
-            (f"axiom:{ADD_ZERO_F!r}", _pay_add_zero()),
-            (f"axiom:{ADD_SUCC_F!r}", _pay_add_succ()),
-            (f"axiom:{SUCC_NEQ_ZERO!r}", _pay_succ_neq_zero()),
-            (f"axiom:{SUCC_INJ!r}", _pay_succ_inj()),
-            ("totality:0", _pay_totality_zero()),
-            ("uniqueness:0", _pay_uniqueness_zero()),
-            ("totality:S", _pay_totality_succ()),
-            ("uniqueness:S", _pay_uniqueness_succ()),
-            ("totality:+", _pay_totality_add()),
-            ("uniqueness:+", _pay_uniqueness_add()),
-            ("domain:nonempty", _pay_nonempty()),
+            (ObligationKey.axiom(ADD_ZERO_F), _pay_add_zero()),
+            (ObligationKey.axiom(ADD_SUCC_F), _pay_add_succ()),
+            (ObligationKey.axiom(SUCC_NEQ_ZERO), _pay_succ_neq_zero()),
+            (ObligationKey.axiom(SUCC_INJ), _pay_succ_inj()),
+            (ObligationKey.totality("0"), _pay_totality_zero()),
+            (ObligationKey.uniqueness("0"), _pay_uniqueness_zero()),
+            (ObligationKey.totality("S"), _pay_totality_succ()),
+            (ObligationKey.uniqueness("S"), _pay_uniqueness_succ()),
+            (ObligationKey.totality("+"), _pay_totality_add()),
+            (ObligationKey.uniqueness("+"), _pay_uniqueness_add()),
+            (ObligationKey.domain("nonempty"), _pay_nonempty()),
         ),
     )
 

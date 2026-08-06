@@ -54,10 +54,9 @@ from __future__ import annotations
 from semantics import Model, evaluate
 
 from cold_start.notation import format_term
-from cold_start.peano import mul
-from cold_start.presburger import S
 from cold_start.robinson import ONE
 from cold_start.syntax import Term, Var
+from cold_start.vocabulary import S, mul
 
 # A term is built as a plain nested tuple during the search -- cheap to create by
 # the hundred thousand -- and converted to a real syntax node only for a witness.

@@ -24,9 +24,8 @@ Untrusted, like every prover module: `check` remains the only judge.
 from __future__ import annotations
 
 from .parity import TWO
-from .peano import mul
 from .peano_proofs import MUL_RULES
-from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, ZERO, S, add, induction
+from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, induction
 from .presburger_proofs import (
     ADD_RULES,
     LEFT_IDENTITY,
@@ -53,6 +52,7 @@ from .proof import (
 from .prop import Or, and_left, or_elim, or_left, or_right
 from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import lemma_rule, prove_eq, transport
+from .vocabulary import ZERO, S, add, mul
 
 
 def _fresh(stem: str, *terms: Term) -> str:

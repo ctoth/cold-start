@@ -19,15 +19,12 @@ from cold_start.codec import (
     encode_proof,
     encode_term,
 )
-from cold_start.peano import PEANO, mul
+from cold_start.peano import PEANO
 from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
-    ZERO,
-    add,
     induction,
-    numeral,
 )
 from cold_start.presburger_proofs import add_proof as prove_add
 from cold_start.robinson import ROBINSON_PEANO, bridge
@@ -49,6 +46,7 @@ from cold_start.syntax import (
     forall,
     validate,
 )
+from cold_start.vocabulary import ZERO, add, mul, numeral
 
 # --- strategies -----------------------------------------------------------
 

@@ -4,7 +4,7 @@ from semantics import Model, evaluate
 
 from cold_start.interp import verify
 from cold_start.lean.proof import export_theorem
-from cold_start.presburger import PRESBURGER, ZERO, S, add
+from cold_start.presburger import PRESBURGER
 from cold_start.squaring import (
     SQUARE_ARITHMETIC,
     SQUARE_SUCC_F,
@@ -14,6 +14,7 @@ from cold_start.squaring import (
 from cold_start.squaring_bridges import square_product, squaring_interpretation
 from cold_start.squaring_proofs import square_product_total
 from cold_start.syntax import Fun, Var, children, subnodes
+from cold_start.vocabulary import ZERO, S, add
 
 
 def _function_names(root: object) -> set[str]:

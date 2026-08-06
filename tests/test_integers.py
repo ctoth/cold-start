@@ -13,7 +13,8 @@ import pytest
 from semantics import Model, evaluate
 
 from cold_start.algebra import AB_GROUP, ADD_ASSOC, ADD_COMM, ADD_NEG, ADD_ZERO
-from cold_start.integers import int_eq, integers_interpretation
+from cold_start.integer_pairs import int_eq
+from cold_start.integers import integers_interpretation
 from cold_start.quotient import vec, verify
 from cold_start.syntax import Var
 

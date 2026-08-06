@@ -31,7 +31,7 @@ unguarded Peano version remains false at `c=0`, as documented at the bottom.
 
 from __future__ import annotations
 
-from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
+from .peano import MUL_SUCC_F, MUL_ZERO_F
 from .peano_proofs import (
     DISTRIB_LEFT,
     DISTRIB_RIGHT,
@@ -49,10 +49,10 @@ from .peano_proofs import (
     mul_succ_left,
     mul_zero_left,
 )
-from .presburger import ADD_SUCC_F, SUCC_INJ, S, add, numeral
+from .presburger import ADD_SUCC_F, SUCC_INJ
 from .presburger_proofs import ADD_ASSOC, add_assoc, add_cancel_right, add_kit
 from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Sym, Trans
-from .robinson import ADD_ONE, ADD_SUCC, ONE, bridge
+from .robinson import ADD_ONE, ADD_SUCC, bridge, positive_numeral
 from .syntax import Eq, Formula, Implies, Var
 from .tactics import (
     axiom_rule,
@@ -62,6 +62,7 @@ from .tactics import (
     normalize_equality,
     prove_eq,
 )
+from .vocabulary import S, add, mul, numeral
 
 _a, _b, _c = Var("a"), Var("b"), Var("c")
 
@@ -79,14 +80,14 @@ def robinson_add_proof(a: int, b: int) -> Pf:
     """
     if a < 1 or b < 1:
         raise ValueError(f"Robinson's domain is the positive integers, got a={a}, b={b}")
-    big_a = numeral(a)
+    big_a = positive_numeral(a)
     pf: Pf = Inst(Axiom(ADD_ONE), "a", big_a)  # a + 1 = S a
     for k in range(2, b + 1):
         #  a + (k-1) = a+k-1  ->  a + S(k-1) = S(a+k-1),  i.e.  a + k = a+k
         succ_step = Inst(
-            Inst(Inst(Axiom(ADD_SUCC), "a", big_a), "b", numeral(k - 1)),
+            Inst(Inst(Axiom(ADD_SUCC), "a", big_a), "b", positive_numeral(k - 1)),
             "c",
-            numeral(a + k - 1),
+            positive_numeral(a + k - 1),
         )
         pf = MP(succ_step, pf)
     return pf
@@ -292,7 +293,7 @@ def robinson_add_one() -> Pf:
     The bridge theorem at `b := 1`, whose `a + 1` the two addition axioms turn
     into `S(a)` -- one unfold and one zero law, inside every position where the
     sum occurs."""
-    return _instance_at({"a": _a, "b": ONE}, add_kit())
+    return _instance_at({"a": _a, "b": numeral(1)}, add_kit())
 
 
 def robinson_mul_succ() -> Pf:

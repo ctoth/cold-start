@@ -8,7 +8,6 @@ from semantics import Model, evaluate
 
 from cold_start.codec import decode_formula, encode_formula
 from cold_start.notation import format_formula
-from cold_start.presburger import S
 from cold_start.prop import And, Iff, Or
 from cold_start.robinson_divisibility import (
     coprime,
@@ -30,6 +29,7 @@ from cold_start.syntax import (
     subnodes,
     validate,
 )
+from cold_start.vocabulary import S
 
 
 def truth(value: bool) -> Formula:

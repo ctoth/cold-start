@@ -19,8 +19,6 @@ import pytest
 from semantics import Model, evaluate
 
 from cold_start.checker import check
-from cold_start.peano import mul
-from cold_start.presburger import S
 from cold_start.proof import Induct
 from cold_start.rigidity import (
     F_ONE,
@@ -34,13 +32,14 @@ from cold_start.rigidity import (
 )
 from cold_start.robinson import ONE, ROBINSON_AXIOMS, ROBINSON_PEANO
 from cold_start.syntax import Eq, Var
+from cold_start.vocabulary import S, mul
 
 _x, _y = Var("x"), Var("y")
 
-# N over (0, S, ·) with `f` the identity -- the intended model of the extension.
+# N over (1, S, ·) with `f` the identity -- the intended model of the extension.
 N_ID = Model(
     "N+id",
-    interp={"0": lambda: 0, "S": lambda v: v + 1, "*": lambda a, b: a * b, "f": lambda v: v},
+    interp={"1": lambda: 1, "S": lambda v: v + 1, "*": lambda a, b: a * b, "f": lambda v: v},
 )
 
 
@@ -125,7 +124,7 @@ def test_a_rogue_successor_preserving_map_violates_the_base_axiom():
     # theorem needs the induction BASE at 1, and why it is a rigidity statement.
     rogue = Model(
         "N+succ",
-        interp={"0": lambda: 0, "S": lambda v: v + 1, "*": lambda a, b: a * b,
+        interp={"1": lambda: 1, "S": lambda v: v + 1, "*": lambda a, b: a * b,
                 "f": lambda v: v + 1},
     )
     assert evaluate(F_SUCC, rogue, {"x": 3})  # successor half: satisfied

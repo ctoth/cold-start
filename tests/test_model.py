@@ -21,7 +21,7 @@ from semantics import Model, evaluate
 import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import PEANO
-from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, ZERO, S, add, numeral
+from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F
 from cold_start.presburger_proofs import add_proof
 from cold_start.syntax import (
     Bottom,
@@ -31,6 +31,7 @@ from cold_start.syntax import (
     Var,
 )
 from cold_start.theory import Theory
+from cold_start.vocabulary import ZERO, S, add, numeral
 
 VAR_POOL = ["x", "y", "z", "n", "m", "a", "b"]
 VAR_NAMES = st.sampled_from(VAR_POOL)

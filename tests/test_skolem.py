@@ -14,8 +14,8 @@ from semantics import Model, evaluate
 from cold_start.checker import check
 from cold_start.interp import verify
 from cold_start.parity import TWO
-from cold_start.peano import PEANO, mul
-from cold_start.presburger import PRESBURGER, ZERO, S
+from cold_start.peano import PEANO
+from cold_start.presburger import PRESBURGER
 from cold_start.skolem import (
     POW2_DOUBLE,
     pow2,
@@ -24,6 +24,7 @@ from cold_start.skolem import (
     skolem_interpretation,
 )
 from cold_start.syntax import Var
+from cold_start.vocabulary import ZERO, S, mul
 
 ONE = S(ZERO)
 

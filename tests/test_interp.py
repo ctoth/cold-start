@@ -21,14 +21,15 @@ from cold_start.interp import (
     GraphSymbol,
     InterpError,
     Interpretation,
+    ObligationKey,
     obligations,
     translate,
     verify,
 )
-from cold_start.presburger import S, add
 from cold_start.proof import Axiom, Refl
 from cold_start.robinson import ADD_ONE, ADD_SUCC, ONE, ROBINSON_PEANO, bridge
 from cold_start.syntax import Eq, Implies, Not, Var, exists, forall
+from cold_start.vocabulary import S, add
 
 _a, _b, _c, _d = Var("a"), Var("b"), Var("c"), Var("d")
 
@@ -84,7 +85,26 @@ def test_translate_rejects_binders_in_the_source() -> None:
 
 def _bare(source, **kw):
     """An Interpretation with no payments -- obligations only need the shape."""
-    return Interpretation(name="probe", source=source, target=ROBINSON_PEANO, symbols=(PLUS,), **kw)
+    retained = tuple(
+        (name, len(args))
+        for name, args, _result in source.signature.ranks
+        if name != "+"
+    ) if source.signature is not None else ()
+    retained_relations = tuple(
+        name for name, _args in source.signature.relations
+    ) if source.signature is not None else ()
+    supplied = {
+        "retained_funs": retained,
+        "retained_predicates": retained_relations,
+        **kw,
+    }
+    return Interpretation(
+        name="probe",
+        source=source,
+        target=ROBINSON_PEANO,
+        symbols=(PLUS,),
+        **supplied,
+    )
 
 
 def test_obligations_cover_axioms_and_definedness() -> None:
@@ -134,13 +154,11 @@ def test_relativized_axiom_guards_free_vars_and_hoists() -> None:
 
 
 def test_relativized_obligations_add_domain_debts() -> None:
-    from cold_start.presburger import ZERO
-
-    one = S(ZERO)
+    one = ONE
     interp = _bare(
         ROBINSON_PEANO,
         domain=_delta,
-        retained_funs=(("S", 1),),
+        retained_funs=(("1", 0), ("S", 1), ("*", 2)),
         retained_consts=(one,),
     )
     obs = {o.label: o.formula for o in obligations(interp)}
@@ -176,7 +194,7 @@ def test_verify_accepts_a_correct_payment_and_reports_toll() -> None:
         source=source,  # type: ignore[arg-type]
         target=ROBINSON_PEANO,
         symbols=(PLUS,),
-        payments=(("axiom:" + repr(Eq(add(_a, ONE), S(_a))), Axiom(ADD_ONE)),),
+        payments=((ObligationKey.axiom(Eq(add(_a, ONE), S(_a))), Axiom(ADD_ONE)),),
     )
     report = verify(interp)
     by_label = {s.obligation.label: s for s in report.statuses}
@@ -195,7 +213,7 @@ def test_verify_rejects_a_wrong_payment() -> None:
         source=source,  # type: ignore[arg-type]
         target=ROBINSON_PEANO,
         symbols=(PLUS,),
-        payments=(("axiom:" + repr(Eq(add(_a, ONE), S(_a))), Refl(_a)),),
+        payments=((ObligationKey.axiom(Eq(add(_a, ONE), S(_a))), Refl(_a)),),
     )
     with pytest.raises(InterpError):
         verify(interp)
@@ -206,13 +224,13 @@ def test_verify_rejects_a_conditional_payment() -> None:
     from cold_start.proof import Assume
 
     source = _tiny_source()
-    label = "axiom:" + repr(Eq(add(_a, ONE), S(_a)))
+    key = ObligationKey.axiom(Eq(add(_a, ONE), S(_a)))
     interp = Interpretation(
         name="tiny-conditional",
         source=source,  # type: ignore[arg-type]
         target=ROBINSON_PEANO,
         symbols=(PLUS,),
-        payments=((label, Assume(ADD_ONE)),),
+        payments=((key, Assume(ADD_ONE)),),
     )
     with pytest.raises(InterpError):
         verify(interp)
@@ -225,7 +243,7 @@ def test_verify_rejects_an_unknown_label() -> None:
         source=source,  # type: ignore[arg-type]
         target=ROBINSON_PEANO,
         symbols=(PLUS,),
-        payments=(("axiom:nonsense", Axiom(ADD_ONE)),),
+        payments=((ObligationKey.axiom(Eq(_a, _a)), Axiom(ADD_ONE)),),
     )
     with pytest.raises(InterpError):
         verify(interp)

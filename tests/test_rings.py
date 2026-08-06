@@ -22,15 +22,13 @@ from cold_start.algebra import (
     ADD_ZERO,
     COMM,
     COMM_RING,
-    R0,
     RING,
     RING_AXIOMS,
-    add,
-    mul,
-    neg,
 )
 from cold_start.checker import check
 from cold_start.syntax import Eq, Fun, Var
+from cold_start.vocabulary import ZERO as R0
+from cold_start.vocabulary import add, mul, neg
 
 VAR_POOL = ["x", "y", "z", "u", "v"]
 

@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from cold_start.checker import check
 from cold_start.divisibility import ONE, peano_divides
-from cold_start.peano import PEANO, mul
-from cold_start.presburger import S, add
+from cold_start.peano import PEANO
 from cold_start.prop import And, Or
 from cold_start.robinson_divisibility import lcm, robinson_product, unit_case
 from cold_start.robinson_divisibility_proofs import (
@@ -36,6 +35,7 @@ from cold_start.robinson_divisibility_proofs import (
     unit_case_unit,
 )
 from cold_start.syntax import Eq, Implies, Var, exists
+from cold_start.vocabulary import S, add, mul
 
 _a, _b, _c = Var("a"), Var("b"), Var("c")
 

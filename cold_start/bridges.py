@@ -30,11 +30,11 @@ Untrusted, like every prover module: `check` remains the only judge.
 
 from __future__ import annotations
 
-from .interp import GraphSymbol, Interpretation
+from .interp import GraphSymbol, Interpretation, ObligationKey, TermSymbol
 from .peano import PEANO
 from .presburger import ADD_SUCC_F as P_ADD_SUCC
 from .presburger import SUCC_INJ as P_SUCC_INJ
-from .presburger import SUCC_NEQ_ZERO, ZERO, S, add, induction
+from .presburger import SUCC_NEQ_ZERO, induction
 from .proof import (
     MP,
     Assume,
@@ -62,8 +62,10 @@ from .robinson_proofs import (
 from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from .tactics import Rule, normalize_equality
 from .theory import Signature, Theory
+from .vocabulary import ZERO, S, add
 
 _a, _b, _c, _d = Var("a"), Var("b"), Var("c"), Var("d")
+_NATURAL_ONE = S(ZERO)
 
 # --- the source theory: base-1 Presburger ----------------------------------
 # Addition over the positive integers, recursing from 1: the (1, S, +) twin of
@@ -79,7 +81,7 @@ PRESBURGER_ONE = Theory(
     succ="S",
     signature=Signature(
         sorts=frozenset({""}),
-        ranks=(("0", (), ""), ("S", ("",), ""), ("+", ("", ""), "")),
+        ranks=(("1", (), ""), ("S", ("",), ""), ("+", ("", ""), "")),
     ),
 )
 
@@ -197,12 +199,13 @@ def robinson_interpretation() -> Interpretation:
         source=PRESBURGER_ONE,
         target=ROBINSON_PEANO,
         symbols=(PLUS,),
+        retained_funs=(("1", 0), ("S", 1)),
         payments=(
-            (f"axiom:{SUCC_NEQ_ONE!r}", Axiom(SUCC_NEQ_ONE)),
-            (f"axiom:{SUCC_INJ!r}", Axiom(SUCC_INJ)),
-            (f"axiom:{ADD_ONE_F!r}", Axiom(ADD_ONE)),
-            (f"axiom:{ADD_SUCC_F!r}", ForallIntro("c", "", Axiom(ADD_SUCC))),
-            ("totality:+", totality),
+            (ObligationKey.axiom(SUCC_NEQ_ONE), Axiom(SUCC_NEQ_ONE)),
+            (ObligationKey.axiom(SUCC_INJ), Axiom(SUCC_INJ)),
+            (ObligationKey.axiom(ADD_ONE_F), Axiom(ADD_ONE)),
+            (ObligationKey.axiom(ADD_SUCC_F), ForallIntro("c", "", Axiom(ADD_SUCC))),
+            (ObligationKey.totality("+"), totality),
         ),
     )
 
@@ -232,10 +235,10 @@ def _succ_ne_one_positive() -> Pf:
     k = Var("k")
     a_pos = Eq(_a, S(k))
     inj = Inst(Inst(Axiom(P_SUCC_INJ), "x", _a), "y", ZERO)  # S(a)=S(0) -> a=0
-    a_zero = MP(inj, Assume(Eq(S(_a), ONE)))
+    a_zero = MP(inj, Assume(Eq(S(_a), _NATURAL_ONE)))
     sk_zero = Trans(Sym(Assume(a_pos)), a_zero)  # S(k) = 0
     contra = MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", k), sk_zero)
-    not_one = ImpIntro(Eq(S(_a), ONE), contra)
+    not_one = ImpIntro(Eq(S(_a), _NATURAL_ONE), contra)
     return ImpIntro(positive(_a), ExistsElim("k", Assume(positive(_a)), not_one))
 
 
@@ -324,26 +327,28 @@ def robinson_into_peano() -> Interpretation:
     )
     add_one_pay = ImpIntro(positive(_a), robinson_add_one())
     closure_s = ImpIntro(positive(x0), ExistsIntro(positive(S(x0)), x0, Refl(S(x0))))
-    one_pos = ExistsIntro(positive(ONE), ZERO, Refl(ONE))
-    nonempty = ExistsIntro(exists("x!", "", positive(Var("x!"))), ONE, one_pos)
+    natural_one = _NATURAL_ONE
+    one_pos = ExistsIntro(positive(natural_one), ZERO, Refl(natural_one))
+    nonempty = ExistsIntro(exists("x!", "", positive(Var("x!"))), natural_one, one_pos)
     return Interpretation(
         name="robinson-1949-s2-into-peano-positives",
         source=PRESBURGER_ONE,
         target=PEANO,
         symbols=(PLUS,),
+        terms=(TermSymbol("1", 0, lambda args: natural_one),),
         domain=positive,
         retained_funs=(("S", 1),),
-        retained_consts=(ONE,),
+        retained_consts=(natural_one,),
         payments=(
-            (f"axiom:{SUCC_NEQ_ONE!r}", _succ_ne_one_positive()),
-            (f"axiom:{SUCC_INJ!r}", succ_inj_pay),
-            (f"axiom:{ADD_ONE_F!r}", add_one_pay),
-            (f"axiom:{ADD_SUCC_F!r}", _add_succ_positive_relativized()),
-            ("totality:+", _bridge_total_positive()),
-            ("uniqueness:+", _bridge_unique_positive()),
-            ("domain:nonempty", nonempty),
-            ("closure:S", closure_s),
-            (f"closure:{ONE!r}", one_pos),
+            (ObligationKey.axiom(SUCC_NEQ_ONE), _succ_ne_one_positive()),
+            (ObligationKey.axiom(SUCC_INJ), succ_inj_pay),
+            (ObligationKey.axiom(ADD_ONE_F), add_one_pay),
+            (ObligationKey.axiom(ADD_SUCC_F), _add_succ_positive_relativized()),
+            (ObligationKey.totality("+"), _bridge_total_positive()),
+            (ObligationKey.uniqueness("+"), _bridge_unique_positive()),
+            (ObligationKey.domain("nonempty"), nonempty),
+            (ObligationKey.closure("S"), closure_s),
+            (ObligationKey.closure(natural_one), one_pos),
         ),
     )
 

@@ -14,6 +14,7 @@ place sorts earn their keep, on the way to modules and Clifford.
 
 from __future__ import annotations
 
+from . import vocabulary as _v
 from .syntax import Eq, Fun, Term, Var
 from .theory import Signature, Theory
 
@@ -22,18 +23,14 @@ from .theory import Signature, Theory
 E = Fun("e", ())  # the unit element
 
 
-def mul(a: Term, b: Term) -> Term:
-    return Fun("*", (a, b))
-
-
 _x, _y, _z = Var("x"), Var("y"), Var("z")
 
 # --- axioms (free vars implicitly universally quantified) -----------------
 
-ASSOC = Eq(mul(mul(_x, _y), _z), mul(_x, mul(_y, _z)))  # (x*y)*z = x*(y*z)
-LEFT_ID = Eq(mul(E, _x), _x)  # e*x = x
-RIGHT_ID = Eq(mul(_x, E), _x)  # x*e = x
-COMM = Eq(mul(_x, _y), mul(_y, _x))  # x*y = y*x   -- an EXTRA assumption
+ASSOC = Eq(_v.mul(_v.mul(_x, _y), _z), _v.mul(_x, _v.mul(_y, _z)))
+LEFT_ID = Eq(_v.mul(E, _x), _x)
+RIGHT_ID = Eq(_v.mul(_x, E), _x)
+COMM = Eq(_v.mul(_x, _y), _v.mul(_y, _x))
 
 # --- theories -------------------------------------------------------------
 
@@ -76,11 +73,11 @@ ACTION_SIG = Signature(
     ),
 )
 
-M_ASSOC = Eq(mul(mul(_m, _n), _p), mul(_m, mul(_n, _p)))
-M_LEFT_ID = Eq(mul(E, _m), _m)
-M_RIGHT_ID = Eq(mul(_m, E), _m)
+M_ASSOC = Eq(_v.mul(_v.mul(_m, _n), _p), _v.mul(_m, _v.mul(_n, _p)))
+M_LEFT_ID = Eq(_v.mul(E, _m), _m)
+M_RIGHT_ID = Eq(_v.mul(_m, E), _m)
 ACT_ID = Eq(act(E, _xX), _xX)  # act(e, x) = x
-ACT_COMP = Eq(act(_m, act(_n, _xX)), act(mul(_m, _n), _xX))  # m·(n·x) = (m*n)·x
+ACT_COMP = Eq(act(_m, act(_n, _xX)), act(_v.mul(_m, _n), _xX))
 
 MONOID_ACTION = Theory(
     axioms=frozenset({M_ASSOC, M_LEFT_ID, M_RIGHT_ID, ACT_ID, ACT_COMP}),
@@ -94,27 +91,21 @@ MONOID_ACTION = Theory(
 # is an EXTRA axiom (COMM), never a theorem -- the non-commutative matrix model
 # in the tests is the witness.
 
-R0 = Fun("0", ())  # additive identity
-R1 = Fun("1", ())  # multiplicative identity
-
-
-def add(a: Term, b: Term) -> Term:
-    return Fun("+", (a, b))
-
-
-def neg(a: Term) -> Term:
-    return Fun("neg", (a,))
-
-
-ADD_ASSOC = Eq(add(add(_x, _y), _z), add(_x, add(_y, _z)))
-ADD_COMM = Eq(add(_x, _y), add(_y, _x))
-ADD_ZERO = Eq(add(_x, R0), _x)  # x + 0 = x
-ADD_NEG = Eq(add(_x, neg(_x)), R0)  # x + (-x) = 0
-MUL_ASSOC = Eq(mul(mul(_x, _y), _z), mul(_x, mul(_y, _z)))
-MUL_LEFT_ID = Eq(mul(R1, _x), _x)  # 1*x = x
-MUL_RIGHT_ID = Eq(mul(_x, R1), _x)  # x*1 = x
-DIST_LEFT = Eq(mul(_x, add(_y, _z)), add(mul(_x, _y), mul(_x, _z)))  # x(y+z)=xy+xz
-DIST_RIGHT = Eq(mul(add(_x, _y), _z), add(mul(_x, _z), mul(_y, _z)))  # (x+y)z=xz+yz
+ADD_ASSOC = Eq(_v.add(_v.add(_x, _y), _z), _v.add(_x, _v.add(_y, _z)))
+ADD_COMM = Eq(_v.add(_x, _y), _v.add(_y, _x))
+ADD_ZERO = Eq(_v.add(_x, _v.ZERO), _x)
+ADD_NEG = Eq(_v.add(_x, _v.neg(_x)), _v.ZERO)
+MUL_ASSOC = Eq(_v.mul(_v.mul(_x, _y), _z), _v.mul(_x, _v.mul(_y, _z)))
+MUL_LEFT_ID = Eq(_v.mul(_v.ONE, _x), _x)
+MUL_RIGHT_ID = Eq(_v.mul(_x, _v.ONE), _x)
+DIST_LEFT = Eq(
+    _v.mul(_x, _v.add(_y, _z)),
+    _v.add(_v.mul(_x, _y), _v.mul(_x, _z)),
+)
+DIST_RIGHT = Eq(
+    _v.mul(_v.add(_x, _y), _z),
+    _v.add(_v.mul(_x, _z), _v.mul(_y, _z)),
+)
 
 RING_AXIOMS = frozenset(
     {

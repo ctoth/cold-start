@@ -9,7 +9,7 @@ PEANO.
 
 from __future__ import annotations
 
-from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
+from .peano import MUL_SUCC_F, MUL_ZERO_F
 from .peano_proofs import (
     DISTRIB_LEFT,
     MUL_ASSOC,
@@ -21,7 +21,7 @@ from .peano_proofs import (
     mul_comm,
     mul_zero_left,
 )
-from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, add, induction
+from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, SUCC_NEQ_ZERO, induction
 from .presburger_proofs import (
     ADD_ASSOC,
     ADD_RULES,
@@ -50,6 +50,7 @@ from .proof import (
 from .prop import and_left, and_right, or_elim
 from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
 from .tactics import lemma_rule, prove_eq
+from .vocabulary import ZERO, S, add, mul
 
 ONE = S(ZERO)
 

@@ -20,8 +20,8 @@ from cold_start.parity import (
     even_ne_odd,
     parity,
 )
-from cold_start.peano import PEANO, mul
-from cold_start.presburger import ZERO, S
+from cold_start.peano import PEANO
+from cold_start.vocabulary import ZERO, S, mul
 
 
 def _theorem(pf, expected):

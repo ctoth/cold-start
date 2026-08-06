@@ -8,10 +8,11 @@ are where RAA earns its keep. Everything is judged by the trusted checker."""
 from __future__ import annotations
 
 from cold_start.checker import check
-from cold_start.presburger import PRESBURGER, ZERO, S
+from cold_start.presburger import PRESBURGER
 from cold_start.proof import Assume, ImpIntro, Refl
 from cold_start.prop import And, Or, and_intro, and_left, and_right, or_elim, or_left, or_right
 from cold_start.syntax import Eq, Implies, Not, Var
+from cold_start.vocabulary import ZERO, S
 
 _x, _y = Var("x"), Var("y")
 A = Eq(_x, _x)

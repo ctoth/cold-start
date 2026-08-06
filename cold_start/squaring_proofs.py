@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .combination import by_combination
-from .presburger import SUCC_INJ, SUCC_NEQ_ZERO, ZERO, S, add, induction
+from .presburger import SUCC_INJ, SUCC_NEQ_ZERO, induction
 from .presburger_proofs import add_eq_zero, add_kit, zero_or_succ
 from .proof import (
     MP,
@@ -30,6 +30,7 @@ from .squaring import (
 )
 from .syntax import Eq, Formula, Implies, Var, exists, forall
 from .tactics import axiom_rule, normalize_equality, prove_eq
+from .vocabulary import ZERO, S, add
 
 _x, _y = Var("x"), Var("y")
 _x0, _x1, _c, _d = Var("x!0"), Var("x!1"), Var("c!"), Var("d!")

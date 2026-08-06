@@ -6,12 +6,19 @@ import pytest
 
 from cold_start.bridges import PLUS
 from cold_start.divisibility import divides_factor, divides_refl, peano_divides
-from cold_start.interp import InterpError, Interpretation, PredicateSymbol, translate, verify
-from cold_start.peano import PEANO, mul
-from cold_start.presburger import add
+from cold_start.interp import (
+    InterpError,
+    Interpretation,
+    ObligationKey,
+    PredicateSymbol,
+    translate,
+    verify,
+)
+from cold_start.peano import PEANO
 from cold_start.robinson import bridge
 from cold_start.syntax import Implies, Rel, Var, forall
 from cold_start.theory import Theory
+from cold_start.vocabulary import add, mul
 
 _a, _b, _c = Var("a"), Var("b"), Var("c")
 
@@ -58,8 +65,8 @@ def test_predicate_interpretation_has_no_function_definedness_debt():
         symbols=(),
         predicates=(DIVIDES,),
         payments=(
-            (f"axiom:{refl_atom!r}", divides_refl()),
-            (f"axiom:{factor_atom!r}", divides_factor()),
+                (ObligationKey.axiom(refl_atom), divides_refl()),
+                (ObligationKey.axiom(factor_atom), divides_factor()),
         ),
     )
 

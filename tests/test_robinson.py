@@ -21,7 +21,6 @@ from semantics import Model, evaluate
 import cold_start.proof as P
 from cold_start.checker import check
 from cold_start.peano import PEANO
-from cold_start.presburger import S, add, numeral
 from cold_start.robinson import (
     ADD_ONE,
     ADD_SUCC,
@@ -30,6 +29,7 @@ from cold_start.robinson import (
     ROBINSON_AXIOMS,
     ROBINSON_PEANO,
     bridge,
+    positive_numeral,
 )
 from cold_start.robinson_proofs import (
     BRIDGE_CONVERSE_POS,
@@ -47,10 +47,14 @@ from cold_start.robinson_proofs import (
     robinson_mul_succ,
 )
 from cold_start.syntax import Var
+from cold_start.vocabulary import S, add, numeral
 
 # The standard model N over (0, S, ·). Addition is NOT supplied -- the whole point
 # is that the bridge recovers it from multiplication and successor alone.
-N = Model("N", interp={"0": lambda: 0, "S": lambda x: x + 1, "*": lambda a, b: a * b})
+N = Model(
+    "N",
+    interp={"0": lambda: 0, "1": lambda: 1, "S": lambda x: x + 1, "*": lambda a, b: a * b},
+)
 
 # The same model with `+` interpreted as well, for the PEANO-side statements at
 # the bottom: those are stated in PEANO's signature, where addition is primitive
@@ -89,9 +93,10 @@ def test_checker_derives_a_robinson_axiom_instance():
     # The trusted checker runs the (1, S, ·) theory: instantiate A4' (a + 1 = S a)
     # at a := 2, deriving the bridge for 2 + 1 = 3 -- a closed theorem containing no
     # `+` symbol at all, only S and ·.
-    seq = check(P.Inst(P.Axiom(ADD_ONE), "a", numeral(2)), ROBINSON_PEANO)
-    assert seq.concl == bridge(numeral(2), ONE, S(numeral(2)))
-    assert seq.concl == bridge(numeral(2), numeral(1), numeral(3))
+    two = positive_numeral(2)
+    seq = check(P.Inst(P.Axiom(ADD_ONE), "a", two), ROBINSON_PEANO)
+    assert seq.concl == bridge(two, ONE, S(two))
+    assert seq.concl == bridge(two, positive_numeral(1), positive_numeral(3))
     assert seq.hyps == frozenset()
 
 
@@ -101,7 +106,9 @@ def test_robinson_add_proof_derives_two_plus_three():
     # all -- addition is the bridge, chained out of A4' and A5' by modus ponens.
     seq = check(robinson_add_proof(2, 3), ROBINSON_PEANO)
     assert seq.hyps == frozenset()
-    assert seq.concl == bridge(numeral(2), numeral(3), numeral(5))
+    assert seq.concl == bridge(
+        positive_numeral(2), positive_numeral(3), positive_numeral(5)
+    )
 
 
 @pytest.mark.parametrize("b", [1, 2, 3, 4, 5])
@@ -111,7 +118,9 @@ def test_robinson_add_proof_computes(a, b):
     # the trusted checker re-derives each one.
     seq = check(robinson_add_proof(a, b), ROBINSON_PEANO)
     assert seq.hyps == frozenset()
-    assert seq.concl == bridge(numeral(a), numeral(b), numeral(a + b))
+    assert seq.concl == bridge(
+        positive_numeral(a), positive_numeral(b), positive_numeral(a + b)
+    )
 
 
 @pytest.mark.parametrize("a,b", [(0, 1), (1, 0), (0, 0), (-1, 2)])
@@ -186,7 +195,8 @@ def test_a_robinson_axiom_is_a_peano_theorem(name, axiom, build):
     # as PEANO theorems ON THE NOSE -- the derived sequent is the very formula
     # `cold_start.robinson` declares as an axiom, with no hypotheses.
     seq = check(build(), PEANO)
-    assert seq.concl == axiom
+    expected = bridge(Var("a"), numeral(1), S(Var("a"))) if axiom == ADD_ONE else axiom
+    assert seq.concl == expected
     assert seq.hyps == frozenset()
 
 

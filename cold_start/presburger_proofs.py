@@ -7,11 +7,7 @@ from .presburger import (
     ADD_ZERO_F,
     SUCC_INJ,
     SUCC_NEQ_ZERO,
-    ZERO,
-    S,
-    add,
     induction,
-    numeral,
 )
 from .proof import (
     MP,
@@ -30,7 +26,8 @@ from .proof import (
 )
 from .prop import And, Or, and_intro, or_elim, or_left, or_right
 from .syntax import Eq, Formula, Implies, Var, exists
-from .tactics import axiom_rule, by_induction, lemma_rule, normalize_equality
+from .tactics import Rule, axiom_rule, by_induction, lemma_rule, normalize_equality
+from .vocabulary import ZERO, S, add, numeral
 
 
 def left_identity_proof() -> Pf:
@@ -201,7 +198,7 @@ def add_cancel_left() -> Pf:
     return ImpIntro(hyp, MP(add_cancel_right(), right_cancel_hyp))
 
 
-def add_kit() -> tuple:
+def add_kit() -> tuple[Rule, ...]:
     """Everything proved about `+` so far, as one rewrite kit.
 
     The two recursion axioms and their two mirror images reduce a sum whose

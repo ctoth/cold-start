@@ -19,9 +19,6 @@ from cold_start.peano import PEANO
 from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
-    ZERO,
-    S,
-    add,
 )
 from cold_start.presburger_proofs import left_identity_proof
 from cold_start.proof import CANONICAL_PROOF_TYPES, Pf
@@ -29,6 +26,7 @@ from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
 from cold_start.theory import Signature, Theory
+from cold_start.vocabulary import ZERO, S, add
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)  # `cold_start` package lives at the repo root, not in tests/

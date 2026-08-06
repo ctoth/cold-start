@@ -21,7 +21,7 @@ into ``d = S(j*2)`` where needed.
 from __future__ import annotations
 
 from .divisibility import peano_divides
-from .peano import MUL_SUCC_F, mul
+from .peano import MUL_SUCC_F
 from .peano_proofs import (
     DISTRIB_RIGHT,
     MUL_ASSOC,
@@ -36,9 +36,6 @@ from .presburger import (
     ADD_SUCC_F,
     SUCC_INJ,
     SUCC_NEQ_ZERO,
-    ZERO,
-    S,
-    add,
     induction,
 )
 from .presburger_proofs import (
@@ -69,6 +66,7 @@ from .proof import (
 from .prop import Or, or_elim, or_left, or_right
 from .syntax import Bottom, Eq, Formula, Implies, Not, Var, exists, forall
 from .tactics import lemma_rule, normalize_equality, prove_eq
+from .vocabulary import ZERO, S, add, mul
 
 ONE = S(ZERO)
 TWO = S(ONE)

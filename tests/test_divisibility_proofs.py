@@ -32,9 +32,9 @@ from cold_start.divisibility import (
     one_divides,
     peano_divides,
 )
-from cold_start.peano import PEANO, mul
-from cold_start.presburger import ZERO, S, add
+from cold_start.peano import PEANO
 from cold_start.syntax import Eq, Implies, Var, exists
+from cold_start.vocabulary import ZERO, S, add, mul
 
 ONE = S(ZERO)
 

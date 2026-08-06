@@ -15,23 +15,17 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .presburger import PRESBURGER, PRESBURGER_SIG, ZERO, S, add
-from .syntax import Eq, Formula, Fun, Term, Var
+from . import vocabulary as _v
+from .presburger import PRESBURGER, PRESBURGER_SIG
+from .syntax import Eq, Formula, Var
 from .theory import Signature
-
-# --- the extra symbol: multiplication -------------------------------------
-
-
-def mul(a: Term, b: Term) -> Term:
-    return Fun("*", (a, b))
-
 
 # --- multiplication axioms (recursion on the second argument) -------------
 
-MUL_ZERO_F: Formula = Eq(mul(Var("x"), ZERO), ZERO)  # x * 0 = 0
+MUL_ZERO_F: Formula = Eq(_v.mul(Var("x"), _v.ZERO), _v.ZERO)  # x * 0 = 0
 MUL_SUCC_F: Formula = Eq(  # x * S y = (x * y) + x
-    mul(Var("x"), S(Var("y"))),
-    add(mul(Var("x"), Var("y")), Var("x")),
+    _v.mul(Var("x"), _v.S(Var("y"))),
+    _v.add(_v.mul(Var("x"), Var("y")), Var("x")),
 )
 
 

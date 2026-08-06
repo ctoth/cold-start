@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 from semantics import evaluate
 
 import cold_start.proof as P
-from cold_start.algebra import COMM_RING, R0, R1, add, mul, neg
+from cold_start.algebra import COMM_RING
 from cold_start.checker import check
 from cold_start.sequent import Sequent
 from cold_start.syntax import (
@@ -24,6 +24,9 @@ from cold_start.syntax import (
     exists,
     forall,
 )
+from cold_start.vocabulary import ONE as R1
+from cold_start.vocabulary import ZERO as R0
+from cold_start.vocabulary import add, mul, neg
 
 
 @dataclass

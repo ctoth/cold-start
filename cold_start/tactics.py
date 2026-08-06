@@ -23,9 +23,11 @@ The layer is a small equational engine:
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, is_dataclass
+from typing import TypeAlias, cast
 
-from .presburger import ZERO, S, induction
+from .presburger import induction
 from .proof import (
     MP,
     Assume,
@@ -56,11 +58,21 @@ from .syntax import (
     instantiate,
     node_fields,
 )
+from .vocabulary import ZERO, S
 
 
 class TacticError(Exception):
     """A tactic could not build a proof term. Distinct from the checker's
     rejection: this means we never even produced a candidate."""
+
+
+Substitution: TypeAlias = dict[str, Term]
+TermPath: TypeAlias = tuple[int, ...]
+SymbolKey: TypeAlias = tuple[str, ...]
+OrderTail: TypeAlias = str | tuple["OrderKey", ...]
+OrderKey: TypeAlias = tuple[int, str, str, OrderTail]
+Redex: TypeAlias = tuple[TermPath, "Rule", Substitution]
+RewriteResult: TypeAlias = tuple[Term, Pf]
 
 
 def _is_node(v: object) -> bool:
@@ -72,7 +84,11 @@ def _is_node(v: object) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def match(pattern: Node, target: Node, vars: frozenset[str] | None = None) -> dict | None:
+def match(
+    pattern: Node,
+    target: Node,
+    vars: frozenset[str] | None = None,
+) -> Substitution | None:
     """Match `pattern` against `target`, returning `{name: Term}` or None.
 
     A `Var` whose name is in `vars` is a hole and binds to whatever term sits at
@@ -86,11 +102,13 @@ def match(pattern: Node, target: Node, vars: frozenset[str] | None = None) -> di
     Iterative, like everything else here."""
     if vars is None:
         vars = pattern.free_vars()
-    sigma: dict = {}
-    stack: list = [(pattern, target)]
+    sigma: Substitution = {}
+    stack: list[tuple[Node, Node]] = [(pattern, target)]
     while stack:
         p, t = stack.pop()
         if type(p) is Var and p.name in vars:
+            if not isinstance(t, Term):
+                return None
             bound = sigma.get(p.name)
             if bound is None:
                 sigma[p.name] = t
@@ -100,15 +118,28 @@ def match(pattern: Node, target: Node, vars: frozenset[str] | None = None) -> di
         if type(p) is not type(t):
             return None
         for f in node_fields(p):
-            vp, vt = getattr(p, f.name), getattr(t, f.name)
+            vp = cast(object, getattr(p, f.name))
+            vt = cast(object, getattr(t, f.name))
             if _is_node(vp):
-                stack.append((vp, vt))
-            elif isinstance(vp, tuple):
-                if not isinstance(vt, tuple) or len(vp) != len(vt):
+                if not _is_node(vt):
                     return None
-                for a, b in zip(vp, vt, strict=True):
+                stack.append((cast(Node, vp), cast(Node, vt)))
+            elif isinstance(vp, tuple):
+                left_values = cast(tuple[object, ...], vp)
+                if not isinstance(vt, tuple):
+                    return None
+                right_values = cast(tuple[object, ...], vt)
+                if len(left_values) != len(right_values):
+                    return None
+                for a, b in zip(
+                    left_values,
+                    right_values,
+                    strict=True,
+                ):
                     if _is_node(a):
-                        stack.append((a, b))
+                        if not _is_node(b):
+                            return None
+                        stack.append((cast(Node, a), cast(Node, b)))
                     elif a != b:
                         return None
             elif vp != vt:
@@ -121,7 +152,7 @@ def match(pattern: Node, target: Node, vars: frozenset[str] | None = None) -> di
 # ---------------------------------------------------------------------------
 
 
-def _fresh(base: str, avoid: set) -> str:
+def _fresh(base: str, avoid: set[str]) -> str:
     k = 0
     name = f"{base}!"
     while name in avoid:
@@ -130,20 +161,20 @@ def _fresh(base: str, avoid: set) -> str:
     return name
 
 
-def _subst_all(term: Term, sigma: dict) -> Term:
+def _subst_all(term: Term, sigma: Substitution) -> Term:
     """Simultaneous substitution of a match into a rule's right-hand side.
     Iterative (post-order over an explicit agenda). Rule equations are
     quantifier-free, so only `Var` and `Fun` occur."""
     if not sigma:
         return term
-    order: list = []
-    stack: list = [term]
+    order: list[Term] = []
+    stack: list[Term] = [term]
     while stack:
         t = stack.pop()
         order.append(t)
         if type(t) is Fun:
             stack.extend(t.args)
-    done: dict = {}
+    done: dict[int, Term] = {}
     for t in reversed(order):
         if type(t) is Var and t.name in sigma:
             done[id(t)] = sigma[t.name]
@@ -154,11 +185,11 @@ def _subst_all(term: Term, sigma: dict) -> Term:
     return done[id(term)]
 
 
-def _walk(term: Term) -> list:
+def _walk(term: Term) -> list[Term]:
     """`term`'s nodes in post-order -- children before parents. The shared spine
     of the two term measures below, both of which are folds up the tree."""
-    order: list = []
-    stack: list = [term]
+    order: list[Term] = []
+    stack: list[Term] = [term]
     while stack:
         t = stack.pop()
         if type(t) is Var:
@@ -172,20 +203,22 @@ def _walk(term: Term) -> list:
     return order
 
 
-def _symbols(term: Term) -> tuple:
+def _symbols(term: Term) -> tuple[SymbolKey, ...]:
     """The multiset of symbols in `term`, as a sorted tuple. Two terms with the
     same one are the same size -- which is what makes an equation between them
     *permutative*, the only kind ordered rewriting can tame."""
-    out: list = []
+    out: list[SymbolKey] = []
     for t in _walk(term):
         if type(t) is Var:
             out.append(("v", t.name, t.sort))
-        else:  # a Fun; `_walk` admits nothing else
+        elif type(t) is Fun:
             out.append(("f", t.name))
+        else:  # `_walk` admits nothing else
+            raise AssertionError(f"unexpected term type: {type(t).__name__}")
     return tuple(sorted(out))
 
 
-def _order_key(term: Term) -> tuple:
+def _order_key(term: Term) -> OrderKey:
     """The key of the term order `ordered` rules are measured against: SIZE
     first, then the head symbol, then the arguments left to right.
 
@@ -200,13 +233,15 @@ def _order_key(term: Term) -> tuple:
     shrinks a subterm shrinks the whole, and a size-preserving one is compared
     at exactly the argument where it happened. Those two facts, plus finitely
     many terms of a given size, are the termination argument."""
-    keys: dict = {}
+    keys: dict[int, OrderKey] = {}
     for t in _walk(term):
         if type(t) is Var:
             keys[id(t)] = (1, "v", t.name, t.sort)
-        else:  # a Fun; `_walk` admits nothing else
+        elif type(t) is Fun:
             sub = tuple(keys[id(a)] for a in t.args)
             keys[id(t)] = (1 + sum(k[0] for k in sub), "f", t.name, sub)
+        else:  # `_walk` admits nothing else
+            raise AssertionError(f"unexpected term type: {type(t).__name__}")
     return keys[id(term)]
 
 
@@ -231,7 +266,7 @@ class Rule:
 
     eq: Eq
     proof: Pf
-    vars: frozenset
+    vars: frozenset[str]
     ordered: bool = False
 
     def __post_init__(self) -> None:
@@ -242,9 +277,9 @@ class Rule:
         from `sorted()` inside `instance`, which names neither the rule nor the
         mistake."""
         _equation(self.eq)
-        if not isinstance(self.proof, Pf):
+        if not isinstance(cast(object, self.proof), Pf):
             raise TacticError(f"a rewrite rule needs a proof term, got {self.proof!r}")
-        if not isinstance(self.vars, frozenset):
+        if not isinstance(cast(object, self.vars), frozenset):
             raise TacticError(f"a rule's holes must be a frozenset of names, got {self.vars!r}")
         for v in self.vars:
             if type(v) is not str:
@@ -268,7 +303,7 @@ class Rule:
         """The same equation used right-to-left; the proof gains a `Sym`."""
         return Rule(Eq(self.rhs, self.lhs), Sym(self.proof), self.vars, self.ordered)
 
-    def permits(self, target: Term, sigma: dict) -> bool:
+    def permits(self, target: Term, sigma: Substitution) -> bool:
         """May this rule fire at `target` under this match? Always, unless it is
         ordered -- then only where the result is strictly lower in the term
         order, which is what stops a permutative rule from cycling."""
@@ -276,7 +311,7 @@ class Rule:
             return True
         return _order_key(_subst_all(self.rhs, sigma)) < _order_key(target)
 
-    def instance(self, sigma: dict) -> Pf:
+    def instance(self, sigma: Substitution) -> Pf:
         """A `Pf` of `eq` with every hole replaced per `sigma`.
 
         `Inst` substitutes *sequentially*, so instantiating x := y and then
@@ -285,12 +320,13 @@ class Rule:
         simultaneous substitution, spelled in the trusted core's sequential
         primitive. Holes `sigma` does not mention are renamed back to
         themselves."""
-        for name, term in sigma.items():
+        raw_sigma = cast(dict[object, object], cast(object, sigma))
+        for name, term in raw_sigma.items():
             if type(name) is not str or not isinstance(term, Term):
                 raise TacticError(f"a match must bind names to terms, got {name!r} -> {term!r}")
         if not self.vars:
             return self.proof
-        sorts: dict = {}
+        sorts: dict[str, str] = {}
         for name, sort in self.eq.free_var_sorts():
             if sorts.setdefault(name, sort) != sort:
                 raise TacticError(
@@ -301,7 +337,7 @@ class Rule:
         for t in sigma.values():
             avoid |= set(t.free_vars())
         holes = sorted(self.vars)
-        renaming = {}
+        renaming: dict[str, str] = {}
         for v in holes:
             renaming[v] = _fresh(v, avoid)
             avoid.add(renaming[v])
@@ -312,7 +348,7 @@ class Rule:
             pf = Inst(pf, renaming[v], sigma.get(v, Var(v, sorts.get(v, ""))))
         return pf
 
-    def fire(self, sigma: dict) -> tuple[Term, Pf]:
+    def fire(self, sigma: Substitution) -> RewriteResult:
         """The rule applied at a match: `(rhs under sigma, Pf of lhs = rhs under
         sigma)`. Term and proof are produced together, in one place, so they
         cannot drift apart -- and if they ever did, `Trans` in the checker would
@@ -370,7 +406,7 @@ DEFAULT_BUDGET = 200
 """Rewrite steps `normalize` will take before declaring the rule set looping."""
 
 
-def _find_redex(term: Term, rules) -> tuple | None:
+def _find_redex(term: Term, rules: Sequence[Rule]) -> Redex | None:
     """The LEFTMOST-OUTERMOST redex: `(path, rule, sigma)`, or None.
 
     `path` is the tuple of argument indices from `term` down to the redex. The
@@ -381,7 +417,7 @@ def _find_redex(term: Term, rules) -> tuple | None:
 
     `rules` is re-read at every position visited, so it must be a re-iterable
     sequence; the public entry points materialize it before calling in."""
-    stack: list = [((), term)]
+    stack: list[tuple[TermPath, Term]] = [((), term)]
     while stack:
         path, t = stack.pop()
         for rule in rules:
@@ -394,7 +430,12 @@ def _find_redex(term: Term, rules) -> tuple | None:
     return None
 
 
-def _under_context(term: Term, path: tuple, new_sub: Term, sub_pf: Pf) -> tuple[Term, Pf]:
+def _under_context(
+    term: Term,
+    path: TermPath,
+    new_sub: Term,
+    sub_pf: Pf,
+) -> RewriteResult:
     """Lift a proof of `subterm = new_sub` at `path` to a proof about the whole
     `term`, returning the rebuilt term alongside it.
 
@@ -416,7 +457,7 @@ def _under_context(term: Term, path: tuple, new_sub: Term, sub_pf: Pf) -> tuple[
     return new, pf
 
 
-def rewrite_step(term: Term, rules) -> tuple | None:
+def rewrite_step(term: Term, rules: Iterable[Rule]) -> RewriteResult | None:
     """Rewrite the leftmost-outermost redex once: `(new_term, Pf of term = new)`,
     or None if no rule applies.
 
@@ -430,7 +471,11 @@ def rewrite_step(term: Term, rules) -> tuple | None:
     return _under_context(term, path, new, pf)
 
 
-def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
+def normalize(
+    term: Term,
+    rules: Iterable[Rule],
+    budget: int = DEFAULT_BUDGET,
+) -> RewriteResult:
     """Rewrite to a fixpoint: `(normal_form, Pf of term = normal_form)`.
 
     Steps are joined with `Trans`; a term already in normal form gets `Refl`.
@@ -459,7 +504,7 @@ def normalize(term: Term, rules, budget: int = DEFAULT_BUDGET) -> tuple:
 def normalize_equality(
     source: Formula,
     proof: Pf,
-    rules,
+    rules: Iterable[Rule],
     budget: int = DEFAULT_BUDGET,
 ) -> Pf:
     """Transport a proof of ``lhs = rhs`` to the equality of its normal forms.
@@ -545,7 +590,11 @@ def transport(pattern: Formula, var: str, eq: Eq, eq_pf: Pf, pf: Pf) -> Pf:
 # ---------------------------------------------------------------------------
 
 
-def prove_eq(goal: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
+def prove_eq(
+    goal: Formula,
+    rules: Iterable[Rule],
+    budget: int = DEFAULT_BUDGET,
+) -> Pf:
     """Prove an equation by normalizing both sides to a common normal form.
 
     `l = l_nf` and `r = r_nf` come from `normalize`; if the normal forms agree,
@@ -567,7 +616,7 @@ def prove_eq(goal: Formula, rules, budget: int = DEFAULT_BUDGET) -> Pf:
 def by_induction(
     var: str,
     pred: Formula,
-    rules,
+    rules: Iterable[Rule],
     budget: int = DEFAULT_BUDGET,
     base: Term = ZERO,
 ) -> Pf:
@@ -587,7 +636,7 @@ def by_induction(
     rules = tuple(rules)
     eq = _equation(pred)
 
-    def case(label: str, goal: Formula, case_rules) -> Pf:
+    def case(label: str, goal: Formula, case_rules: Iterable[Rule]) -> Pf:
         try:
             return prove_eq(goal, case_rules, budget)
         except TacticError as exc:

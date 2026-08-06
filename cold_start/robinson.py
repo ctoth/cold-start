@@ -23,12 +23,21 @@ Source, read in full: papers/Robinson_1949_DefinabilityArithmetic/.
 
 from __future__ import annotations
 
-from .peano import mul
-from .presburger import ZERO, S
+from . import vocabulary as _v
 from .syntax import Eq, Formula, Implies, Not, Term, Var
 from .theory import Signature, Theory
 
-ONE: Term = S(ZERO)  # the multiplicative identity, 1 = S(0)
+ONE: Term = _v.ONE
+
+
+def positive_numeral(value: int) -> Term:
+    """The positive numeral vocabulary generated from primitive ``1`` and ``S``."""
+    if type(value) is not int or value < 1:
+        raise ValueError("Robinson numerals require a positive genuine int")
+    term = ONE
+    for _ in range(value - 1):
+        term = _v.S(term)
+    return term
 
 
 def bridge(a: Term, b: Term, c: Term) -> Eq:
@@ -40,8 +49,8 @@ def bridge(a: Term, b: Term, c: Term) -> Eq:
     no `+` symbol anywhere in it -- addition is read off of multiplication and
     successor."""
     return Eq(
-        mul(S(mul(a, c)), S(mul(b, c))),
-        S(mul(mul(c, c), S(mul(a, b)))),
+        _v.mul(_v.S(_v.mul(a, c)), _v.S(_v.mul(b, c))),
+        _v.S(_v.mul(_v.mul(c, c), _v.S(_v.mul(a, b)))),
     )
 
 
@@ -50,12 +59,12 @@ _a, _b, _c = Var("a"), Var("b"), Var("c")
 # Peano's axioms with `+` eliminated -- the signature is (1, S, ·) only. A4'/A5'/A7'
 # are exactly Robinson's §2 axioms, written through `bridge` so the structure shows:
 # A5'/A7' are the recursion laws for `+` and `·` with their `+`s replaced by bridges.
-SUCC_NEQ_ONE: Formula = Not(Eq(S(_a), ONE))  # A1:  S a ≠ 1
-SUCC_INJ: Formula = Implies(Eq(S(_a), S(_b)), Eq(_a, _b))  # A2:  S a = S b → a = b
-ADD_ONE: Formula = bridge(_a, ONE, S(_a))  # A4':  a + 1 = S a
-ADD_SUCC: Formula = Implies(bridge(_a, _b, _c), bridge(_a, S(_b), S(_c)))  # A5': a+b=c → a+Sb=Sc
-MUL_ONE: Formula = Eq(mul(_a, ONE), _a)  # A6:  a · 1 = a
-MUL_SUCC: Formula = bridge(mul(_a, _b), _a, mul(_a, S(_b)))  # A7':  a·b + a = a·S b
+SUCC_NEQ_ONE: Formula = Not(Eq(_v.S(_a), ONE))
+SUCC_INJ: Formula = Implies(Eq(_v.S(_a), _v.S(_b)), Eq(_a, _b))
+ADD_ONE: Formula = bridge(_a, ONE, _v.S(_a))
+ADD_SUCC: Formula = Implies(bridge(_a, _b, _c), bridge(_a, _v.S(_b), _v.S(_c)))
+MUL_ONE: Formula = Eq(_v.mul(_a, ONE), _a)
+MUL_SUCC: Formula = bridge(_v.mul(_a, _b), _a, _v.mul(_a, _v.S(_b)))
 
 ROBINSON_AXIOMS = frozenset({SUCC_NEQ_ONE, SUCC_INJ, ADD_ONE, ADD_SUCC, MUL_ONE, MUL_SUCC})
 
@@ -63,7 +72,7 @@ ROBINSON_AXIOMS = frozenset({SUCC_NEQ_ONE, SUCC_INJ, ADD_ONE, ADD_SUCC, MUL_ONE,
 # the only function symbols are S and ·. `+` is not a primitive -- it is `bridge`.
 ROBINSON_SIG = Signature(
     sorts=frozenset({""}),
-    ranks=(("0", (), ""), ("S", ("",), ""), ("*", ("", ""), "")),
+    ranks=(("1", (), ""), ("S", ("",), ""), ("*", ("", ""), "")),
 )
 ROBINSON_PEANO = Theory(
     axioms=ROBINSON_AXIOMS,

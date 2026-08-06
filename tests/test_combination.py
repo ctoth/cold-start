@@ -15,12 +15,12 @@ import pytest
 
 from cold_start.checker import check
 from cold_start.combination import by_combination
-from cold_start.peano import PEANO, mul
+from cold_start.peano import PEANO
 from cold_start.peano_proofs import ring_kit
-from cold_start.presburger import ZERO, S, add
 from cold_start.proof import Assume
 from cold_start.syntax import Eq, Var
 from cold_start.tactics import TacticError, prove_eq
+from cold_start.vocabulary import ZERO, S, add, mul
 
 _x, _y, _z, _k = Var("x"), Var("y"), Var("z"), Var("k")
 

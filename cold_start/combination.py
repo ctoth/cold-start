@@ -16,12 +16,13 @@ Untrusted, like every prover module: `check` remains the only judge.
 
 from __future__ import annotations
 
-from .peano import mul
-from .presburger import add
+from collections.abc import Iterable
+
 from .presburger_proofs import add_cancel_right
 from .proof import MP, Cong, Inst, Pf, Refl, Trans
 from .syntax import Eq, Term, Var
-from .tactics import DEFAULT_BUDGET, prove_eq
+from .tactics import DEFAULT_BUDGET, Rule, prove_eq
+from .vocabulary import add, mul
 
 Hypothesis = tuple[Eq, Pf, Term | None]
 """An oriented equation, its proof, and an optional coefficient to scale by."""
@@ -35,10 +36,10 @@ def _cancel(lhs: Term, rhs: Term, suffix: Term) -> Pf:
     divisibility work documented). Renaming every hole to a fresh name first
     and only then substituting the values makes the substitution simultaneous.
     """
-    avoid = set()
+    avoid: set[str] = set()
     for t in (lhs, rhs, suffix):
         avoid |= set(t.free_vars())
-    fresh = {}
+    fresh: dict[str, str] = {}
     for name in ("x", "y", "z"):
         candidate = f"{name}!"
         k = 0
@@ -58,7 +59,7 @@ def _cancel(lhs: Term, rhs: Term, suffix: Term) -> Pf:
 def by_combination(
     goal: Eq,
     hyps: tuple[Hypothesis, ...],
-    kit,
+    kit: Iterable[Rule],
     budget: int = DEFAULT_BUDGET,
 ) -> Pf:
     """Prove `goal` from equational hypotheses by a scaled sum and one

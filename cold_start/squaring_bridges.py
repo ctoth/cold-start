@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .interp import GraphSymbol, Interpretation
+from .interp import GraphSymbol, Interpretation, ObligationKey
 from .squaring import SQUARE_ARITHMETIC, square_product
 from .squaring_proofs import square_product_total, square_product_unique
 from .theory import Signature, Theory
@@ -30,8 +30,8 @@ def squaring_interpretation() -> Interpretation:
         target=SQUARE_ARITHMETIC,
         symbols=(PRODUCT_FROM_SQUARE,),
         payments=(
-            ("totality:*", square_product_total()),
-            ("uniqueness:*", square_product_unique()),
+            (ObligationKey.totality("*"), square_product_total()),
+            (ObligationKey.uniqueness("*"), square_product_unique()),
         ),
     )
 

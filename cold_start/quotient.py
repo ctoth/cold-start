@@ -33,13 +33,22 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
+from typing import TypeAlias, cast
 
-from .checker import check
-from .interp import BridgeReport, InterpError, Obligation, ObligationStatus
+from .interp import (
+    BridgeReport,
+    InterpError,
+    Obligation,
+    ObligationKey,
+    Payment,
+    fresh_name,
+    replace_term,
+    translate_quantifier_free,
+    validate_payments,
+    verify_obligations,
+)
 from .proof import Pf
 from .syntax import (
-    Bottom,
     Eq,
     Formula,
     Fun,
@@ -50,14 +59,20 @@ from .syntax import (
     exists,
     forall,
     subnodes,
+    validate,
 )
-from .theory import Theory
+from .theory import Theory, validate_theory
 
-Vec = tuple[Term, ...]
+Vec: TypeAlias = tuple[Term, ...]
+VecMap: TypeAlias = dict[str, "VecSymbol"]
 
 
 def vec(base: str, dim: int) -> Vec:
     """The canonical variable vector for `base`: components `base.1` .. `base.k`."""
+    if type(base) is not str or not base:
+        raise InterpError("vector base must be a nonempty genuine str")
+    if type(dim) is not int or dim <= 0:
+        raise InterpError(f"quotient dimension must be a positive int, got {dim!r}")
     return tuple(Var(f"{base}.{i + 1}") for i in range(dim))
 
 
@@ -71,15 +86,21 @@ class VecSymbol:
     arity: int
     graph: Callable[[tuple[Vec, ...], Vec], Formula]
 
+    def __post_init__(self) -> None:
+        if type(self.fun) is not str or not self.fun:
+            raise InterpError("vector symbol name must be a nonempty genuine str")
+        if type(self.arity) is not int or self.arity < 0:
+            raise InterpError(f"vector symbol arity must be a nonnegative int, got {self.arity!r}")
+
     def instance(self, dim: int) -> Formula:
         """The graph at canonical fresh vectors -- the shape whose size counts
         toward the bridge, and the shape the definedness obligations use."""
-        return self.graph(self._args(dim), vec("c!", dim))
+        return self.graph(self.canonical_args(dim), vec("c!", dim))
 
-    def _args(self, dim: int) -> tuple[Vec, ...]:
+    def canonical_args(self, dim: int) -> tuple[Vec, ...]:
         return tuple(vec(f"x!{i}", dim) for i in range(self.arity))
 
-    def _primed(self, dim: int) -> tuple[Vec, ...]:
+    def primed_args(self, dim: int) -> tuple[Vec, ...]:
         return tuple(vec(f"y!{i}", dim) for i in range(self.arity))
 
 
@@ -94,7 +115,59 @@ class QuotientInterpretation:
     dim: int
     equiv: Callable[[Vec, Vec], Formula]
     symbols: tuple[VecSymbol, ...]
-    payments: tuple[tuple[str, Pf], ...] = ()
+    payments: tuple[Payment, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.name) is not str or not self.name:
+            raise InterpError("quotient interpretation name must be a nonempty genuine str")
+        validate_theory(self.source)
+        validate_theory(self.target)
+        if type(self.dim) is not int or self.dim <= 0:
+            raise InterpError(
+                f"quotient dimension must be a positive int, got {self.dim!r}"
+            )
+        if type(self.symbols) is not tuple or type(self.payments) is not tuple:
+            raise InterpError("quotient symbols and payments must be tuples")
+        validate_payments(self.payments)
+
+        equivalence = self.equiv(vec("x!", self.dim), vec("y!", self.dim))
+        _require_formula(equivalence, "quotient equivalence")
+        seen: set[str] = set()
+        by_name: VecMap = {}
+        for symbol in self.symbols:
+            if symbol.fun in seen:
+                raise InterpError(f"duplicate vector symbol {symbol.fun!r}")
+            seen.add(symbol.fun)
+            by_name[symbol.fun] = symbol
+            _require_formula(
+                symbol.instance(self.dim),
+                f"vector graph symbol {symbol.fun!r}",
+            )
+
+        signature = self.source.signature
+        if signature is not None:
+            for fun, args, _result in signature.ranks:
+                symbol = by_name.get(fun)
+                if symbol is None:
+                    raise InterpError(f"missing disposition for source function {fun!r}")
+                if symbol.arity != len(args):
+                    raise InterpError(
+                        f"source arity for {fun!r} is {len(args)}, disposition says "
+                        f"{symbol.arity}"
+                    )
+            if signature.relations:
+                rel = signature.relations[0][0]
+                raise InterpError(f"missing disposition for source predicate {rel!r}")
+
+
+def _require_formula(value: object, label: str) -> Formula:
+    try:
+        validate(value)
+    except (TypeError, ValueError) as exc:
+        raise InterpError(f"{label} must build a canonical formula: {exc}") from exc
+    if not isinstance(value, Formula):
+        raise InterpError(f"{label} must build a formula, got {value!r}")
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -104,15 +177,6 @@ class QuotientInterpretation:
 
 def _size(node: Node | Pf) -> int:
     return sum(1 for _ in subnodes(node))
-
-
-def _fresh(avoid: set) -> str:
-    k = 0
-    name = "u!"
-    while name in avoid:
-        k += 1
-        name = f"u!{k}"
-    return name
 
 
 def _bind_block(marker: str, dim: int, guard: Formula, body: Formula) -> Formula:
@@ -127,8 +191,8 @@ def _bind_block(marker: str, dim: int, guard: Formula, body: Formula) -> Formula
 def _innermost_app(term: Term) -> Fun | None:
     """A deepest function application whose arguments are all variables --
     hoisting it leaves no application behind inside it."""
-    pre: list = []
-    stack: list = [term]
+    pre: list[Term] = []
+    stack: list[Term] = [term]
     while stack:
         t = stack.pop()
         pre.append(t)
@@ -140,28 +204,9 @@ def _innermost_app(term: Term) -> Fun | None:
     return None
 
 
-def _replace_equal(term: Term, old: Term, new: Term) -> Term:
-    order: list = []
-    stack: list = [term]
-    while stack:
-        t = stack.pop()
-        order.append(t)
-        if type(t) is Fun:
-            stack.extend(t.args)
-    done: dict = {}
-    for t in reversed(order):
-        if t == old:
-            done[id(t)] = new
-        elif type(t) is Fun:
-            done[id(t)] = Fun(t.name, tuple(done[id(a)] for a in t.args))
-        else:
-            done[id(t)] = t
-    return done[id(term)]
-
-
 def _translate_eq(
     eq: Eq,
-    names: dict,
+    names: VecMap,
     equiv: Callable[[Vec, Vec], Formula],
     dim: int,
 ) -> Formula:
@@ -180,11 +225,11 @@ def _translate_eq(
         if symbol is None:
             raise InterpError(f"no translation for source symbol {node.name!r}")
         args = tuple(vectors[cast(Var, arg).name] for arg in node.args)  # all Vars, by choice
-        marker = _fresh(avoid)
+        marker = fresh_name(avoid)
         avoid.add(marker)
         vectors[marker] = vec(marker, dim)
         guards.append((marker, symbol.graph(args, vectors[marker])))
-        return _replace_equal(t, node, Var(marker))
+        return replace_term(t, node, Var(marker))
 
     rhs = eq.rhs
     while type(rhs) is not Var:
@@ -208,18 +253,10 @@ def translate(
     Structure is preserved; only atoms change."""
     names = {s.fun: s for s in symbols}
 
-    def tr(g: Formula) -> Formula:
-        if type(g) is Implies:
-            return Implies(tr(g.ant), tr(g.con))
-        if type(g) is Bottom:
-            return g
-        if type(g) is Eq:
-            return _translate_eq(g, names, equiv, dim)
-        raise InterpError(
-            f"cannot translate {type(g).__name__}: source formulas must be quantifier-free"
-        )
-
-    return tr(f)
+    return translate_quantifier_free(
+        f,
+        lambda equality: _translate_eq(equality, names, equiv, dim),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -235,35 +272,38 @@ def obligations(interp: QuotientInterpretation) -> tuple[Obligation, ...]:
     dim, equiv = interp.dim, interp.equiv
     a, b, c = vec("x!", dim), vec("y!", dim), vec("z!", dim)
     obs: list[Obligation] = [
-        Obligation("equivalence:refl", equiv(a, a)),
-        Obligation("equivalence:sym", Implies(equiv(a, b), equiv(b, a))),
+        Obligation(ObligationKey.equivalence("refl"), equiv(a, a)),
         Obligation(
-            "equivalence:trans",
+            ObligationKey.equivalence("sym"),
+            Implies(equiv(a, b), equiv(b, a)),
+        ),
+        Obligation(
+            ObligationKey.equivalence("trans"),
             Implies(equiv(a, b), Implies(equiv(b, c), equiv(a, c))),
         ),
     ]
     for ax in sorted(interp.source.axioms, key=repr):
         obs.append(
             Obligation(
-                f"axiom:{ax!r}",
+                ObligationKey.axiom(ax),
                 translate(ax, interp.symbols, equiv, dim),
             )
         )
     result, other = vec("c!", dim), vec("d!", dim)
     for s in interp.symbols:
-        args = s._args(dim)
+        args = s.canonical_args(dim)
         tot: Formula = s.graph(args, result)
         for i in reversed(range(dim)):
             tot = exists(f"c!.{i + 1}", "", tot)
-        obs.append(Obligation(f"totality:{s.fun}", tot))
-        primed = s._primed(dim)
+        obs.append(Obligation(ObligationKey.totality(s.fun), tot))
+        primed = s.primed_args(dim)
         resp: Formula = Implies(
             s.graph(args, result),
             Implies(s.graph(primed, other), equiv(result, other)),
         )
         for old, new in reversed(tuple(zip(args, primed, strict=True))):
             resp = Implies(equiv(old, new), resp)
-        obs.append(Obligation(f"respect:{s.fun}", resp))
+        obs.append(Obligation(ObligationKey.respect(s.fun), resp))
     return tuple(obs)
 
 
@@ -271,37 +311,12 @@ def verify(interp: QuotientInterpretation) -> BridgeReport:
     """Check every offered payment through the trusted checker and measure the
     bridge. A payment must derive EXACTLY its obligation, with no hypotheses,
     in the TARGET theory. Unpaid obligations are reported open, not failed."""
-    obs = obligations(interp)
-    known = {o.label for o in obs}
-    payments = dict(interp.payments)
-    for label in payments:
-        if label not in known:
-            raise InterpError(f"payment against unknown obligation {label!r}")
-    statuses: list[ObligationStatus] = []
-    for o in obs:
-        pf = payments.get(o.label)
-        if pf is None:
-            statuses.append(ObligationStatus(o, paid=False, toll=0))
-            continue
-        try:
-            seq = check(pf, interp.target)
-        except (TypeError, ValueError) as exc:
-            raise InterpError(f"payment for {o.label!r} rejected by the checker: {exc}") from exc
-        if seq.hyps:
-            raise InterpError(
-                f"payment for {o.label!r} is conditional: hypotheses {sorted(map(repr, seq.hyps))}"
-            )
-        if seq.concl != o.formula:
-            raise InterpError(
-                f"payment for {o.label!r} proves the wrong thing:\n"
-                f"  owed: {o.formula!r}\n  paid: {seq.concl!r}"
-            )
-        statuses.append(ObligationStatus(o, paid=True, toll=_size(pf)))
+    statuses = verify_obligations(obligations(interp), interp.payments, interp.target)
     dim = interp.dim
     bridge_size = _size(interp.equiv(vec("x!", dim), vec("y!", dim))) + sum(
         _size(s.instance(dim)) for s in interp.symbols
     )
-    return BridgeReport(name=interp.name, bridge_size=bridge_size, statuses=tuple(statuses))
+    return BridgeReport(name=interp.name, bridge_size=bridge_size, statuses=statuses)
 
 
 __all__ = [

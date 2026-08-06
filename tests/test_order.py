@@ -27,13 +27,13 @@ from cold_start.order import (
     reach,
 )
 from cold_start.parity import TWO
-from cold_start.peano import PEANO, mul
-from cold_start.presburger import ZERO, S, add
+from cold_start.peano import PEANO
 from cold_start.presburger_proofs import ZERO_OR_SUCC
 from cold_start.proof import ExistsIntro, Inst, Refl
 from cold_start.prop import or_left, or_right
 from cold_start.syntax import Eq, Implies, Var, exists
 from cold_start.tactics import transport
+from cold_start.vocabulary import ZERO, S, add, mul
 
 _a, _n = Var("a"), Var("n")
 

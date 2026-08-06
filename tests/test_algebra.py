@@ -24,11 +24,11 @@ from cold_start.algebra import (
     MONOID,
     RIGHT_ID,
     E,
-    mul,
 )
 from cold_start.checker import check
 from cold_start.proof import Pf
 from cold_start.syntax import Eq, Var
+from cold_start.vocabulary import mul
 
 VAR_POOL = ["x", "y", "z", "u", "v"]
 

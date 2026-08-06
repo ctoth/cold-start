@@ -23,9 +23,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .presburger import S
 from .prop import And, Iff, Or
 from .syntax import Eq, Formula, Implies, Rel, Term, Var, exists, forall
+from .vocabulary import S
 
 Divides = Callable[[Term, Term], Formula]
 

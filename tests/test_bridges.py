@@ -17,9 +17,9 @@ from cold_start.bridges import (
 )
 from cold_start.checker import check
 from cold_start.interp import verify
-from cold_start.presburger import S, add
 from cold_start.robinson import ONE, ROBINSON_PEANO, bridge
 from cold_start.syntax import Eq, Var, exists
+from cold_start.vocabulary import S, add
 
 _a, _b = Var("a"), Var("b")
 
@@ -93,6 +93,6 @@ def test_robinson_into_peano_positives_is_fully_paid() -> None:
     report = verify(robinson_into_peano())
     assert report.complete
     assert report.open_labels() == ()
-    assert report.bridge_size == 19
+    assert report.bridge_size == 21  # 19-node graph plus the 2-node 1 -> S(0) map
     assert len(report.statuses) == 9  # 4 axioms + 2 definedness + 3 domain debts
     assert all(s.paid for s in report.statuses)

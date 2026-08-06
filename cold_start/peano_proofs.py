@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .peano import MUL_SUCC_F, MUL_ZERO_F, mul
-from .presburger import SUCC_NEQ_ZERO, ZERO, S, add, induction, numeral
+from .peano import MUL_SUCC_F, MUL_ZERO_F
+from .presburger import SUCC_NEQ_ZERO, induction
 from .presburger_proofs import ADD_RULES, add_cancel_right, add_kit, add_proof
 from .proof import (
     MP,
@@ -21,7 +21,8 @@ from .proof import (
     Trans,
 )
 from .syntax import Eq, Formula, Implies, Term, Var, forall
-from .tactics import axiom_rule, by_induction, lemma_rule, normalize_equality
+from .tactics import Rule, axiom_rule, by_induction, lemma_rule, normalize_equality
+from .vocabulary import ZERO, S, add, mul, numeral
 
 _x, _y, _z, _n = Var("x"), Var("y"), Var("z"), Var("n")
 
@@ -145,7 +146,7 @@ def mul_left_comm() -> Pf:
     )
 
 
-def ring_kit() -> tuple:
+def ring_kit() -> tuple[Rule, ...]:
     """Everything proved about `+` and `*` so far, as one rewrite kit.
 
     On top of `add_kit`: the multiplication recursion axioms and their

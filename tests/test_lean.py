@@ -34,7 +34,7 @@ from cold_start.lean.syntax import (
     render_term,
     universal_closure,
 )
-from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO, mul
+from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO
 from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
     ADD_SUCC_F,
@@ -42,10 +42,6 @@ from cold_start.presburger import (
     PRESBURGER,
     SUCC_INJ,
     SUCC_NEQ_ZERO,
-    ZERO,
-    S,
-    add,
-    numeral,
 )
 from cold_start.presburger_proofs import add_proof, left_identity_proof
 from cold_start.proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Refl
@@ -65,6 +61,7 @@ from cold_start.syntax import (
     forall,
 )
 from cold_start.theory import Theory
+from cold_start.vocabulary import ZERO, S, add, mul, numeral
 
 
 def test_render_term_maps_arithmetic_symbols_to_lean_names():

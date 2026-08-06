@@ -25,12 +25,12 @@ from .divisibility import (
     one_divides,
     peano_divides,
 )
-from .interp import GraphSymbol, Interpretation, PredicateSymbol
-from .peano import PEANO, mul
-from .presburger import ZERO, S
+from .interp import GraphSymbol, Interpretation, ObligationKey, PredicateSymbol
+from .peano import PEANO
 from .robinson_divisibility import divides, robinson_product
 from .syntax import Formula, Implies, Var
 from .theory import Signature, Theory
+from .vocabulary import ZERO, S, mul
 
 ONE = S(ZERO)
 _a, _b, _c = Var("a"), Var("b"), Var("c")
@@ -83,14 +83,15 @@ def divisibility_into_peano() -> Interpretation:
         target=PEANO,
         symbols=(),
         predicates=(DIVIDES_IN_PEANO,),
+        retained_funs=(("0", 0), ("S", 1), ("*", 2)),
         payments=(
-            (f"axiom:{DIVIDES_REFL_ATOM!r}", divides_refl()),
-            (f"axiom:{DIVIDES_TRANS_ATOM!r}", divides_trans()),
-            (f"axiom:{DIVIDES_ZERO_ATOM!r}", divides_zero()),
-            (f"axiom:{ONE_DIVIDES_ATOM!r}", one_divides()),
-            (f"axiom:{DIVIDES_FACTOR_ATOM!r}", divides_factor()),
-            (f"axiom:{DIVIDES_PRODUCT_RIGHT_ATOM!r}", divides_product_right()),
-            (f"axiom:{DIVIDES_PRODUCT_ATOM!r}", divides_product()),
+            (ObligationKey.axiom(DIVIDES_REFL_ATOM), divides_refl()),
+            (ObligationKey.axiom(DIVIDES_TRANS_ATOM), divides_trans()),
+            (ObligationKey.axiom(DIVIDES_ZERO_ATOM), divides_zero()),
+            (ObligationKey.axiom(ONE_DIVIDES_ATOM), one_divides()),
+            (ObligationKey.axiom(DIVIDES_FACTOR_ATOM), divides_factor()),
+            (ObligationKey.axiom(DIVIDES_PRODUCT_RIGHT_ATOM), divides_product_right()),
+            (ObligationKey.axiom(DIVIDES_PRODUCT_ATOM), divides_product()),
         ),
     )
 

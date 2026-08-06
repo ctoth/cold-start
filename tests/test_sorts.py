@@ -22,11 +22,11 @@ from cold_start.algebra import (
     MONOID_ACTION,
     E,
     act,
-    mul,
 )
 from cold_start.checker import check, sort_check_formula
 from cold_start.syntax import Eq, Fun, Implies, Var, exists, forall
 from cold_start.theory import Signature, Theory
+from cold_start.vocabulary import mul
 
 M_VARS = [Var("m", "M"), Var("n", "M"), Var("p", "M")]
 X_VARS = [Var("x", "X"), Var("y", "X")]

@@ -13,9 +13,9 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import cold_start.tactics
-from cold_start.algebra import ACT_COMP, ACT_ID, MONOID_ACTION, E, act, mul
+from cold_start.algebra import ACT_COMP, ACT_ID, MONOID_ACTION, E, act
 from cold_start.checker import check
-from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER, ZERO, S, add, numeral
+from cold_start.presburger import ADD_SUCC_F, ADD_ZERO_F, PRESBURGER
 from cold_start.presburger_proofs import (
     ADD_ASSOC,
     ADD_COMM,
@@ -44,6 +44,7 @@ from cold_start.tactics import (
     prove_eq,
     rewrite_step,
 )
+from cold_start.vocabulary import ZERO, S, add, mul, numeral
 
 ADD_RULES = (axiom_rule(ADD_ZERO_F), axiom_rule(ADD_SUCC_F))
 

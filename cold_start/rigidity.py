@@ -48,13 +48,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .peano import mul
-from .presburger import S, induction
+from .presburger import induction
 from .proof import Assume, Axiom, Cong, ImpIntro, Pf, Trans
 from .robinson import ONE, ROBINSON_PEANO
 from .syntax import Eq, Formula, Fun, Term, Var
 from .tactics import lemma_rule, prove_eq
 from .theory import Signature
+from .vocabulary import S, mul
 
 # --- the extra symbol: a self-map of the positive integers -----------------
 
