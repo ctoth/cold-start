@@ -27,11 +27,13 @@ from __future__ import annotations
 from .divisibility import (
     ONE,
     divides_factor,
+    divides_one,
     divides_product_right,
     divides_trans,
     one_divides,
     peano_divides,
 )
+from .divisibility_bridges import positive_peano
 from .proof import (
     MP,
     Assume,
@@ -51,7 +53,7 @@ from .robinson_divisibility import coprime, lcm, robinson_product, unit_case
 from .robinson_proofs import POLY_BUDGET, poly_kit
 from .syntax import Eq, Formula, Implies, Var, exists
 from .tactics import prove_eq
-from .vocabulary import S, add, mul
+from .vocabulary import ZERO, S, add, mul
 
 _a, _b, _c, _d, _x, _y = Var("a"), Var("b"), Var("c"), Var("d"), Var("x"), Var("y")
 _m, _k, _l = Var("m"), Var("k"), Var("l")
@@ -68,6 +70,35 @@ UNIT_CASE_FORCES_UNIT_DIVISORS: Formula = Implies(
         peano_divides(_a, ONE),
         peano_divides(_b, ONE),
         peano_divides(_c, ONE),
+    ),
+)
+UNIT_CASE_FORCES_UNITS: Formula = Implies(
+    unit_case(_a, _b, _c, via=peano_divides),
+    And(Eq(_a, ONE), Eq(_b, ONE), Eq(_c, ONE)),
+)
+POSITIVE_UNIT_CASE_UNIT: Formula = unit_case(
+    ONE,
+    ONE,
+    ONE,
+    via=peano_divides,
+    domain=positive_peano,
+)
+POSITIVE_UNIT_CASE_FORCES_UNITS: Formula = Implies(
+    unit_case(_a, _b, _c, via=peano_divides, domain=positive_peano),
+    And(Eq(_a, ONE), Eq(_b, ONE), Eq(_c, ONE)),
+)
+POSITIVE_TOTALITY_AT_UNIT: Formula = exists(
+    "c",
+    "",
+    And(
+        positive_peano(_c),
+        robinson_product(
+            ONE,
+            ONE,
+            _c,
+            via=peano_divides,
+            domain=positive_peano,
+        ),
     ),
 )
 PRODUCT_DIVIDES_BOTH: Formula = Implies(
@@ -180,6 +211,59 @@ def unit_case_forces_unit_divisors() -> Pf:
     return ImpIntro(hyp, ForallElim(Assume(hyp), ONE))
 
 
+def _units_from_divisors(divisors: Pf) -> Pf:
+    a_one_divisor = peano_divides(_a, ONE)
+    b_one_divisor = peano_divides(_b, ONE)
+    c_one_divisor = peano_divides(_c, ONE)
+    tail = And(b_one_divisor, c_one_divisor)
+    a_divides_one = and_left(a_one_divisor, tail, divisors)
+    remaining = and_right(a_one_divisor, tail, divisors)
+    b_divides_one = and_left(b_one_divisor, c_one_divisor, remaining)
+    c_divides_one = and_right(b_one_divisor, c_one_divisor, remaining)
+
+    a_is_one = MP(Inst(divides_one(), "a", _a), a_divides_one)
+    b_is_one = MP(Inst(divides_one(), "a", _b), b_divides_one)
+    c_is_one = MP(Inst(divides_one(), "a", _c), c_divides_one)
+    return and_intro(
+        Eq(_a, ONE),
+        And(Eq(_b, ONE), Eq(_c, ONE)),
+        a_is_one,
+        and_intro(Eq(_b, ONE), Eq(_c, ONE), b_is_one, c_is_one),
+    )
+
+
+def unit_case_forces_units() -> Pf:
+    """The first disjunct is possible only at ``a=b=c=1`` in PEANO."""
+    hyp = unit_case(_a, _b, _c, via=peano_divides)
+    divisors = MP(unit_case_forces_unit_divisors(), Assume(hyp))
+    return ImpIntro(hyp, _units_from_divisors(divisors))
+
+
+def _one_positive() -> Pf:
+    return ExistsIntro(positive_peano(ONE), ZERO, Refl(ONE))
+
+
+def positive_unit_case_unit() -> Pf:
+    """The positive-relativized unit disjunct holds at ``(1,1,1)``."""
+    one_x = peano_divides(ONE, _x)
+    everywhere = Inst(one_divides(), "a", _x)
+    packed = and_intro(
+        one_x,
+        And(one_x, one_x),
+        everywhere,
+        and_intro(one_x, one_x, everywhere, everywhere),
+    )
+    return ForallIntro("x", "", ImpIntro(positive_peano(_x), packed))
+
+
+def positive_unit_case_forces_units() -> Pf:
+    """The positive-relativized first disjunct also forces all values to 1."""
+    hyp = unit_case(_a, _b, _c, via=peano_divides, domain=positive_peano)
+    guarded_divisors = ForallElim(Assume(hyp), ONE)
+    divisors = MP(guarded_divisors, _one_positive())
+    return ImpIntro(hyp, _units_from_divisors(divisors))
+
+
 def product_divides_both() -> Pf:
     """PEANO proves ``a*b | c`` passes to both factors: ``a | c`` and ``b | c``.
 
@@ -240,6 +324,21 @@ def totality_witness_at_unit() -> Pf:
     return ExistsIntro(claim, ONE, packed)
 
 
+def positive_totality_witness_at_unit() -> Pf:
+    """The positive composed graph contains the checked point ``1*1=1``."""
+    phi = robinson_product(
+        ONE,
+        ONE,
+        ONE,
+        via=peano_divides,
+        domain=positive_peano,
+    )
+    assert type(phi) is Implies
+    graph = or_left(POSITIVE_UNIT_CASE_UNIT, phi.con, positive_unit_case_unit())
+    packed = and_intro(positive_peano(ONE), phi, _one_positive(), graph)
+    return ExistsIntro(POSITIVE_TOTALITY_AT_UNIT, ONE, packed)
+
+
 __all__ = [
     "COPRIME_ONE_LEFT",
     "COPRIME_ONE_RIGHT",
@@ -248,7 +347,11 @@ __all__ = [
     "LCM_ONE_RIGHT",
     "LCM_SELF",
     "PRODUCT_DIVIDES_BOTH",
+    "POSITIVE_TOTALITY_AT_UNIT",
+    "POSITIVE_UNIT_CASE_FORCES_UNITS",
+    "POSITIVE_UNIT_CASE_UNIT",
     "UNIT_CASE_FORCES_UNIT_DIVISORS",
+    "UNIT_CASE_FORCES_UNITS",
     "UNIT_CASE_UNIT",
     "coprime_one_left",
     "coprime_one_right",
@@ -257,7 +360,11 @@ __all__ = [
     "lcm_one_right",
     "lcm_self",
     "product_divides_both",
+    "positive_totality_witness_at_unit",
+    "positive_unit_case_forces_units",
+    "positive_unit_case_unit",
     "totality_witness_at_unit",
     "unit_case_forces_unit_divisors",
+    "unit_case_forces_units",
     "unit_case_unit",
 ]

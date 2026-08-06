@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from cold_start.checker import check
 from cold_start.divisibility import ONE, peano_divides
+from cold_start.divisibility_bridges import positive_peano
 from cold_start.peano import PEANO
 from cold_start.prop import And, Or
 from cold_start.robinson_divisibility import lcm, robinson_product, unit_case
@@ -20,8 +21,12 @@ from cold_start.robinson_divisibility_proofs import (
     LCM_ONE_LEFT,
     LCM_ONE_RIGHT,
     LCM_SELF,
+    POSITIVE_TOTALITY_AT_UNIT,
+    POSITIVE_UNIT_CASE_FORCES_UNITS,
+    POSITIVE_UNIT_CASE_UNIT,
     PRODUCT_DIVIDES_BOTH,
     UNIT_CASE_FORCES_UNIT_DIVISORS,
+    UNIT_CASE_FORCES_UNITS,
     UNIT_CASE_UNIT,
     coprime_one_left,
     coprime_one_right,
@@ -29,9 +34,13 @@ from cold_start.robinson_divisibility_proofs import (
     lcm_one_left,
     lcm_one_right,
     lcm_self,
+    positive_totality_witness_at_unit,
+    positive_unit_case_forces_units,
+    positive_unit_case_unit,
     product_divides_both,
     totality_witness_at_unit,
     unit_case_forces_unit_divisors,
+    unit_case_forces_units,
     unit_case_unit,
 )
 from cold_start.syntax import Eq, Implies, Var, exists
@@ -75,6 +84,31 @@ def test_the_unit_disjunct_holds_at_one_and_forces_unit_divisors():
     )
 
 
+def test_the_unit_disjunct_forces_all_three_values_to_one():
+    _checked(unit_case_forces_units, UNIT_CASE_FORCES_UNITS)
+    assert UNIT_CASE_FORCES_UNITS == Implies(
+        unit_case(_a, _b, _c, via=peano_divides),
+        And(Eq(_a, ONE), Eq(_b, ONE), Eq(_c, ONE)),
+    )
+
+
+def test_positive_unit_branch_is_checked_end_to_end():
+    _checked(positive_unit_case_unit, POSITIVE_UNIT_CASE_UNIT)
+    _checked(positive_unit_case_forces_units, POSITIVE_UNIT_CASE_FORCES_UNITS)
+
+    assert POSITIVE_UNIT_CASE_UNIT == unit_case(
+        ONE,
+        ONE,
+        ONE,
+        via=peano_divides,
+        domain=positive_peano,
+    )
+    assert POSITIVE_UNIT_CASE_FORCES_UNITS == Implies(
+        unit_case(_a, _b, _c, via=peano_divides, domain=positive_peano),
+        And(Eq(_a, ONE), Eq(_b, ONE), Eq(_c, ONE)),
+    )
+
+
 def test_a_product_divisor_yields_both_factor_divisors():
     _checked(product_divides_both, PRODUCT_DIVIDES_BOTH)
     assert PRODUCT_DIVIDES_BOTH == Implies(
@@ -108,3 +142,21 @@ def test_the_totality_graph_has_a_checked_point_at_one_times_one():
     phi_one = robinson_product(ONE, ONE, ONE, via=peano_divides)
     assert type(phi_one) is Implies
     assert phi_one == Or(UNIT_CASE_UNIT, phi_one.con)
+
+
+def test_positive_totality_graph_has_a_checked_point_at_one_times_one():
+    _checked(positive_totality_witness_at_unit, POSITIVE_TOTALITY_AT_UNIT)
+    assert POSITIVE_TOTALITY_AT_UNIT == exists(
+        "c",
+        "",
+        And(
+            positive_peano(_c),
+            robinson_product(
+                ONE,
+                ONE,
+                _c,
+                via=peano_divides,
+                domain=positive_peano,
+            ),
+        ),
+    )
