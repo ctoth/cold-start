@@ -12,7 +12,11 @@ Two independent guards, in the repo's honesty tradition:
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 from cold_start.checker import check
+from cold_start.codec import encode_proof
 from cold_start.diffring2 import (
     CHAR2,
     DIFF_RING_2,
@@ -131,6 +135,20 @@ def test_three_points_collide_at_one_zero_zero() -> None:
     assert len(statements) == 9  # three components at three points
     for stmt, pf in zip(statements, proofs, strict=True):
         assert check(pf, DIFF_RING_2) == Sequent(frozenset(), stmt)
+
+
+def test_collision_proof_verifies_in_a_fresh_process() -> None:
+    """The De Bruijn payoff, end to end: one collision proof over the wire,
+    re-checked by `verify` in a separate process against the named theory."""
+    proof_bytes = encode_proof(collision_proofs()[0])
+    result = subprocess.run(
+        [sys.executable, "-m", "cold_start.verify", "--theory", "diffring2"],
+        input=proof_bytes,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    assert repr(collision_statements()[0]) in result.stdout.decode()
 
 
 def test_collision_statements_say_what_the_readme_says() -> None:

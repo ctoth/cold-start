@@ -17,9 +17,11 @@ Usage:
     cat proof.hmb | python verify.py
     python verify.py proof.hmb --theory peano
 
-The theories are `peano`, `presburger` (the addition-only fragment) and
-`robinson` (the (1, S, ·) basis with `+` eliminated). A proof is checked against
-exactly the one theory named, so citing an axiom from another is a rejection.
+The theories are `peano`, `presburger` (the addition-only fragment),
+`robinson` (the (1, S, ·) basis with `+` eliminated) and `diffring2` (the
+differential char-2 ring the Jacobian certificate lives in). A proof is checked
+against exactly the one theory named, so citing an axiom from another is a
+rejection.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from types import MappingProxyType
 
 from .checker import check
 from .codec import decode_proof
+from .diffring2 import DIFF_RING_2
 from .peano import PEANO
 from .presburger import PRESBURGER
 from .robinson import ROBINSON_PEANO
@@ -42,6 +45,7 @@ THEORIES: Mapping[str, Theory] = MappingProxyType(
         "peano": PEANO,
         "presburger": PRESBURGER,
         "robinson": ROBINSON_PEANO,
+        "diffring2": DIFF_RING_2,
     }
 )
 
