@@ -18,9 +18,12 @@ from cold_start.robinson_divisibility_proofs import (
     COPRIME_ONE_LEFT,
     COPRIME_ONE_RIGHT,
     CRT_KEY_IDENTITY,
+    DIVIDES_ANTISYM_POSITIVE,
+    DIVIDES_LE_POSITIVE,
     LCM_ONE_LEFT,
     LCM_ONE_RIGHT,
     LCM_SELF,
+    LCM_UNIQUE_POSITIVE,
     POSITIVE_TOTALITY_AT_UNIT,
     POSITIVE_UNIT_CASE_FORCES_UNITS,
     POSITIVE_UNIT_CASE_UNIT,
@@ -31,9 +34,12 @@ from cold_start.robinson_divisibility_proofs import (
     coprime_one_left,
     coprime_one_right,
     crt_key_identity,
+    divides_antisym_positive,
+    divides_le_positive,
     lcm_one_left,
     lcm_one_right,
     lcm_self,
+    lcm_unique_positive,
     positive_totality_witness_at_unit,
     positive_unit_case_forces_units,
     positive_unit_case_unit,
@@ -114,6 +120,45 @@ def test_a_product_divisor_yields_both_factor_divisors():
     assert PRODUCT_DIVIDES_BOTH == Implies(
         peano_divides(mul(_a, _b), _c),
         And(peano_divides(_a, _c), peano_divides(_b, _c)),
+    )
+
+
+def test_positive_mutual_divisibility_forces_equality():
+    from cold_start.order import le
+
+    _checked(divides_le_positive, DIVIDES_LE_POSITIVE)
+    _checked(divides_antisym_positive, DIVIDES_ANTISYM_POSITIVE)
+    assert DIVIDES_LE_POSITIVE == Implies(
+        positive_peano(_b),
+        Implies(peano_divides(_a, _b), le(_a, _b)),
+    )
+    assert DIVIDES_ANTISYM_POSITIVE == Implies(
+        positive_peano(_a),
+        Implies(
+            positive_peano(_b),
+            Implies(
+                peano_divides(_a, _b),
+                Implies(peano_divides(_b, _a), Eq(_a, _b)),
+            ),
+        ),
+    )
+
+
+def test_positive_lcm_graph_is_functional():
+    d = Var("d")
+    _checked(lcm_unique_positive, LCM_UNIQUE_POSITIVE)
+    assert LCM_UNIQUE_POSITIVE == Implies(
+        positive_peano(_c),
+        Implies(
+            positive_peano(d),
+            Implies(
+                lcm(_a, _b, _c, via=peano_divides, domain=positive_peano),
+                Implies(
+                    lcm(_a, _b, d, via=peano_divides, domain=positive_peano),
+                    Eq(_c, d),
+                ),
+            ),
+        ),
     )
 
 

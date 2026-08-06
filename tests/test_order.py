@@ -14,11 +14,13 @@ from __future__ import annotations
 from cold_start.checker import check
 from cold_start.divisibility import peano_divides
 from cold_start.order import (
+    LE_ANTISYM,
     LE_DOUBLE,
     LE_SUCC_SPLIT,
     LE_ZERO,
     course_of_values,
     le,
+    le_antisym,
     le_double,
     le_refl,
     le_succ_split,
@@ -56,6 +58,12 @@ def test_le_refl_checks():
 def test_le_zero_checks():
     assert LE_ZERO == Implies(le(_a, ZERO), Eq(_a, ZERO))
     _theorem(le_zero(), LE_ZERO)
+
+
+def test_le_antisymmetry_checks():
+    b = Var("b")
+    assert LE_ANTISYM == Implies(le(_a, b), Implies(le(b, _a), Eq(_a, b)))
+    _theorem(le_antisym(), LE_ANTISYM)
 
 
 def test_le_succ_split_checks():

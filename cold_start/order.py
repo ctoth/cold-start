@@ -29,6 +29,8 @@ from .presburger import ADD_SUCC_F, ADD_ZERO_F, SUCC_INJ, induction
 from .presburger_proofs import (
     ADD_RULES,
     LEFT_IDENTITY,
+    add_assoc,
+    add_cancel_left,
     add_eq_zero,
     left_identity,
     zero_or_succ,
@@ -50,7 +52,7 @@ from .proof import (
     Trans,
 )
 from .prop import Or, and_left, or_elim, or_left, or_right
-from .syntax import Eq, Formula, Implies, Term, Var, exists, forall
+from .syntax import Eq, Formula, Implies, Term, Var, exists, forall, instantiate
 from .tactics import Rule, lemma_rule, prove_eq, transport
 from .vocabulary import ZERO, S, add, mul
 
@@ -71,10 +73,11 @@ def le(a: Term, b: Term) -> Formula:
     return exists(witness_name, "", Eq(add(a, Var(witness_name)), b))
 
 
-_a, _m, _n = Var("a"), Var("m"), Var("n")
+_a, _b, _m, _n = Var("a"), Var("b"), Var("m"), Var("n")
 
 LE_REFL: Formula = le(_a, _a)
 LE_ZERO: Formula = Implies(le(_a, ZERO), Eq(_a, ZERO))
+LE_ANTISYM: Formula = Implies(le(_a, _b), Implies(le(_b, _a), Eq(_a, _b)))
 LE_SUCC_SPLIT: Formula = Implies(le(_a, S(_n)), Or(le(_a, _n), Eq(_a, S(_n))))
 LE_DOUBLE: Formula = le(_a, mul(_a, TWO))
 POS_HALF_LE: Formula = Implies(
@@ -96,6 +99,34 @@ def le_zero() -> Pf:
     split = MP(Inst(Inst(add_eq_zero(), "x", _a), "y", w), Assume(witness))
     a_zero = and_left(Eq(_a, ZERO), Eq(w, ZERO), split)
     return ImpIntro(hyp, ExistsElim("w!", Assume(hyp), a_zero))
+
+
+def le_antisym() -> Pf:
+    """Mutual witnessed-sum bounds force equality."""
+    ab, ba = le(_a, _b), le(_b, _a)
+    w, v = Var("w!"), Var("v!")
+    ab_w = instantiate(ab, w)
+    ba_v = instantiate(ba, v)
+
+    assoc = Inst(Inst(Inst(add_assoc(), "x", _a), "y", w), "z", v)
+    replace_ab = Cong("+", (Assume(ab_w), Refl(v)))
+    loop = Trans(Sym(assoc), Trans(replace_ab, Assume(ba_v)))
+    a_zero = Inst(Axiom(ADD_ZERO_F), "x", _a)
+    cancellable = Trans(loop, Sym(a_zero))
+    cancel = Inst(
+        Inst(Inst(add_cancel_left(), "z", _a), "x", add(w, v)),
+        "y",
+        ZERO,
+    )
+    sum_zero = MP(cancel, cancellable)
+    split = MP(Inst(Inst(add_eq_zero(), "x", w), "y", v), sum_zero)
+    w_zero = and_left(Eq(w, ZERO), Eq(v, ZERO), split)
+
+    collapse = Cong("+", (Refl(_a), w_zero))
+    result = Trans(Sym(a_zero), Trans(Sym(collapse), Assume(ab_w)))
+    use_ba = ExistsElim("v!", Assume(ba), result)
+    use_ab = ExistsElim("w!", Assume(ab), use_ba)
+    return ImpIntro(ab, ImpIntro(ba, use_ab))
 
 
 def le_succ_split() -> Pf:
@@ -204,6 +235,7 @@ def course_of_values(var: str, pred: Formula, n: str, base: Pf, step: Pf, z: str
 
 
 __all__ = [
+    "LE_ANTISYM",
     "LE_DOUBLE",
     "LE_REFL",
     "LE_SUCC_SPLIT",
@@ -211,6 +243,7 @@ __all__ = [
     "POS_HALF_LE",
     "course_of_values",
     "le",
+    "le_antisym",
     "le_double",
     "le_refl",
     "le_succ_split",

@@ -12,6 +12,7 @@ obligation that the current machinery can reach:
 * coprimality of 1 with everything (both orders);
 * the lcm graph at the unit and on the diagonal;
 * the unit disjunct at (1,1,1), and what it forces of its arguments;
+* order/divisibility antisymmetry and functionality of the positive lcm graph;
 * both factors of a product divide whatever the product divides;
 * the Chinese-remainder congruence identity behind Robinson's general disjunct:
   from ``mk = S(ax)`` and ``ml = S(by)``, ``abxy + (mk + ml) = S(mk*ml)`` --
@@ -29,15 +30,23 @@ from .divisibility import (
     divides_factor,
     divides_one,
     divides_product_right,
+    divides_refl,
     divides_trans,
     one_divides,
     peano_divides,
 )
 from .divisibility_bridges import positive_peano
+from .order import le, le_antisym
+from .peano import MUL_SUCC_F, MUL_ZERO_F
+from .presburger import SUCC_NEQ_ZERO
+from .presburger_proofs import add_comm, zero_or_succ
 from .proof import (
     MP,
     Assume,
+    Axiom,
     Cong,
+    ExFalso,
+    ExistsElim,
     ExistsIntro,
     ForallElim,
     ForallIntro,
@@ -48,10 +57,10 @@ from .proof import (
     Sym,
     Trans,
 )
-from .prop import And, and_intro, and_left, and_right, or_left
+from .prop import And, and_intro, and_left, and_right, or_elim, or_left
 from .robinson_divisibility import coprime, lcm, robinson_product, unit_case
 from .robinson_proofs import POLY_BUDGET, poly_kit
-from .syntax import Eq, Formula, Implies, Var, exists
+from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
 from .tactics import prove_eq
 from .vocabulary import ZERO, S, add, mul
 
@@ -104,6 +113,33 @@ POSITIVE_TOTALITY_AT_UNIT: Formula = exists(
 PRODUCT_DIVIDES_BOTH: Formula = Implies(
     peano_divides(mul(_a, _b), _c),
     And(peano_divides(_a, _c), peano_divides(_b, _c)),
+)
+DIVIDES_LE_POSITIVE: Formula = Implies(
+    positive_peano(_b),
+    Implies(peano_divides(_a, _b), le(_a, _b)),
+)
+DIVIDES_ANTISYM_POSITIVE: Formula = Implies(
+    positive_peano(_a),
+    Implies(
+        positive_peano(_b),
+        Implies(
+            peano_divides(_a, _b),
+            Implies(peano_divides(_b, _a), Eq(_a, _b)),
+        ),
+    ),
+)
+LCM_UNIQUE_POSITIVE: Formula = Implies(
+    positive_peano(_c),
+    Implies(
+        positive_peano(_d),
+        Implies(
+            lcm(_a, _b, _c, via=peano_divides, domain=positive_peano),
+            Implies(
+                lcm(_a, _b, _d, via=peano_divides, domain=positive_peano),
+                Eq(_c, _d),
+            ),
+        ),
+    ),
 )
 CRT_KEY_IDENTITY: Formula = Implies(
     Eq(mul(_m, _k), S(mul(_a, _x))),
@@ -204,8 +240,8 @@ def unit_case_forces_unit_divisors() -> Pf:
     """PEANO proves the unit disjunct pins its arguments as divisors of 1.
 
     The disjunct says ``a``, ``b``, ``c`` divide everything; instantiating its
-    universal at 1 is the whole proof. (Concluding ``a = b = c = 1`` from this
-    still needs ``a | 1 -> a = 1``, an open leaf.)
+    universal at 1 is the whole proof. ``unit_case_forces_units`` then applies
+    the checked ``a | 1 -> a = 1`` theorem to all three conjuncts.
     """
     hyp = unit_case(_a, _b, _c, via=peano_divides)
     return ImpIntro(hyp, ForallElim(Assume(hyp), ONE))
@@ -284,6 +320,93 @@ def product_divides_both() -> Pf:
     return ImpIntro(hyp, packed)
 
 
+def divides_le_positive() -> Pf:
+    """A divisor of a positive natural is no larger than it."""
+    pos = positive_peano(_b)
+    dvd = peano_divides(_a, _b)
+    goal = le(_a, _b)
+    n, k, j = Var("n!"), Var("k!"), Var("j!")
+    pos_n = instantiate(pos, n)
+    dvd_k = instantiate(dvd, k)
+
+    k_zero = Eq(k, ZERO)
+    to_zero = Cong("*", (Refl(_a), Assume(k_zero)))
+    times_zero = Inst(Axiom(MUL_ZERO_F), "x", _a)
+    b_zero = Trans(Sym(Assume(dvd_k)), Trans(to_zero, times_zero))
+    succ_zero = Trans(Sym(Assume(pos_n)), b_zero)
+    contradiction = MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", n), succ_zero)
+    zero_arm = ImpIntro(k_zero, ExFalso(contradiction, goal))
+
+    k_succ = Eq(k, S(j))
+    to_succ = Cong("*", (Refl(_a), Assume(k_succ)))
+    unfold = Inst(Inst(Axiom(MUL_SUCC_F), "x", _a), "y", j)
+    commute = Inst(Inst(add_comm(), "x", mul(_a, j)), "y", _a)
+    witnessed = Trans(
+        Sym(commute),
+        Trans(Sym(unfold), Trans(Sym(to_succ), Assume(dvd_k))),
+    )
+    packed = ExistsIntro(goal, mul(_a, j), witnessed)
+    k_is_succ = exists("j", "", Eq(k, S(Var("j"))))
+    succ_arm = ImpIntro(k_is_succ, ExistsElim("j!", Assume(k_is_succ), packed))
+
+    split = Inst(zero_or_succ(), "n", k)
+    cases = or_elim(k_zero, k_is_succ, goal, split, zero_arm, succ_arm)
+    use_k = ExistsElim("k!", Assume(dvd), cases)
+    use_n = ExistsElim("n!", Assume(pos), use_k)
+    return ImpIntro(pos, ImpIntro(dvd, use_n))
+
+
+def _binary_instance(proof: Pf, left: Term, right: Term) -> Pf:
+    slot = Var("rhs!")
+    return Inst(Inst(Inst(proof, "b", slot), "a", left), "rhs!", right)
+
+
+def divides_antisym_positive() -> Pf:
+    """Positive naturals that divide each other are equal."""
+    pos_a, pos_b = positive_peano(_a), positive_peano(_b)
+    a_b, b_a = peano_divides(_a, _b), peano_divides(_b, _a)
+    ab_le = MP(MP(divides_le_positive(), Assume(pos_b)), Assume(a_b))
+    ba_le = MP(
+        MP(_binary_instance(divides_le_positive(), _b, _a), Assume(pos_a)),
+        Assume(b_a),
+    )
+    antisym = _binary_instance(le_antisym(), _a, _b)
+    equal = MP(MP(antisym, ab_le), ba_le)
+    return ImpIntro(pos_a, ImpIntro(pos_b, ImpIntro(a_b, ImpIntro(b_a, equal))))
+
+
+def lcm_unique_positive() -> Pf:
+    """The positive-relativized divisibility lcm graph is functional."""
+    pos_c, pos_d = positive_peano(_c), positive_peano(_d)
+    lc = lcm(_a, _b, _c, via=peano_divides, domain=positive_peano)
+    ld = lcm(_a, _b, _d, via=peano_divides, domain=positive_peano)
+
+    both_d = And(peano_divides(_a, _d), peano_divides(_b, _d))
+    c_d, d_d = peano_divides(_c, _d), peano_divides(_d, _d)
+    lc_at_d = MP(ForallElim(Assume(lc), _d), Assume(pos_d))
+    ld_at_d = MP(ForallElim(Assume(ld), _d), Assume(pos_d))
+    lc_forward = and_left(Implies(both_d, c_d), Implies(c_d, both_d), lc_at_d)
+    ld_backward = and_right(Implies(both_d, d_d), Implies(d_d, both_d), ld_at_d)
+    common_d = MP(ld_backward, Inst(divides_refl(), "a", _d))
+    c_divides_d = MP(lc_forward, common_d)
+
+    both_c = And(peano_divides(_a, _c), peano_divides(_b, _c))
+    d_c, c_c = peano_divides(_d, _c), peano_divides(_c, _c)
+    ld_at_c = MP(ForallElim(Assume(ld), _c), Assume(pos_c))
+    lc_at_c = MP(ForallElim(Assume(lc), _c), Assume(pos_c))
+    ld_forward = and_left(Implies(both_c, d_c), Implies(d_c, both_c), ld_at_c)
+    lc_backward = and_right(Implies(both_c, c_c), Implies(c_c, both_c), lc_at_c)
+    common_c = MP(lc_backward, Inst(divides_refl(), "a", _c))
+    d_divides_c = MP(ld_forward, common_c)
+
+    antisym = _binary_instance(divides_antisym_positive(), _c, _d)
+    equal = MP(
+        MP(MP(MP(antisym, Assume(pos_c)), Assume(pos_d)), c_divides_d),
+        d_divides_c,
+    )
+    return ImpIntro(pos_c, ImpIntro(pos_d, ImpIntro(lc, ImpIntro(ld, equal))))
+
+
 def crt_key_identity() -> Pf:
     """PEANO proves Robinson's congruence step, subtraction-free.
 
@@ -343,9 +466,12 @@ __all__ = [
     "COPRIME_ONE_LEFT",
     "COPRIME_ONE_RIGHT",
     "CRT_KEY_IDENTITY",
+    "DIVIDES_ANTISYM_POSITIVE",
+    "DIVIDES_LE_POSITIVE",
     "LCM_ONE_LEFT",
     "LCM_ONE_RIGHT",
     "LCM_SELF",
+    "LCM_UNIQUE_POSITIVE",
     "PRODUCT_DIVIDES_BOTH",
     "POSITIVE_TOTALITY_AT_UNIT",
     "POSITIVE_UNIT_CASE_FORCES_UNITS",
@@ -356,9 +482,12 @@ __all__ = [
     "coprime_one_left",
     "coprime_one_right",
     "crt_key_identity",
+    "divides_antisym_positive",
+    "divides_le_positive",
     "lcm_one_left",
     "lcm_one_right",
     "lcm_self",
+    "lcm_unique_positive",
     "product_divides_both",
     "positive_totality_witness_at_unit",
     "positive_unit_case_forces_units",
