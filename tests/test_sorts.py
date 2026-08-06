@@ -24,7 +24,7 @@ from cold_start.algebra import (
     act,
     mul,
 )
-from cold_start.checker import check, sort_check_formula
+from cold_start.checker import Signature, Theory, check, sort_check_formula
 from cold_start.syntax import Eq, Fun, Implies, Var, exists, forall
 
 M_VARS = [Var("m", "M"), Var("n", "M"), Var("p", "M")]
@@ -278,6 +278,33 @@ def test_quantified_sorted_theorem_checks():
     seq = check(P.ForallIntro("x", "X", P.Axiom(ACT_ID)), MONOID_ACTION)
     assert seq.concl == forall("x", "X", ACT_ID)
     assert seq.hyps == frozenset()
+
+
+def test_many_sorted_induction_uses_the_theory_induction_sort():
+    nat = "N"
+    zero = Fun("0", ())
+
+    def succ(term):
+        return Fun("S", (term,))
+
+    signature = Signature(
+        sorts=frozenset({nat}),
+        ranks=(("0", (), nat), ("S", (nat,), nat)),
+    )
+    theory = Theory(axioms=frozenset(), zero=zero, succ="S", signature=signature)
+    n = Var("n", nat)
+    pred = Eq(n, n)
+    proof = P.Induct(
+        "n",
+        pred,
+        P.Refl(zero),
+        P.ImpIntro(pred, P.Refl(succ(n))),
+    )
+
+    seq = check(proof, theory)
+
+    assert seq.hyps == frozenset()
+    assert seq.concl == pred
 
 
 def test_quantified_well_sorted_formula_sort_checks():

@@ -274,7 +274,17 @@ class Induct(Pf):
         base = derived(self.base)
         step = derived(self.step)
         pred_zero = self.pred.subst(self.var, theory.zero)
-        pred_succ = self.pred.subst(self.var, Fun(theory.succ, (Var(self.var),)))
+        induction_sort = ""
+        if theory.signature is not None:
+            induction_sort = theory.zero.sort_of(theory.signature)
+            successor_rank = theory.signature.rank(theory.succ)
+            if successor_rank != ((induction_sort,), induction_sort):
+                raise ValueError(
+                    f"induction successor {theory.succ!r} must have rank "
+                    f"({induction_sort!r},) -> {induction_sort!r}"
+                )
+        induction_var = Var(self.var, induction_sort)
+        pred_succ = self.pred.subst(self.var, Fun(theory.succ, (induction_var,)))
         if base.concl != pred_zero:
             raise ValueError(f"induction base must prove {pred_zero!r}, got {base.concl!r}")
         if step.concl != Implies(self.pred, pred_succ):
