@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, ClassVar, Generic, TypeVar, cast
+from typing import Any, ClassVar, Generic, NoReturn, TypeVar, cast
 
 _Value = TypeVar("_Value")
 _Context = TypeVar("_Context")
@@ -30,6 +30,26 @@ class Visit(Generic[_Value, _Context]):
 
     value: _Value
     context: _Context
+
+
+@dataclass(frozen=True, slots=True)
+class EmissionLimits:
+    """Deterministic limits for one iterative external-text emission."""
+
+    max_output_bytes: int
+    max_expansions: int
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("max_output_bytes", self.max_output_bytes),
+            ("max_expansions", self.max_expansions),
+        ):
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{name} must be a positive exact int")
+
+
+class EmissionLimitError(ValueError):
+    """An external representation exceeded local deterministic policy."""
 
 
 def case(*types: type[object]) -> Callable[[_Handler], _Handler]:
@@ -96,15 +116,29 @@ class Emitter(Generic[_Value, _Context]):
 
         cls._case_table = MappingProxyType(table)
 
-    def render(self, value: _Value, context: _Context) -> str:
+    def render(
+        self,
+        value: _Value,
+        context: _Context,
+        *,
+        limits: EmissionLimits | None = None,
+    ) -> str:
         """Render ``value`` iteratively, without using the Python call stack."""
         output: list[str] = []
+        output_bytes = 0
+        expansions = 0
         stack: list[object] = [Visit(value, context)]
         while stack:
             piece = stack.pop()
             if type(piece) is str:
+                output_bytes += len(piece.encode("utf-8"))
+                if limits is not None and output_bytes > limits.max_output_bytes:
+                    self.limit_error("bytes", limits.max_output_bytes)
                 output.append(piece)
             elif type(piece) is Visit:
+                expansions += 1
+                if limits is not None and expansions > limits.max_expansions:
+                    self.limit_error("expansions", limits.max_expansions)
                 visit = cast(Visit[Any, Any], piece)
                 expanded = self.dispatch(
                     cast(_Value, visit.value), cast(_Context, visit.context)
@@ -113,6 +147,10 @@ class Emitter(Generic[_Value, _Context]):
             else:
                 raise TypeError(f"invalid emitter piece: {type(piece).__name__}")
         return "".join(output)
+
+    def limit_error(self, kind: str, limit: int) -> NoReturn:
+        """Raise the adapter's deterministic emission-limit error."""
+        raise EmissionLimitError(f"emission {kind} limit exceeded ({limit})")
 
     def dispatch(self, value: _Value, context: _Context) -> tuple[object, ...]:
         """Expand one exact canonical value into forward-order pieces."""
@@ -131,4 +169,10 @@ class Emitter(Generic[_Value, _Context]):
         raise TypeError(f"no exact emitter case for {type(value).__name__}")
 
 
-__all__ = ["Emitter", "Visit", "case"]
+__all__ = [
+    "EmissionLimitError",
+    "EmissionLimits",
+    "Emitter",
+    "Visit",
+    "case",
+]

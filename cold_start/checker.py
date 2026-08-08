@@ -1,8 +1,15 @@
 """The trusted proof checker.
 
-``check`` validates an inert proof tree with exact-type dispatch, then derives
-its sequent iteratively.  Proof nodes contain no validation or inference
-behavior; every accepted rule is visible in this module.
+``check`` validates an inert proof graph with exact-type dispatch, rejects
+cycles, then derives each reachable proof object once in unique postorder.
+Proof nodes contain no validation or inference behavior; every accepted rule is
+visible in this module.
+
+Every rule in this proof language is context-independent downward: a node's
+sequent is a pure function of its exact immutable fields, its children's already
+derived sequents, and the selected validated theory. A future rule whose meaning
+depends on its parent occurrence cannot be admitted without changing the
+memoization key and the soundness argument.
 """
 
 from __future__ import annotations
@@ -152,16 +159,48 @@ def _validate_node(proof: Pf) -> ProofChildren:
     raise TypeError(f"not a proof term: {proof!r}")
 
 
-def validate_proof(proof: object) -> None:
-    """Iteratively validate one exact canonical proof tree."""
+def _validated_postorder(proof: object) -> tuple[Pf, ...]:
+    """Validate an exact proof graph and return one acyclic identity postorder.
+
+    Colors are per-call and keyed by ``id``. The root strongly retains every
+    reachable node until traversal completes, so identities cannot be recycled
+    during this call. An active edge is a cycle; a complete edge is sharing and
+    is not expanded again.
+    """
     if CHECKER_PROOF_TYPES != CANONICAL_PROOF_TYPES:
         raise TypeError("checker proof dispatch is not exhaustive")
-    stack: list[object] = [proof]
+    unseen, active, complete = 0, 1, 2
+    colors: dict[int, int] = {}
+    postorder: list[Pf] = []
+    stack: list[tuple[object, bool]] = [(proof, False)]
     while stack:
-        candidate = stack.pop()
+        candidate, leaving = stack.pop()
         if type(candidate) not in CHECKER_PROOF_TYPES:
             raise TypeError(f"not a proof term: {candidate!r}")
-        stack.extend(_validate_node(cast(Pf, candidate)))
+        node = cast(Pf, candidate)
+        identity = id(node)
+        color = colors.get(identity, unseen)
+        if leaving:
+            if color != active:
+                raise RuntimeError("invalid proof traversal state")
+            colors[identity] = complete
+            postorder.append(node)
+            continue
+        if color == complete:
+            continue
+        if color == active:
+            raise ValueError(f"cycle in proof graph at {type(node).__name__}")
+
+        children = _validate_node(node)
+        colors[identity] = active
+        stack.append((node, True))
+        stack.extend((child, False) for child in reversed(children))
+    return tuple(postorder)
+
+
+def validate_proof(proof: object) -> None:
+    """Iteratively validate one exact canonical acyclic proof graph."""
+    _validated_postorder(proof)
 
 
 def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
@@ -362,21 +401,15 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
     raise TypeError(f"checker has no rule for proof term: {proof!r}")
 
 
-def _derive(proof: Pf, theory: Theory) -> Sequent:
-    order: list[Pf] = []
-    stack = [proof]
-    while stack:
-        candidate = stack.pop()
-        order.append(candidate)
-        stack.extend(_validate_node(candidate))
-
+def _derive(proof: Pf, theory: Theory, postorder: tuple[Pf, ...]) -> Sequent:
+    """Derive an already-validated graph once per exact proof identity."""
     signature = theory.signature
     results: dict[int, Sequent] = {}
 
     def derived(child: Pf) -> Sequent:
         return results[id(child)]
 
-    for candidate in reversed(order):
+    for candidate in postorder:
         sequent = _derive_rule(candidate, theory, derived)
         if signature is not None:
             sequent.sort_check(signature)
@@ -387,8 +420,8 @@ def _derive(proof: Pf, theory: Theory) -> Sequent:
 def check(proof: object, theory: object) -> Sequent:
     """Validate and iteratively re-derive the sequent proved by ``proof``."""
     checked_theory = validate_theory(theory)
-    validate_proof(proof)
-    return _derive(cast(Pf, proof), checked_theory)
+    postorder = _validated_postorder(proof)
+    return _derive(cast(Pf, proof), checked_theory, postorder)
 
 
 __all__ = ["CHECKER_PROOF_TYPES", "check", "sort_check_formula", "validate_proof"]

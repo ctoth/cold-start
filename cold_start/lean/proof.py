@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import NoReturn, TypeVar
 
 from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
 from .. import squaring as _squaring
 from ..checker import check
-from ..emitter import Emitter, Visit, case
+from ..emitter import EmissionLimitError, EmissionLimits, Emitter, Visit, case
 from ..proof import (
     CANONICAL_PROOF_TYPES,
     MP,
@@ -66,6 +66,21 @@ from .syntax import (
 
 _N = TypeVar("_N", bound=Node)
 
+
+@dataclass(frozen=True, slots=True)
+class LeanLimits(EmissionLimits):
+    """Local policy for tree-shaped Lean proof presentation."""
+
+
+class LeanLimitError(EmissionLimitError):
+    """Lean text expansion exceeded its explicit local policy."""
+
+
+DEFAULT_LEAN_LIMITS = LeanLimits(
+    max_output_bytes=32_000_000,
+    max_expansions=2_000_000,
+)
+
 # ---------------------------------------------------------------------------
 # Proof export: one conditional theorem per checked proof
 # ---------------------------------------------------------------------------
@@ -91,7 +106,13 @@ AXIOM_LABELS: dict[Formula, str] = {
 }
 
 
-def export_theorem(name: str, pf: Pf, theory: Theory) -> str:
+def export_theorem(
+    name: str,
+    pf: Pf,
+    theory: Theory,
+    *,
+    limits: LeanLimits = DEFAULT_LEAN_LIMITS,
+) -> str:
     """Render a checked proof as a self-contained Lean 4 `theorem`.
 
     The proof is re-checked here (`check`), so an unproved recipe never reaches
@@ -99,7 +120,7 @@ def export_theorem(name: str, pf: Pf, theory: Theory) -> str:
     axioms -- and the induction principle, if the proof uses `Induct` -- are
     hypotheses of the theorem, over an abstract carrier `M`. No `axiom`, no
     `sorry`: Lean is asked to verify the entailment, not to believe us."""
-    return LeanProofExport(pf, theory).theorem(name)
+    return LeanProofExport(pf, theory, limits).theorem(name)
 
 
 def uses_induction(pf: Pf) -> bool:
@@ -107,12 +128,20 @@ def uses_induction(pf: Pf) -> bool:
     return any(type(n) is Induct for n in _tree(pf))
 
 
-def _tree(node: object) -> Iterator[object]:
-    """Every dataclass node under `node` -- proof terms and the syntax they embed --
-    iteratively (a proof term is a dataclass, so `children` walks it too)."""
-    stack: list[object] = [node]
+def _tree(*roots: object) -> Iterator[object]:
+    """Each dataclass identity under ``roots`` once, iteratively.
+
+    This is inspection for symbol/name/feature discovery, where a repeated edge
+    adds no semantics. Proof-text emission remains deliberately tree-shaped.
+    """
+    seen: set[int] = set()
+    stack: list[object] = list(roots)
     while stack:
         n = stack.pop()
+        identity = id(n)
+        if identity in seen:
+            continue
+        seen.add(identity)
         yield n
         stack.extend(children(n))
 
@@ -120,28 +149,26 @@ def _tree(node: object) -> Iterator[object]:
 def _symbols(nodes: Iterable[object]) -> dict[str, int]:
     """`name -> arity` for every function symbol occurring in `nodes`."""
     arities: dict[str, int] = {}
-    for root in nodes:
-        for n in _tree(root):
-            if type(n) is Fun:
-                arity = len(n.args)
-                if arities.setdefault(n.name, arity) != arity:
-                    raise LeanError(f"symbol {n.name!r} used at two arities")
+    for n in _tree(*nodes):
+        if type(n) is Fun:
+            arity = len(n.args)
+            if arities.setdefault(n.name, arity) != arity:
+                raise LeanError(f"symbol {n.name!r} used at two arities")
     return arities
 
 
 def _var_names(nodes: Iterable[object]) -> set[str]:
-    return {n.name for root in nodes for n in _tree(root) if type(n) is Var}
+    return {n.name for n in _tree(*nodes) if type(n) is Var}
 
 
 def _relations(nodes: Iterable[object]) -> dict[str, int]:
     """`name -> arity` for every relation symbol occurring in `nodes`."""
     arities: dict[str, int] = {}
-    for root in nodes:
-        for node in _tree(root):
-            if type(node) is Rel:
-                arity = len(node.args)
-                if arities.setdefault(node.name, arity) != arity:
-                    raise LeanError(f"relation {node.name!r} used at two arities")
+    for node in _tree(*nodes):
+        if type(node) is Rel:
+            arity = len(node.args)
+            if arities.setdefault(node.name, arity) != arity:
+                raise LeanError(f"relation {node.name!r} used at two arities")
     return arities
 
 
@@ -177,6 +204,7 @@ class LeanProofExport(
 
     pf: Pf
     theory: Theory
+    limits: LeanLimits = DEFAULT_LEAN_LIMITS
     seq: Sequent = field(init=False)
     supply: LeanNames = field(init=False)
     axiom_names: dict[Formula, str] = field(init=False)
@@ -293,7 +321,10 @@ class LeanProofExport(
 
         head = f"theorem {name} " + " ".join(params[:4])
         rest = "".join(f"\n    {p}" for p in params[4:])
-        return f"{head}{rest}\n    : {statement} :=\n  {body}\n"
+        rendered = f"{head}{rest}\n    : {statement} :=\n  {body}\n"
+        if len(rendered.encode("utf-8")) > self.limits.max_output_bytes:
+            self.limit_error("bytes", self.limits.max_output_bytes)
+        return rendered
 
     def model_example(self, name: str, model: LeanModel) -> str:
         """Instantiate the theorem in a completely registered semantic model.
@@ -358,7 +389,10 @@ class LeanProofExport(
         env: dict[Formula, str],
     ) -> str:
         """Render a proof iteratively with environments carried on each visit."""
-        return self.render(pf, _ProofContext(sigma, env))
+        return self.render(pf, _ProofContext(sigma, env), limits=self.limits)
+
+    def limit_error(self, kind: str, limit: int) -> NoReturn:
+        raise LeanLimitError(f"Lean emission {kind} limit exceeded ({limit})")
 
     def unsupported(self, value: object, context: object) -> tuple[object, ...]:
         raise LeanError(f"cannot export the rule {type(value).__name__}")
@@ -521,4 +555,12 @@ class LeanProofExport(
         )
 
 
-__all__ = ["AXIOM_LABELS", "LeanProofExport", "export_theorem", "uses_induction"]
+__all__ = [
+    "AXIOM_LABELS",
+    "DEFAULT_LEAN_LIMITS",
+    "LeanLimitError",
+    "LeanLimits",
+    "LeanProofExport",
+    "export_theorem",
+    "uses_induction",
+]

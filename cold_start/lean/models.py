@@ -28,9 +28,14 @@ def _theory_symbols(theory: Theory) -> dict[str, int]:
     if theory.zero is not None:
         roots.append(theory.zero)
     symbols: dict[str, int] = {}
+    seen: set[int] = set()
     stack = list(roots)
     while stack:
         node = stack.pop()
+        identity = id(node)
+        if identity in seen:
+            continue
+        seen.add(identity)
         if type(node) is Fun:
             arity = len(node.args)
             previous = symbols.setdefault(node.name, arity)

@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+import cold_start.lean.models as lean_models
 from cold_start.lean.models import (
     NAT_PEANO,
     NAT_PRESBURGER,
@@ -15,7 +16,8 @@ from cold_start.peano import PEANO
 from cold_start.presburger import PRESBURGER
 from cold_start.robinson import ROBINSON_PEANO
 from cold_start.squaring import SQUARE_ARITHMETIC
-from cold_start.theory import Theory
+from cold_start.syntax import Eq, Fun
+from cold_start.theory import Signature, Theory
 
 
 def test_only_exact_registered_theories_cash_out() -> None:
@@ -25,6 +27,28 @@ def test_only_exact_registered_theories_cash_out() -> None:
     assert model_for(ROBINSON_PEANO) is None
     assert model_for(replace(PRESBURGER)) is None
     assert model_for(Theory(axioms=frozenset())) is None
+
+
+def test_model_symbol_inspection_deduplicates_shared_syntax(monkeypatch) -> None:
+    shared = Fun("c", ())
+    root = Fun("f", (shared, shared))
+    theory = Theory(
+        axioms=frozenset({Eq(root, root)}),
+        signature=Signature(
+            sorts=frozenset({""}),
+            ranks=(("c", (), ""), ("f", ("", ""), "")),
+        ),
+    )
+    visits: dict[int, int] = {}
+    original_children = lean_models.children
+
+    def counted_children(node: object):
+        visits[id(node)] = visits.get(id(node), 0) + 1
+        return original_children(node)
+
+    monkeypatch.setattr(lean_models, "children", counted_children)
+    assert lean_models._theory_symbols(theory) == {"c": 0, "f": 2}
+    assert visits[id(shared)] == 1
 
 
 def test_model_registration_requires_every_axiom_payment() -> None:

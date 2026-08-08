@@ -32,9 +32,14 @@ REQUIRED_FEATURES = frozenset(
 
 def _tree(*roots: object) -> tuple[object, ...]:
     nodes: list[object] = []
+    seen: set[int] = set()
     stack = list(roots)
     while stack:
         node = stack.pop()
+        identity = id(node)
+        if identity in seen:
+            continue
+        seen.add(identity)
         nodes.append(node)
         stack.extend(children(node))
     return tuple(nodes)

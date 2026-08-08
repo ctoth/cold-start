@@ -12,6 +12,7 @@ from typing import cast
 
 import pytest
 
+import cold_start.checker as checker
 import cold_start.proof as P
 from cold_start.checker import CHECKER_PROOF_TYPES, check, validate_proof
 from cold_start.codec import decode_proof, encode_proof
@@ -345,6 +346,68 @@ def test_serialization_roundtrips():
 
 def test_validate_proof_runs_on_wellformed():
     validate_proof(left_identity_proof())  # must not raise
+
+
+def test_exact_canonical_proof_cycle_is_rejected_without_hanging() -> None:
+    script = """
+from cold_start.checker import check
+from cold_start.peano import PEANO
+from cold_start.proof import Refl, Sym
+from cold_start.syntax import Var
+
+proof = Sym(Refl(Var("x")))
+object.__setattr__(proof, "sub", proof)
+try:
+    check(proof, PEANO)
+except ValueError as exc:
+    assert "cycle" in str(exc).lower()
+else:
+    raise AssertionError("cyclic proof graph was accepted")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=3,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_shared_proof_is_validated_and_derived_once_by_identity(monkeypatch) -> None:
+    shared = P.Refl(Var("x"))
+    proof = P.Trans(shared, shared)
+    validation_count: dict[int, int] = {}
+    derivation_count: dict[int, int] = {}
+    original_validate = checker._validate_node
+    original_derive = checker._derive_rule
+
+    def counted_validate(node: Pf):
+        validation_count[id(node)] = validation_count.get(id(node), 0) + 1
+        return original_validate(node)
+
+    def counted_derive(node: Pf, theory: Theory, derived):
+        derivation_count[id(node)] = derivation_count.get(id(node), 0) + 1
+        return original_derive(node, theory, derived)
+
+    monkeypatch.setattr(checker, "_validate_node", counted_validate)
+    monkeypatch.setattr(checker, "_derive_rule", counted_derive)
+
+    assert checker.check(proof, PEANO).concl == Eq(Var("x"), Var("x"))
+    assert validation_count[id(shared)] == 1
+    assert derivation_count[id(shared)] == 1
+
+
+def test_identity_sharing_changes_neither_result_nor_rejection() -> None:
+    x, y = Var("x"), Var("y")
+    shared = P.Refl(x)
+    assert check(P.Trans(shared, shared), PEANO) == check(
+        P.Trans(P.Refl(x), P.Refl(x)), PEANO
+    )
+
+    with pytest.raises(ValueError, match="middle terms differ"):
+        check(P.Trans(P.Refl(x), P.Refl(y)), PEANO)
 
 
 def test_proof_terms_are_inert_and_checker_dispatch_is_exhaustive():

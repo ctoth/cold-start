@@ -12,12 +12,15 @@ import os
 import re
 import shutil
 import subprocess
+from itertools import islice
 from pathlib import Path
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import cold_start.lean.coverage as lean_coverage
+import cold_start.lean.proof as lean_proof
 from cold_start.lean.corpus import (
     CORPUS_NAMES,
     CORPUS_PATH,
@@ -45,7 +48,7 @@ from cold_start.presburger import (
     SUCC_NEQ_ZERO,
 )
 from cold_start.presburger_proofs import add_proof, left_identity_proof
-from cold_start.proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Refl
+from cold_start.proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Refl, Sym, Trans
 from cold_start.robinson import ADD_ONE, ADD_SUCC, MUL_SUCC, ROBINSON_PEANO
 from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.syntax import (
@@ -316,6 +319,36 @@ def test_corpus_semantically_covers_the_proof_language_and_official_theories():
     assert report.missing_proof_rules == frozenset()
     assert report.missing_features == frozenset()
     assert report.missing_theories == frozenset()
+
+
+def test_lean_coverage_inspection_deduplicates_identity_and_terminates_on_cycles() -> None:
+    shared = Refl(Var("x"))
+    nodes = lean_coverage._tree(Trans(shared, shared))
+    assert sum(node is shared for node in nodes) == 1
+
+    cyclic = Sym(shared)
+    object.__setattr__(cyclic, "sub", cyclic)
+    assert tuple(islice(lean_coverage._tree(cyclic), 3)) == (cyclic,)
+
+
+def test_lean_tree_emission_has_expansion_and_byte_limits() -> None:
+    shared = Refl(Var("x"))
+    proof = Trans(shared, shared)
+
+    with pytest.raises(lean_proof.LeanLimitError, match="expansions"):
+        lean_proof.export_theorem(
+            "shared",
+            proof,
+            PEANO,
+            limits=lean_proof.LeanLimits(max_output_bytes=10_000, max_expansions=2),
+        )
+    with pytest.raises(lean_proof.LeanLimitError, match="bytes"):
+        lean_proof.export_theorem(
+            "shared",
+            proof,
+            PEANO,
+            limits=lean_proof.LeanLimits(max_output_bytes=64, max_expansions=100),
+        )
 
 
 def test_corpus_epilogue_instantiates_the_arithmetic_theorems_at_Nat(corpus_text: str):
