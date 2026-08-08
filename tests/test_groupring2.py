@@ -8,6 +8,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from cold_start.algebra import COMM
+from cold_start.checker import check
 from cold_start.groupring2 import (
     A_INV,
     B_INV,
@@ -19,6 +20,8 @@ from cold_start.groupring2 import (
     A,
     B,
 )
+from cold_start.kaplansky_proofs import lemma_library
+from cold_start.sequent import Sequent
 from cold_start.syntax import Fun, Term
 from cold_start.verify import THEORIES
 
@@ -119,3 +122,14 @@ def test_generators_inverses_and_relations_hold_in_independent_model():
     assert _rmul(evaluate(B_INV), evaluate(B)) == R_ONE
     for relation in (GROUP_REL_A, GROUP_REL_B):
         assert evaluate(relation.lhs) == evaluate(relation.rhs)
+
+
+def test_normal_form_lemma_library_is_checked_and_model_guarded():
+    rules = lemma_library()
+    assert len(rules) == 32
+    for rule in rules:
+        assert check(rule.proof, GROUP_RING_P2) == Sequent(frozenset(), rule.eq)
+        ground = rule.eq
+        for name in ground.free_vars():
+            ground = ground.subst(name, A)
+        assert evaluate(ground.lhs) == evaluate(ground.rhs)
