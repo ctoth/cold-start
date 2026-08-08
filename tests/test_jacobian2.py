@@ -27,13 +27,18 @@ from cold_start.diffring2 import (
     NONTRIVIAL,
     dx,
 )
+from cold_start.diffring2_proofs import (
+    derivation_one_proofs,
+    derivation_zero_proofs,
+    mul_zero_rule,
+    zero_add_rule,
+    zero_mul_rule,
+)
 from cold_start.jacobian2_proofs import (
     COLLISION_POINTS,
     COLLISION_VALUE,
     collision_proofs,
     collision_statements,
-    derivation_one_proofs,
-    derivation_zero_proofs,
     derivative_proofs,
     derivative_statements,
     det_proof,
@@ -41,11 +46,8 @@ from cold_start.jacobian2_proofs import (
     f1,
     f2,
     f3,
-    mul_zero_rule,
     noninjectivity_proof,
     noninjectivity_statement,
-    zero_add_rule,
-    zero_mul_rule,
 )
 from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Fun, Term, Var
