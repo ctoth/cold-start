@@ -20,7 +20,12 @@ from cold_start.groupring2 import (
     A,
     B,
 )
-from cold_start.kaplansky_proofs import lemma_library
+from cold_start.kaplansky_proofs import (
+    ground_multiplication_lemmas,
+    group_term,
+    lemma_library,
+    witness_coordinates,
+)
 from cold_start.sequent import Sequent
 from cold_start.syntax import Fun, Term
 from cold_start.verify import THEORIES
@@ -126,10 +131,23 @@ def test_generators_inverses_and_relations_hold_in_independent_model():
 
 def test_normal_form_lemma_library_is_checked_and_model_guarded():
     rules = lemma_library()
-    assert len(rules) == 32
+    assert len(rules) == 40
     for rule in rules:
         assert check(rule.proof, GROUP_RING_P2) == Sequent(frozenset(), rule.eq)
         ground = rule.eq
         for name in ground.free_vars():
             ground = ground.subst(name, A)
         assert evaluate(ground.lhs) == evaluate(ground.rhs)
+
+
+def test_witness_words_and_all_uv_ground_products_are_certified():
+    u, v = witness_coordinates()
+    assert len(u) == len(v) == 21
+    for coordinate in (*u, *v):
+        assert evaluate(group_term(coordinate)) == frozenset({coordinate})
+
+    rules = ground_multiplication_lemmas(u, v)
+    assert len(rules) == 441
+    for rule in rules:
+        assert check(rule.proof, GROUP_RING_P2) == Sequent(frozenset(), rule.eq)
+        assert evaluate(rule.eq.lhs) == evaluate(rule.eq.rhs)
