@@ -14,15 +14,23 @@ import pytest
 
 import cold_start.checker as checker
 import cold_start.proof as P
+from cold_start.certificate import Certificate
 from cold_start.checker import CHECKER_PROOF_TYPES, check, validate_proof
-from cold_start.codec import decode_proof, encode_proof
+from cold_start.codec import (
+    decode_certificate,
+    encode_certificate,
+    make_certificate,
+    theory_fingerprint,
+)
 from cold_start.peano import PEANO
 from cold_start.presburger import (
     ADD_SUCC_F,
     ADD_ZERO_F,
+    PRESBURGER,
 )
 from cold_start.presburger_proofs import left_identity_proof
 from cold_start.proof import CANONICAL_PROOF_TYPES, Pf
+from cold_start.robinson import ROBINSON_PEANO
 from cold_start.robinson_proofs import robinson_add_proof
 from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Formula, Fun, Implies, Term, Var, validate
@@ -31,6 +39,14 @@ from cold_start.vocabulary import ZERO, S, add
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)  # `cold_start` package lives at the repo root, not in tests/
+
+
+def _proof_bytes(key: str, theory: Theory, proof: Pf) -> bytes:
+    return encode_certificate(make_certificate(key, theory, proof))
+
+
+def _roundtrip_proof(key: str, theory: Theory, proof: Pf) -> Pf:
+    return decode_certificate(_proof_bytes(key, theory, proof)).proof
 
 
 # --- the headline theorem -------------------------------------------------
@@ -339,7 +355,7 @@ def test_induction_preserves_a_hypothesis_without_the_induction_variable():
 
 def test_serialization_roundtrips():
     pf = left_identity_proof()
-    again = decode_proof(encode_proof(pf))
+    again = _roundtrip_proof("peano", PEANO, pf)
     assert again == pf  # structural equality survives serialization
     assert check(again, PEANO).concl == check(pf, PEANO).concl
 
@@ -454,7 +470,7 @@ def _run_verify(stdin_bytes: bytes, *args: str):
 def test_cross_process_verifies_valid_proof():
     """The De Bruijn payoff: a fresh process trusting only checker.py + the
     theory re-derives the proof from inert bytes."""
-    proof_bytes = encode_proof(left_identity_proof())
+    proof_bytes = _proof_bytes("peano", PEANO, left_identity_proof())
     result = _run_verify(proof_bytes)
     assert result.returncode == 0, result.stderr
     out = result.stdout.decode()
@@ -465,16 +481,18 @@ def test_cross_process_verifies_valid_proof():
 def test_cross_process_verifies_under_presburger():
     # `0 + n = n` cites only the addition axioms, so it checks under the
     # addition-only fragment too -- if the verifier knows that theory exists.
-    result = _run_verify(encode_proof(left_identity_proof()), "--theory", "presburger")
+    result = _run_verify(_proof_bytes("presburger", PRESBURGER, left_identity_proof()))
     assert result.returncode == 0, result.stderr
     assert "VERIFIED [presburger]" in result.stdout.decode()
 
 
-def test_cross_process_verifies_file_with_explicit_theory(tmp_path):
-    proof_path = tmp_path / "left-identity.hmb"
-    proof_path.write_bytes(encode_proof(left_identity_proof()))
+def test_cross_process_verifies_file_with_embedded_theory(tmp_path):
+    proof_path = tmp_path / "left-identity.cspc"
+    proof_path.write_bytes(
+        _proof_bytes("presburger", PRESBURGER, left_identity_proof())
+    )
 
-    result = _run_verify(b"", str(proof_path), "--theory", "presburger")
+    result = _run_verify(b"", str(proof_path))
 
     assert result.returncode == 0, result.stderr
     assert "VERIFIED [presburger]" in result.stdout.decode()
@@ -483,16 +501,23 @@ def test_cross_process_verifies_file_with_explicit_theory(tmp_path):
 def test_cross_process_verifies_under_robinson():
     # The (1, S, ·) theory with `+` eliminated: a fresh process re-derives
     # 2 + 3 = 5 from Robinson's own axioms, as a bridge with no `+` symbol.
-    proof_bytes = encode_proof(robinson_add_proof(2, 3))
-    result = _run_verify(proof_bytes, "--theory", "robinson")
+    proof_bytes = _proof_bytes("robinson", ROBINSON_PEANO, robinson_add_proof(2, 3))
+    result = _run_verify(proof_bytes)
     assert result.returncode == 0, result.stderr
     assert "VERIFIED [robinson]" in result.stdout.decode()
 
 
 def test_cross_process_rejects_unknown_theory():
-    result = _run_verify(encode_proof(left_identity_proof()), "--theory", "nonesuch")
-    assert result.returncode == 2
-    assert "unknown theory" in result.stderr.decode()
+    certificate = make_certificate("peano", PEANO, left_identity_proof())
+    unknown = Certificate(
+        "nonesuch",
+        certificate.theory_fingerprint,
+        certificate.claim,
+        certificate.proof,
+    )
+    result = _run_verify(encode_certificate(unknown))
+    assert result.returncode == 1
+    assert "unknown embedded theory" in result.stderr.decode()
 
 
 def test_cross_process_rejects_missing_theory_value():
@@ -528,8 +553,14 @@ def test_cross_process_rejects_malformed_bytes():
 def test_cross_process_rejects_forged_axiom():
     # An adversary emits a well-formed proof term that simply claims a false axiom
     # (0 = S(0), i.e. 0 = 1). The checker re-derives and rejects: not an axiom.
-    forged = encode_proof(P.Axiom(Eq(Fun("0", ()), Fun("S", (Fun("0", ()),)))))
-    result = _run_verify(forged)
+    false_claim = Eq(Fun("0", ()), Fun("S", (Fun("0", ()),)))
+    forged = Certificate(
+        "peano",
+        theory_fingerprint(PEANO),
+        Sequent(frozenset(), false_claim),
+        P.Axiom(false_claim),
+    )
+    result = _run_verify(encode_certificate(forged))
     assert result.returncode == 1
     assert "REJECTED" in result.stderr.decode()
 

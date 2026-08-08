@@ -1,27 +1,10 @@
-"""Independent proof verifier.
+"""Independent verifier for portable, embedded-theory certificates.
 
-Reads a binary proof term (from a file argument or stdin), checks it against a
-named theory, and prints the resulting sequent. Exit code 0 on a valid proof,
-1 on rejection. This is the De Bruijn criterion made concrete: a proof produced
-anywhere -- by a buggy prover, an adversary, another machine -- is trusted only
-to the extent this small program re-derives it.
-
-The wire form is hamblin's recursion-free postfix bytes, not JSON: a proof nested
-arbitrarily deep (or a hostile, deeply nested blob) decodes -- or is cleanly
-REJECTED -- without a `RecursionError` at the front door. hamblin reports a
-malformed stream as `HamblinError`, a `ValueError`, so the existing rejection path
-already covers it.
-
-Usage:
-    python verify.py proof.hmb
-    cat proof.hmb | python verify.py
-    python verify.py proof.hmb --theory peano
-
-The theories are `peano`, `presburger` (the addition-only fragment),
-`robinson` (the (1, S, ·) basis with `+` eliminated) and `diffring2` (the
-differential char-2 ring the Jacobian certificate lives in). A proof is checked
-against exactly the one theory named, so citing an axiom from another is a
-rejection.
+The artifact names its theory and carries that theory's semantic fingerprint and
+claimed sequent. The verifier resolves only its closed registry, checks the
+fingerprint, re-derives the proof with the ordinary checker, and compares the
+exact claim. The command accepts a file path or standard input; there is no
+external theory selector or raw-proof fallback.
 """
 
 from __future__ import annotations
@@ -32,13 +15,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 
+from .certificate import Certificate
 from .checker import check
-from .codec import decode_proof
+from .codec import decode_certificate, theory_fingerprint
 from .diffring2 import DIFF_RING_2
 from .groupring2 import GROUP_RING_P2
 from .peano import PEANO
 from .presburger import PRESBURGER
 from .robinson import ROBINSON_PEANO
+from .sequent import Sequent
 from .theory import Theory
 
 THEORIES: Mapping[str, Theory] = MappingProxyType(
@@ -52,13 +37,30 @@ THEORIES: Mapping[str, Theory] = MappingProxyType(
 )
 
 
+def verify_certificate(
+    certificate: Certificate,
+    theories: Mapping[str, Theory] = THEORIES,
+) -> Sequent:
+    """Resolve, fingerprint, check, and claim-match one inert certificate."""
+    if type(certificate) is not Certificate:
+        raise TypeError("expected an exact Certificate")
+    theory = theories.get(certificate.theory_key)
+    if theory is None:
+        raise ValueError(f"unknown embedded theory: {certificate.theory_key!r}")
+    if theory_fingerprint(theory) != certificate.theory_fingerprint:
+        raise ValueError("embedded theory fingerprint mismatch")
+    derived = check(certificate.proof, theory)
+    if derived != certificate.claim:
+        raise ValueError("certificate claim mismatch")
+    return derived
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cold-start-verify",
-        description="Decode and independently check one Hamblin proof term.",
+        description="Decode and independently check one portable certificate.",
     )
-    parser.add_argument("path", nargs="?", help="proof file; omit to read standard input")
-    parser.add_argument("--theory", default="peano", help="peano, presburger, or robinson")
+    parser.add_argument("path", nargs="?", help="certificate file; omit for stdin")
     return parser
 
 
@@ -76,24 +78,18 @@ def _read_input(path: str | None) -> bytes | None:
 
 def main(argv: list[str]) -> int:
     args = _parser().parse_args(argv)
-
-    theory = THEORIES.get(args.theory)
-    if theory is None:
-        print(f"unknown theory: {args.theory!r} (have: {', '.join(THEORIES)})", file=sys.stderr)
-        return 2
-
     data = _read_input(args.path)
     if data is None:
         return 2
 
     try:
-        pf = decode_proof(data)
-        sequent = check(pf, theory)
+        certificate = decode_certificate(data)
+        sequent = verify_certificate(certificate)
     except (ValueError, TypeError) as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)
         return 1
 
-    print(f"VERIFIED [{args.theory}]: {sequent}")
+    print(f"VERIFIED [{certificate.theory_key}]: {sequent}")
     return 0
 
 
@@ -104,3 +100,6 @@ def cli() -> None:
 
 if __name__ == "__main__":
     cli()
+
+
+__all__ = ["THEORIES", "main", "verify_certificate"]

@@ -10,10 +10,17 @@ from __future__ import annotations
 import pytest
 from semantics import Model, evaluate
 
+from cold_start.certificate import Certificate
 from cold_start.checker import check
-from cold_start.codec import decode_formula, decode_proof, encode_formula, encode_proof
+from cold_start.codec import (
+    decode_certificate,
+    decode_formula,
+    encode_certificate,
+    encode_formula,
+)
 from cold_start.notation import format_formula, parse_formula
 from cold_start.proof import Assume, Axiom
+from cold_start.sequent import Sequent
 from cold_start.syntax import Rel, Var, validate
 from cold_start.theory import Signature, Theory
 
@@ -22,7 +29,13 @@ def test_relation_round_trips_through_syntax_and_proof_bytes():
     claim = Rel("|", (Var("a"), Var("b")))
 
     assert decode_formula(encode_formula(claim)) == claim
-    assert decode_proof(encode_proof(Assume(claim))) == Assume(claim)
+    certificate = Certificate(
+        "unused",
+        b"\x00" * 32,
+        Sequent(frozenset({claim}), claim),
+        Assume(claim),
+    )
+    assert decode_certificate(encode_certificate(certificate)).proof == Assume(claim)
 
 
 def test_relation_args_are_snapshotted_and_exact_type_validated():

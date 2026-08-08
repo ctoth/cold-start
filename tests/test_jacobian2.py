@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 from cold_start.checker import check
-from cold_start.codec import encode_proof
+from cold_start.codec import encode_certificate, make_certificate
 from cold_start.diffring2 import (
     CHAR2,
     DERIVATIONS,
@@ -231,9 +231,11 @@ def test_noninjectivity_is_an_existential_theorem() -> None:
 def test_collision_proof_verifies_in_a_fresh_process() -> None:
     """The De Bruijn payoff, end to end: one collision proof over the wire,
     re-checked by `verify` in a separate process against the named theory."""
-    proof_bytes = encode_proof(collision_proofs()[0])
+    proof_bytes = encode_certificate(
+        make_certificate("diffring2", DIFF_RING_2, collision_proofs()[0])
+    )
     result = subprocess.run(
-        [sys.executable, "-m", "cold_start.verify", "--theory", "diffring2"],
+        [sys.executable, "-m", "cold_start.verify"],
         input=proof_bytes,
         capture_output=True,
         check=False,

@@ -10,14 +10,16 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 import cold_start.proof as P
+from cold_start.certificate import Certificate
 from cold_start.checker import check
 from cold_start.codec import (
+    decode_certificate,
     decode_formula,
-    decode_proof,
     decode_term,
+    encode_certificate,
     encode_formula,
-    encode_proof,
     encode_term,
+    theory_fingerprint,
 )
 from cold_start.peano import PEANO
 from cold_start.peano_proofs import mul_proof
@@ -47,6 +49,20 @@ from cold_start.syntax import (
     validate,
 )
 from cold_start.vocabulary import ZERO, add, mul, numeral
+
+_WIRE_TERM = Var("__wire")
+_WIRE_CLAIM = Sequent(frozenset(), Eq(_WIRE_TERM, _WIRE_TERM))
+_PEANO_FINGERPRINT = theory_fingerprint(PEANO)
+
+
+def _proof_bytes(proof: P.Pf) -> bytes:
+    return encode_certificate(
+        Certificate("peano", _PEANO_FINGERPRINT, _WIRE_CLAIM, proof)
+    )
+
+
+def _roundtrip_proof(proof: P.Pf) -> P.Pf:
+    return decode_certificate(_proof_bytes(proof)).proof
 
 # --- strategies -----------------------------------------------------------
 
@@ -179,7 +195,7 @@ def test_every_formula_kind_round_trips(item):
 @given(st.sampled_from(list(PROOF_EXAMPLES.items())))
 def test_every_proof_kind_round_trips(item):
     cls, proof = item
-    decoded = decode_proof(encode_proof(proof))
+    decoded = _roundtrip_proof(proof)
     assert type(decoded) is cls
     assert decoded == proof
 
@@ -196,9 +212,9 @@ def test_formula_roundtrips(f):
 
 @given(proofs())
 def test_proof_roundtrips(pf):
-    assert decode_proof(encode_proof(pf)) == pf
-    assert decode_proof(encode_proof(pf)) == decode_proof(encode_proof(pf))
-    assert encode_proof(pf) == encode_proof(pf)  # encoding is deterministic
+    assert _roundtrip_proof(pf) == pf
+    assert _roundtrip_proof(pf) == _roundtrip_proof(pf)
+    assert _proof_bytes(pf) == _proof_bytes(pf)  # encoding is deterministic
 
 
 def test_deep_proof_survives_serialization_without_recursion():
@@ -221,7 +237,7 @@ def test_deep_proof_survives_serialization_without_recursion():
     old = _sys.getrecursionlimit()
     _sys.setrecursionlimit(300)  # < 1% of the term depth
     try:
-        seq = check(decode_proof(encode_proof(pf)), theory)
+        seq = check(_roundtrip_proof(pf), theory)
     finally:
         _sys.setrecursionlimit(old)
     assert seq.concl == Eq(t, t)
@@ -400,7 +416,7 @@ def test_checker_agrees_with_addition(a, b):
 @settings(deadline=None)
 def test_serialization_preserves_checked_sequent(a, b):
     pf = prove_add(a, b)
-    assert check(pf, PEANO) == check(decode_proof(encode_proof(pf)), PEANO)
+    assert check(pf, PEANO) == check(_roundtrip_proof(pf), PEANO)
 
 
 @given(st.integers(0, 20), st.integers(0, 20))
@@ -427,7 +443,7 @@ def _left_identity_induction():
 def test_induction_proof_checks_and_serializes():
     pred, pf = _left_identity_induction()
     assert check(pf, PEANO).concl == pred
-    assert check(decode_proof(encode_proof(pf)), PEANO) == check(pf, PEANO)
+    assert check(_roundtrip_proof(pf), PEANO) == check(pf, PEANO)
 
 
 @given(VAR_NAMES)

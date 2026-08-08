@@ -12,8 +12,10 @@ The design is the **De Bruijn criterion**: separate an untrusted, possibly-large
 - `check(proof, theory)` (`checker.py`) re-derives the `Sequent` the proof proves,
   or raises. A `Sequent(hyps, concl)` is plain data you
   can fabricate freely; its authority is `check()` *returning* it, never the value.
-- `codec.py` is the single untrusted Hamblin boundary; `verify.py` decodes through
-  it and re-checks the proof in a fresh process.
+- `codec.py` owns standalone Hamblin syntax bytes and the canonical portable DAG
+  certificate boundary. `verify.py` resolves the certificate's embedded theory,
+  checks its semantic fingerprint and claim, and re-checks the proof in a fresh
+  process.
 
 Trust = the exact-type gates and the structural/rule/sort-checking methods they
 guard in `syntax.py`, `proof.py`, and `sequent.py`, driven by `checker.py`, plus
@@ -94,11 +96,14 @@ already held the input.
 
 ## External adapters (`codec.py`, `emitter.py`, and `notation.py`)
 
-Serialization is not a syntax/proof responsibility. `codec.py` builds its registries
-from the canonical owner sets and exposes explicit `encode_term`/`decode_term`,
-`encode_formula`/`decode_formula`, and `encode_proof`/`decode_proof` boundaries.
-Decoded structures are exact-root checked and validated before they can reach the
-checker; the trusted core never imports the codec.
+Serialization is not a syntax/proof responsibility. `codec.py` builds its
+registries from the canonical owner sets and exposes standalone
+`encode_term`/`decode_term` and `encode_formula`/`decode_formula` adapters. Proofs
+cross the external boundary only through versioned `Certificate` values encoded
+as canonical syntax/proof DAG tables. The artifact embeds the theory key,
+semantic fingerprint, and exact claimed sequent. Decoded structures are
+exact-root checked and validated before they can reach the checker; the trusted
+core never imports the codec.
 
 Human notation and Lean rendering are external tree interpretations. `emitter.py`
 provides their one iterative mechanism: metadata-only `@case` declarations become
@@ -167,8 +172,8 @@ axioms), and concrete instances of her bridge are **derived theorems**: for posi
 (A4' `a + 1 = S a`, A5' `a + b = c → a + S b = S c`) into a proof of
 `bridge(a, b, a+b)`, which the trusted checker re-derives to a hypothesis-free
 sequent — so `2 + 3 = 5` arrives as an identity in `S` and `·` with no `+` symbol in
-it. `tests/test_robinson.py` checks that for every `a, b` in 1..5, and `verify.py
---theory robinson` re-checks it in a fresh process.
+it. `tests/test_robinson.py` checks that for every `a, b` in 1..5, and an
+embedded `robinson` certificate re-checks it in a fresh process.
 
 Half of Robinson's general definability theorem is now derived too, for **all** `a, b`
 at once rather than per instance: `robinson_proofs.bridge_theorem()` proves

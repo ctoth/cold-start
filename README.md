@@ -50,10 +50,11 @@ The code is the `cold_start/` package (flat, no src-layout):
   implication, letting `P(n):=n=0`, x:=1 derive `1 = 0`). The rule keeps the
   step quantified correctly and enforces *var not free in the hypotheses*. The
   exploit is a permanent regression test.
-- **`cold_start/codec.py`** — the single untrusted Hamblin wire boundary. It owns
-  registries and explicit term/formula/proof encode/decode APIs, validates exact
-  roots and complete decoded structures, and is imported by `verify.py`, never by
-  the trusted core.
+- **`cold_start/certificate.py` / `cold_start/codec.py`** — inert portable
+  certificate data and its untrusted canonical DAG wire owner. Standalone
+  term/formula Hamblin adapters remain available, but proofs cross the external
+  boundary only with an embedded theory key, semantic fingerprint, and exact
+  claimed sequent. The trusted core never imports the codec.
 - **`cold_start/emitter.py`** — one exact-type, iterative external-text emission
   mechanism used by notation and Lean adapters. Its metadata-only `@case`
   declarations are checked for complete canonical coverage at class creation.
@@ -162,8 +163,10 @@ The code is the `cold_start/` package (flat, no src-layout):
 - **`cold_start/ledger.py`** — the bridge ledger: every landed artifact of
   either kind re-verified and measured in one table
   (`uv run python -m cold_start.ledger`).
-- **`cold_start/verify.py`** — a CLI that checks a binary proof in a **separate
-  process**, trusting only `checker.py` + the named theory. The De Bruijn payoff.
+- **`cold_start/verify.py`** — a CLI that checks a portable certificate in a
+  **separate process**. It resolves only the embedded theory key, compares the
+  semantic fingerprint and exact claim, and invokes the ordinary checker. There
+  is no external theory selector or raw-proof fallback.
 - **`cold_start/lean/syntax.py`**, **`cold_start/lean/proof.py`**,
   **`cold_start/lean/models.py`**, and **`cold_start/lean/corpus.py`** — untrusted
   Lean 4 statement, proof-export, exact semantic-model registry, and corpus
@@ -187,12 +190,16 @@ The code is the `cold_start/` package (flat, no src-layout):
 Managed with [uv](https://docs.astral.sh/uv/) — isolated `.venv`, locked deps.
 
 ```sh
-pwsh -File tools/gate.ps1              # pytest, Ruff, Pyright basic
+pwsh -File tools/gate.ps1              # tests, Ruff, Pyright, corpus, Lean
 uv run python -m cold_start.lean       # regenerate the checked-in Lean corpus
 
-# verify a hamblin-encoded proof in a fresh process, end to end:
-# cold_start.codec.encode_proof(...) produces the wire bytes.
-uv run python -m cold_start.verify proof.hmb
+# verify a portable certificate in a fresh process, end to end:
+# encode_certificate(make_certificate("peano", PEANO, proof)) produces the bytes.
+uv run python -m cold_start.verify proof.cspc
+
+# mutation is a separate explicit assurance surface (both campaigns run in CI):
+uv run python tools/mutate.py --campaign logical
+uv run python tools/mutate.py --campaign portable
 ```
 
 The same lockfile-backed gate, generated-file check, and Lean compilation run in

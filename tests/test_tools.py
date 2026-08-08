@@ -18,18 +18,41 @@ EXPECTED_TRUSTED_SOURCES = (
     Path("cold_start/syntax.py"),
     Path("cold_start/theory.py"),
 )
+EXPECTED_PORTABLE_SOURCES = (
+    Path("cold_start/certificate.py"),
+    Path("cold_start/codec.py"),
+    Path("cold_start/verify.py"),
+)
 
 
-def test_mutation_campaign_equals_the_declared_trusted_base():
-    assert mutate.TRUSTED_SOURCES == EXPECTED_TRUSTED_SOURCES
-    assert mutate.resolve_campaign_sources(REPO_ROOT, []) == EXPECTED_TRUSTED_SOURCES
+def test_mutation_campaigns_equal_the_declared_source_boundaries():
+    assert mutate.MUTATION_CAMPAIGNS["logical"].sources == EXPECTED_TRUSTED_SOURCES
+    assert mutate.MUTATION_CAMPAIGNS["portable"].sources == EXPECTED_PORTABLE_SOURCES
+    assert (
+        mutate.resolve_campaign_sources(REPO_ROOT, "logical", [])
+        == EXPECTED_TRUSTED_SOURCES
+    )
+    assert (
+        mutate.resolve_campaign_sources(REPO_ROOT, "portable", [])
+        == EXPECTED_PORTABLE_SOURCES
+    )
 
 
 def test_mutation_campaign_rejects_duplicate_sources():
     with pytest.raises(ValueError, match="duplicate mutation source"):
         mutate.resolve_campaign_sources(
             REPO_ROOT,
+            "logical",
             ["cold_start/checker.py", "cold_start/checker.py"],
+        )
+
+
+def test_mutation_campaign_rejects_a_source_from_the_other_boundary():
+    with pytest.raises(ValueError, match="outside the portable campaign"):
+        mutate.resolve_campaign_sources(
+            REPO_ROOT,
+            "portable",
+            ["cold_start/checker.py"],
         )
 
 
@@ -55,7 +78,7 @@ def test_mutation_cli_rejects_an_absolute_target(tmp_path: Path):
     before = target.read_bytes()
 
     result = subprocess.run(
-        [sys.executable, "tools/mutate.py", str(target)],
+        [sys.executable, "tools/mutate.py", "--campaign", "logical", str(target)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

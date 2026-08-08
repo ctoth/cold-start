@@ -5,10 +5,11 @@ creates a detached temporary Git worktree, mutates the corresponding file there,
 runs the focused tests there, removes the worktree, and leaves the caller's
 checkout untouched even if a mutant or test run fails.
 
-With no arguments the complete declared trusted base is mutated.  Pass one or
-more repository-relative paths for a focused kernel campaign.
+The named ``logical`` and ``portable`` campaigns have separate source and test
+slices. Pass one or more repository-relative paths for a focused run inside the
+selected campaign.
 
-Usage:  uv run python tools/mutate.py [cold_start/checker.py ...]
+Usage:  uv run python tools/mutate.py --campaign logical [source ...]
 """
 
 from __future__ import annotations
@@ -22,15 +23,56 @@ import sys
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Literal
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TRUSTED_SOURCES = (
-    Path("cold_start/checker.py"),
-    Path("cold_start/proof.py"),
-    Path("cold_start/sequent.py"),
-    Path("cold_start/syntax.py"),
-    Path("cold_start/theory.py"),
+CampaignName = Literal["logical", "portable"]
+
+
+@dataclass(frozen=True, slots=True)
+class MutationCampaign:
+    sources: tuple[Path, ...]
+    tests: tuple[str, ...]
+
+
+MUTATION_CAMPAIGNS = MappingProxyType(
+    {
+        "logical": MutationCampaign(
+            sources=(
+                Path("cold_start/checker.py"),
+                Path("cold_start/proof.py"),
+                Path("cold_start/sequent.py"),
+                Path("cold_start/syntax.py"),
+                Path("cold_start/theory.py"),
+            ),
+            tests=(
+                "tests/test_checker.py",
+                "tests/test_kernel_boundaries.py",
+                "tests/test_theory.py",
+                "tests/test_quantifiers.py",
+                "tests/test_quant_soundness.py",
+                "tests/test_logic.py",
+                "tests/test_sorts.py",
+                "tests/test_relations.py",
+                "tests/test_properties.py",
+                "tests/test_rings.py",
+            ),
+        ),
+        "portable": MutationCampaign(
+            sources=(
+                Path("cold_start/certificate.py"),
+                Path("cold_start/codec.py"),
+                Path("cold_start/verify.py"),
+            ),
+            tests=(
+                "tests/test_certificate.py",
+                "tests/test_codec.py",
+            ),
+        ),
+    }
 )
 
 CMP_SWAP: dict[type[ast.cmpop], type[ast.cmpop]] = {
@@ -79,15 +121,23 @@ def resolve_source(repo_root: Path, requested: str) -> Path:
     return relative
 
 
-def resolve_campaign_sources(repo_root: Path, requested: list[str]) -> tuple[Path, ...]:
+def resolve_campaign_sources(
+    repo_root: Path,
+    campaign: CampaignName,
+    requested: list[str],
+) -> tuple[Path, ...]:
     """Resolve an explicit focused campaign or the complete trusted base."""
+    declared = MUTATION_CAMPAIGNS[campaign].sources
     sources = (
         tuple(resolve_source(repo_root, source) for source in requested)
         if requested
-        else TRUSTED_SOURCES
+        else declared
     )
     if len(sources) != len(set(sources)):
         raise ValueError("duplicate mutation source")
+    outside = tuple(source for source in sources if source not in declared)
+    if outside:
+        raise ValueError(f"source is outside the {campaign} campaign: {outside[0]}")
     return sources
 
 
@@ -185,7 +235,7 @@ def _build(tree: ast.AST, target: int) -> tuple[ast.AST, str, int]:
     return new, (desc[0] if desc else ""), counter[0]
 
 
-def _test_command() -> list[str]:
+def _test_command(campaign: CampaignName) -> list[str]:
     return [
         sys.executable,
         "-m",
@@ -194,20 +244,11 @@ def _test_command() -> list[str]:
         "-x",
         "-k",
         "not deep and not iterative",
-        "tests/test_checker.py",
-        "tests/test_kernel_boundaries.py",
-        "tests/test_theory.py",
-        "tests/test_quantifiers.py",
-        "tests/test_quant_soundness.py",
-        "tests/test_logic.py",
-        "tests/test_sorts.py",
-        "tests/test_relations.py",
-        "tests/test_properties.py",
-        "tests/test_rings.py",
+        *MUTATION_CAMPAIGNS[campaign].tests,
     ]
 
 
-def run_mutations(repo_root: Path, relative: Path) -> int:
+def run_mutations(repo_root: Path, relative: Path, campaign: CampaignName) -> int:
     with disposable_worktree(repo_root) as workspace:
         target = workspace / relative
         original = target.read_text(encoding="utf-8")
@@ -221,7 +262,7 @@ def run_mutations(repo_root: Path, relative: Path) -> int:
                 target.write_text(ast.unparse(mutant), encoding="utf-8")
                 try:
                     result = subprocess.run(
-                        _test_command(),
+                        _test_command(campaign),
                         cwd=workspace,
                         capture_output=True,
                         check=False,
@@ -247,15 +288,21 @@ def run_mutations(repo_root: Path, relative: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--campaign",
+        choices=tuple(MUTATION_CAMPAIGNS),
+        required=True,
+    )
     parser.add_argument("sources", nargs="*")
     args = parser.parse_args(argv)
+    campaign = args.campaign
     try:
-        sources = resolve_campaign_sources(REPO_ROOT, args.sources)
+        sources = resolve_campaign_sources(REPO_ROOT, campaign, args.sources)
     except ValueError as exc:
         parser.error(str(exc))
     failed = False
     for source in sources:
-        failed = bool(run_mutations(REPO_ROOT, source)) or failed
+        failed = bool(run_mutations(REPO_ROOT, source, campaign)) or failed
     return 1 if failed else 0
 
 

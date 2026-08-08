@@ -20,7 +20,8 @@ jobs:
         include:
           - slice: kernel
             tests: >-
-              tests/test_checker.py tests/test_codec.py tests/test_emitter.py
+              tests/test_certificate.py tests/test_checker.py tests/test_codec.py
+              tests/test_emitter.py
               tests/test_kernel_boundaries.py tests/test_logic.py tests/test_notation.py
               tests/test_properties.py tests/test_prop.py tests/test_quant_soundness.py
               tests/test_quantifiers.py tests/test_relations.py tests/test_sorts.py
@@ -29,8 +30,10 @@ jobs:
             tests: >-
               tests/test_algebra.py tests/test_brachynomial.py tests/test_combination.py
               tests/test_divisibility_proofs.py tests/test_model.py tests/test_mul_laws.py
+              tests/test_groebner2.py tests/test_groupring2.py tests/test_jacobian2.py
               tests/test_order.py tests/test_padoa.py tests/test_parity.py
               tests/test_presburger.py tests/test_rings.py
+              tests/test_ring_nf.py
               tests/test_robinson_divisibility_proofs.py
               tests/test_robinson_divisibility.py tests/test_robinson.py
               tests/test_semantics.py tests/test_tactics.py
@@ -119,8 +122,12 @@ jobs:
         run: elan run "$(cat lean-toolchain)" lean lean_export/ColdStart.lean
 
   mutation:
-    name: Trusted-base mutation campaign
+    name: Mutation / ${{ matrix.campaign }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        campaign: [logical, portable]
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -137,8 +144,8 @@ jobs:
       - name: Sync locked development environment
         run: uv sync --locked --dev
 
-      - name: Kill every trusted-base mutant
-        run: uv run python tools/mutate.py
+      - name: Kill every ${{ matrix.campaign }} boundary mutant
+        run: uv run python tools/mutate.py --campaign "${{ matrix.campaign }}"
 
   package:
     name: Installed package and CLIs
