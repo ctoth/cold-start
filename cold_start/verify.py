@@ -35,6 +35,7 @@ from types import MappingProxyType
 from .checker import check
 from .codec import decode_proof
 from .diffring2 import DIFF_RING_2
+from .groupring2 import GROUP_RING_P2
 from .peano import PEANO
 from .presburger import PRESBURGER
 from .robinson import ROBINSON_PEANO
@@ -46,6 +47,7 @@ THEORIES: Mapping[str, Theory] = MappingProxyType(
         "presburger": PRESBURGER,
         "robinson": ROBINSON_PEANO,
         "diffring2": DIFF_RING_2,
+        "groupring2": GROUP_RING_P2,
     }
 )
 
