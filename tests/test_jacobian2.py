@@ -46,6 +46,9 @@ from cold_start.jacobian2_proofs import (
     f1,
     f2,
     f3,
+    jacobian_ideal_consequence,
+    jacobian_ideal_consequence_sources,
+    jacobian_ideal_consequence_statement,
     noninjectivity_proof,
     noninjectivity_statement,
 )
@@ -162,6 +165,16 @@ def test_three_points_collide_at_one_zero_zero() -> None:
     assert len(statements) == 9  # three components at three points
     for stmt, pf in zip(statements, proofs, strict=True):
         assert check(pf, DIFF_RING_2) == Sequent(frozenset(), stmt)
+
+
+def test_groebner_elaboration_proves_a_jacobian_map_consequence() -> None:
+    result = jacobian_ideal_consequence()
+    assert check(result.proof, DIFF_RING_2) == Sequent(
+        frozenset(jacobian_ideal_consequence_sources()),
+        jacobian_ideal_consequence_statement(),
+    )
+    assert result.witness.stats.steps > 0
+    assert result.witness.stats.basis_size == 10
 
 
 def test_derivative_statements_match_the_jc_data() -> None:

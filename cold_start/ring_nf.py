@@ -23,6 +23,7 @@ CoefficientDomain: TypeAlias = Literal["mod2"]
 AtomKey: TypeAlias = Term
 Monomial: TypeAlias = tuple[tuple[AtomKey, int], ...]
 PolynomialTerm: TypeAlias = tuple[Monomial, int]
+EquationProof: TypeAlias = tuple[Eq, Pf]
 AtomSortKey: TypeAlias = tuple[str, str, str]
 MonomialSortKey: TypeAlias = tuple[tuple[AtomSortKey, int], ...]
 
@@ -100,7 +101,8 @@ def _atom_sort_key(atom: Term) -> AtomSortKey:
     raise RingNormalizationError(f"unsupported polynomial atom: {atom!r}")
 
 
-def _monomial_sort_key(monomial: Monomial) -> MonomialSortKey:
+def monomial_sort_key(monomial: Monomial) -> MonomialSortKey:
+    """Stable structural order used for canonical sparse storage and quoting."""
     return tuple((_atom_sort_key(atom), exponent) for atom, exponent in monomial)
 
 
@@ -108,7 +110,7 @@ def _polynomial(raw: dict[Monomial, int]) -> Polynomial:
     terms = tuple(
         (monomial, coefficient & 1)
         for monomial, coefficient in sorted(
-            raw.items(), key=lambda item: _monomial_sort_key(item[0])
+            raw.items(), key=lambda item: monomial_sort_key(item[0])
         )
         if coefficient & 1
     )
@@ -296,14 +298,98 @@ def ring_eq(goal: object, context: AlgebraContext) -> Pf:
     return Trans(left.proof, Sym(right.proof))
 
 
+def _require_equation_proof(candidate: object) -> EquationProof:
+    if type(candidate) is not tuple:
+        raise TypeError("each source must be an (Eq, Pf) tuple")
+    items = cast("tuple[object, ...]", candidate)
+    if len(items) != 2:
+        raise TypeError("each source must be an (Eq, Pf) tuple")
+    equation, proof = items
+    if type(equation) is not Eq or not isinstance(proof, Pf):
+        raise TypeError("each source must contain an exact Eq and a Pf")
+    return equation, proof
+
+
+def elaborate_ideal_membership(
+    goal: object,
+    sources: tuple[EquationProof, ...],
+    cofactors: tuple[Polynomial, ...],
+    context: AlgebraContext,
+) -> Pf:
+    """Replay an F2 ideal-membership cofactor vector as an ordinary proof.
+
+    Each nonzero cofactor scales its source equation by ``Cong('*', ...)``.
+    The scaled equations are summed, ``ring_eq`` proves the witness cross-sum,
+    and a second characteristic-two normalization cancels the shared suffix.
+    Wrong cofactors fail while proving the cross-sum and return no candidate.
+    """
+    if type(goal) is not Eq:
+        raise RingNormalizationError("ideal-membership elaboration needs an exact Eq goal")
+    if type(sources) is not tuple or type(cofactors) is not tuple:
+        raise TypeError("sources and cofactors must be tuples")
+    if len(sources) != len(cofactors):
+        raise RingNormalizationError("cofactor count does not match source count")
+
+    scaled: list[EquationProof] = []
+    for source, cofactor in zip(sources, cofactors, strict=True):
+        equation, proof = _require_equation_proof(source)
+        if not cofactor.terms:
+            continue
+        coefficient = quote(cofactor, context)
+        scaled.append(
+            (
+                Eq(
+                    Fun(context.mul, (equation.lhs, coefficient)),
+                    Fun(context.mul, (equation.rhs, coefficient)),
+                ),
+                Cong(context.mul, (proof, Refl(coefficient))),
+            )
+        )
+
+    if not scaled:
+        return ring_eq(goal, context)
+
+    first_equation, combined = scaled[0]
+    left_sum, right_sum = first_equation.lhs, first_equation.rhs
+    for equation, proof in scaled[1:]:
+        combined = Cong(context.add, (combined, proof))
+        left_sum = Fun(context.add, (left_sum, equation.lhs))
+        right_sum = Fun(context.add, (right_sum, equation.rhs))
+
+    on_sum = Cong(context.add, (Refl(goal.lhs), combined))
+    shuffle = ring_eq(
+        Eq(
+            Fun(context.add, (goal.lhs, right_sum)),
+            Fun(context.add, (goal.rhs, left_sum)),
+        ),
+        context,
+    )
+    with_suffix = Trans(on_sum, shuffle)
+    doubled = Cong(context.add, (with_suffix, Refl(left_sum)))
+    left_doubled = Fun(
+        context.add,
+        (Fun(context.add, (goal.lhs, left_sum)), left_sum),
+    )
+    right_doubled = Fun(
+        context.add,
+        (Fun(context.add, (goal.rhs, left_sum)), left_sum),
+    )
+    cancel_left = ring_eq(Eq(left_doubled, goal.lhs), context)
+    cancel_right = ring_eq(Eq(right_doubled, goal.rhs), context)
+    return Trans(Sym(cancel_left), Trans(doubled, cancel_right))
+
+
 __all__ = [
     "AlgebraContext",
     "AtomKey",
     "CoefficientDomain",
+    "EquationProof",
     "Monomial",
     "Normalization",
     "Polynomial",
     "RingNormalizationError",
+    "elaborate_ideal_membership",
+    "monomial_sort_key",
     "normalize",
     "quote",
     "ring_eq",

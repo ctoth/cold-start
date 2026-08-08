@@ -21,6 +21,7 @@ determinant, collisions, and their use of the generic certified algebra.
 from __future__ import annotations
 
 from functools import reduce
+from time import perf_counter
 from typing import cast
 
 from .diffring2 import D_AXIOMS, GEN_X, GEN_Y, GEN_Z, NONTRIVIAL, dx, dy, dz
@@ -34,7 +35,8 @@ from .diffring2_proofs import (
 from .diffring2_proofs import (
     derivation_zero_proofs as _derivation_zero_proofs,
 )
-from .proof import Axiom, ExistsIntro, Pf, Sym, Trans
+from .groebner2 import CertifiedMembership, prove_ideal_membership
+from .proof import Assume, Axiom, ExistsIntro, Pf, Sym, Trans
 from .prop import And, and_intro
 from .ring_nf import ring_eq
 from .syntax import Eq, Formula, Not, Term, Var, exists
@@ -242,6 +244,37 @@ def collision_proofs() -> tuple[Pf, ...]:
     return tuple(ring_eq(stmt, DIFF_RING_2_CONTEXT) for stmt in collision_statements())
 
 
+# --- an ideal consequence of the Jacobian map ----------------------------
+
+
+def jacobian_ideal_consequence_sources() -> tuple[Eq, ...]:
+    """Two conditional equations about the map at its generic point."""
+    x, y, z = GEN_X, GEN_Y, GEN_Z
+    return (
+        Eq(f1(x, y, z), ONE),
+        Eq(f2(x, y, z), ZERO),
+    )
+
+
+def jacobian_ideal_consequence_statement() -> Eq:
+    """The sum of the first two components is one on that conditional fiber."""
+    x, y, z = GEN_X, GEN_Y, GEN_Z
+    return Eq(add(f1(x, y, z), f2(x, y, z)), ONE)
+
+
+def jacobian_ideal_consequence() -> CertifiedMembership:
+    """Search for cofactors, then elaborate them into an ordinary proof."""
+    sources = jacobian_ideal_consequence_sources()
+    result = prove_ideal_membership(
+        jacobian_ideal_consequence_statement(),
+        tuple((source, Assume(source)) for source in sources),
+        DIFF_RING_2_CONTEXT,
+    )
+    if not isinstance(result, CertifiedMembership):
+        raise AssertionError(f"Jacobian ideal consequence was not certified: {result!r}")
+    return result
+
+
 # --- the answer surface ---------------------------------------------------
 
 
@@ -273,6 +306,9 @@ def main() -> None:
     from .checker import check
     from .diffring2 import DIFF_RING_2
 
+    ideal_started = perf_counter()
+    ideal = jacobian_ideal_consequence()
+    ideal_seconds = perf_counter() - ideal_started
     groups: tuple[tuple[str, tuple[Pf, ...]], ...] = (
         ("collisions (9)", collision_proofs()),
         ("derivative lemmas (9)", derivative_proofs()),
@@ -280,6 +316,7 @@ def main() -> None:
         ("D(0) = 0 (3)", _derivation_zero_proofs()),
         ("D(1) = 0 (3)", _derivation_one_proofs()),
         ("non-injectivity (closed)", (noninjectivity_proof(),)),
+        ("ideal consequence", (ideal.proof,)),
     )
     total = 0
     for label, proofs in groups:
@@ -290,6 +327,13 @@ def main() -> None:
         total += toll
         print(f"{label:<28} toll {toll:>9,}")
     print(f"{'TOTAL':<28} toll {total:>9,}")
+    stats = ideal.witness.stats
+    print(
+        "ideal search                 "
+        f"steps {stats.steps:,}, degree {stats.max_degree}, "
+        f"basis {stats.basis_size}, cofactors {stats.max_cofactor_monomials}, "
+        f"construction {ideal_seconds:.6f}s"
+    )
 
 
 if __name__ == "__main__":
@@ -307,6 +351,9 @@ __all__ = [
     "derivative_statements",
     "det_proof",
     "det_term",
+    "jacobian_ideal_consequence",
+    "jacobian_ideal_consequence_sources",
+    "jacobian_ideal_consequence_statement",
     "noninjectivity_proof",
     "noninjectivity_statement",
     "f1",
