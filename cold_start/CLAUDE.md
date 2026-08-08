@@ -3,18 +3,19 @@
 A number-theory proof checker built from scratch on the **De Bruijn criterion**:
 proof terms are inert, serializable data that claim nothing; one small *trusted*
 `check(proof, theory)` re-derives the sequent. Trust is the checking code -- the
-exact-type gates plus the `_validate`/`derive`/`sort_check` methods they guard
-(in `syntax.py`, `proof.py`, `sequent.py`) driven by `checker.py` -- plus each
+exact-type gates plus the syntax/sequent validation methods they guard and the
+exhaustive proof validation and rule semantics in `checker.py` -- plus each
 theory's axioms. `codec.py` owns Hamblin bytes; `verify.py` decodes through it and
 re-checks proofs in a fresh process, trusting nothing but that checking code and
 the theory.
 
 ## Design rules
-- **Polymorphism over type-switches.** Operations over the syntax/proof tree are
-  *methods*, dispatched by Python on the node's class. An `elif type(x) is A …`
-  chain that walks the tree is a *smell to refactor into a method* — not a banned
-  keyword. A parser's local conditionals are fine; exact-type `dict` dispatch is the
-  right tool at the trust gate.
+- **Proof values stay inert.** Proof nodes are frozen dataclasses with no
+  validation or derivation behavior. `checker.py` owns the exact, exhaustive
+  proof-type dispatch for both local validation and rule semantics. Syntax
+  operations remain guarded methods where their intrinsic structure owns the
+  operation. External adapters use exhaustive exact-type dispatch derived from
+  the canonical owner sets.
 - **One `Node` root** for terms and formulas. `Term`/`Formula` are thin markers
   under it. `Node` carries the generic child-recursion; only `Var` and the binders
   (`Forall`/`Exists`) override.
@@ -23,26 +24,18 @@ the theory.
   term (`instantiate`), a **sort** (sort-checking) — but it is one structure. This is
   how sorts and quantifiers coexist: sort-checking threads bound-variable sorts
   through `Forall`/`Exists`.
-- **The trust gate guards the methods; it is not a dispatch table.** `validate` /
-  `validate_proof` must reject hostile *subclasses* (a `Var` with a lying `__eq__`, a
-  `str` subclass, a forged mutable-args `Fun`). A method can be overridden by exactly
-  the subclass it must reject -- so the gate is a one-line **exact-type check**
-  (`type(x) in CANONICAL_NODE_TYPES` / `CANONICAL_PROOF_TYPES`, reject-default)
-  placed *in front of* the
-  node's own `_validate` method. The per-type field checks stay polymorphic methods
-  (`node._validate(depth)`, `pf._validate()`); the gate just confirms the exact type
-  is canonical before any method runs, then each method recurses through the same
-  gate. It runs first; everything downstream then sees only canonical nodes. This
-  keeps the security property (no hostile method runs) without a pile of per-type
-  handler functions -- those were shims; the logic belongs on the node.
-- **Derivation is a method; human notation is not.** A proof term checks *itself*:
-  `pf.derive(theory)` re-derives its sequent after the gate. "Inert data" means a
-  `Pf` carries no pre-made theorem -- you can build nonsense -- not that the class
-  has no methods; the methods are trusted code an adversary cannot override past
-  the gate. Human notation printing lives in `notation.py`, alongside parsing, so
-  presentation state does not leak into syntax nodes. `Sequent` lives in
-  `sequent.py` so the proof methods can return/recurse on it without an import
-  cycle.
+- **The trust gate rejects before behavior.** `validate` / `validate_proof` must
+  reject hostile *subclasses* (a `Var` with a lying `__eq__`, a `str` subclass, a
+  forged mutable-args `Fun`). Syntax validates through the exact-type gate before
+  invoking canonical syntax methods. Proof validation and derivation remain one
+  reject-default dispatch in `checker.py`; no method on an attacker-controlled
+  proof object is invoked.
+- **Derivation is central; human notation is external.** `check()` validates the
+  selected theory, validates the whole exact proof graph, and applies the rule
+  semantics in `checker.py`. Proof construction alone claims nothing. Human
+  notation lives in `notation.py`, and Lean/Hamblin representations remain
+  downstream adapters. `Sequent` lives in `sequent.py` as an inert result value
+  with intrinsic sort validation.
 
 ## Process rules
 - **Commit after every green step.** Never leave verified work uncommitted — a
