@@ -190,6 +190,46 @@ The code is the `cold_start/` package (flat, no src-layout):
   (monoids, rings, a sorted monoid action) checked against multiple models,
   including non-commutative ones, with sort-checking invariants.
 
+## Kaplansky calibration certificate
+
+The adjacent [jc repository](../jc) used a coefficient-blind SAT encoder to find
+a 21-term unit and 21-term inverse in F₂[P], where P is the Promislow group. The
+solver-written witness is [`data/kaplansky_unit.json`](../jc/data/kaplansky_unit.json).
+The pre-witness code, tests, constraints, and history contained no published
+witness coefficient. A source-search preview did unexpectedly show Gardam's
+published formula to the operator during the group-fact review, so the run is not
+claimed to be operator-blind in the strongest sense.
+
+The certificate deliberately has two claim tiers:
+
+- **Tier 1 — kernel:** [`cold_start/groupring2.py`](cold_start/groupring2.py)
+  presents a noncommutative characteristic-2 ring and the Promislow group
+  relations. [`cold_start/kaplansky_proofs.py`](cold_start/kaplansky_proofs.py)
+  derives the normal-form library and proves the concrete equations `u*v = 1`
+  and `v*u = 1`, then packages them as the closed sentence
+  `exists u, exists v, u*v = 1 and v*u = 1`. The checker re-derives all three
+  results from inert proof data. The existential states only that mutual
+  inverses exist; it does not encode support or nontriviality and, by itself,
+  is not the counterexample claim.
+- **Tier 2 — independent exact model guard:**
+  [`tests/test_groupring2.py`](tests/test_groupring2.py) reimplements Promislow
+  coordinates without importing jc, loads the solver JSON, and checks that the
+  certificate's terms denote exactly those pairwise-distinct 21-element
+  supports. This is where support size and hence nontriviality are guarded: the
+  model guards what the statements are about, while the kernel guards the
+  proofs.
+
+`uv run python -m cold_start.kaplansky_proofs` rebuilds and re-checks every
+certificate group before printing these proof-node-occurrence tolls:
+
+| certificate group | toll |
+| --- | ---: |
+| normal-form lemmas (40) | 23,467 |
+| `u*v = 1` (441 products) | 1,743,809 |
+| `v*u = 1` (441 products) | 1,775,124 |
+| two-sided unit (closed) | 3,518,939 |
+| **TOTAL** | **7,061,339** |
+
 ## Run it
 
 Managed with [uv](https://docs.astral.sh/uv/) — isolated `.venv`, locked deps.
