@@ -187,14 +187,16 @@ def _merge_rules() -> tuple[Rule, ...]:
 
 
 DIFF_RING_2_CONTEXT = AlgebraContext(
-    zero="0",
-    one="1",
+    zero=ZERO,
+    one=ONE,
     add="+",
     mul="*",
     neg=None,
+    successor=None,
     coefficient_domain="mod2",
     atoms=frozenset(GENERATORS),
     merge_rules=_merge_rules(),
+    right_cancellation=None,
     rewrite_budget=200_000,
 )
 

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from .combination import by_combination
 from .presburger import SUCC_INJ, SUCC_NEQ_ZERO, induction
-from .presburger_proofs import add_eq_zero, add_kit, zero_or_succ
+from .presburger_proofs import add_cancel_right, add_eq_zero, add_kit, zero_or_succ
 from .proof import (
     MP,
     Assume,
@@ -22,6 +21,7 @@ from .proof import (
     Trans,
 )
 from .prop import and_left, or_elim
+from .ring_nf import elaborate_rewrite_combination
 from .squaring import (
     SQUARE_SUCC_F,
     SQUARE_ZERO_F,
@@ -134,10 +134,11 @@ def square_product_total() -> Pf:
     z = Var("z")
     current_graph = square_product(_x0, _x1, z)
     next_graph = square_product(_x0, S(_x1), add(z, _x0))
-    stepped = by_combination(
+    stepped = elaborate_rewrite_combination(
         next_graph,
         ((current_graph, Assume(current_graph), None),),
         square_kit(),
+        add_cancel_right(),
     )
     packed = ExistsIntro(_totality_at(S(_x1)), add(z, _x0), stepped)
     used = ExistsElim("z", Assume(pred), packed)
@@ -151,10 +152,11 @@ def square_product_unique() -> Pf:
     right = square_product(_x0, _x1, _d)
     doubles = Eq(double(_c), double(_d))
     same_square = Trans(Assume(left), Sym(Assume(right)))
-    doubles_pf = by_combination(
+    doubles_pf = elaborate_rewrite_combination(
         doubles,
         ((Eq(left.lhs, right.lhs), same_square, None),),
         add_kit(),
+        add_cancel_right(),
     )
     result = MP(
         Inst(Inst(double_injective(), "x", _c), "y", _d),

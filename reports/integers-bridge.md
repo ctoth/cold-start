@@ -49,7 +49,7 @@ artifact kinds in one table.
 ## 3. The measurement
 
     bridge:  28 nodes     (the equivalence + three graph instances)
-    toll:    155,545 proof nodes across all thirteen obligations
+    toll:    148,761 proof nodes across all thirteen obligations
     open:    ()           -- the bridge is COMPLETE
 
 Paid (all checked in PRESBURGER): the three equivalence laws, totality and
@@ -60,16 +60,16 @@ is just the swap `(b, a)`, and the sum lands on the diagonal.
 
 ## 4. The toll's engine: one cancellation recipe
 
-Every payment core is the same argument (now `combination.by_combination`
-with no coefficients; the ring bridge later generalized it):
+Every payment core is the same argument (now `ring_nf.elaborate_combination`
+with no coefficients; the ring bridge supplies term coefficients too):
 
 1. orient each hypothesis (`Sym` where needed) and **sum them with `Cong`**
    into one equation `H_L = H_R`;
-2. `G_L + H_L = G_L + H_R` by congruence, `= G_R + H_L` by pure AC
-   shuffling — `prove_eq` over `add_kit`'s ordered rewriting decides it,
-   and the step is exactly the multiset identity `G_L + H_R == G_R + H_L`,
-   so a wrong orientation fails loudly;
-3. cancel the common suffix with `add_cancel_right`.
+2. `G_L + H_L = G_L + H_R` by congruence, `= G_R + H_L` by sparse natural
+   polynomial normalization under `PEANO_SEMIRING_CONTEXT`; the step is exactly
+   the multiset identity `G_L + H_R == G_R + H_L`, so a wrong orientation fails
+   loudly;
+3. apply the context's proved `add_cancel_right` recipe to the common suffix.
 
 Totality is cheaper still: every witness is the image tuple itself, where
 the graph collapses to a reflexive equation. Even the associativity axiom —

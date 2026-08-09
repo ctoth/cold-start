@@ -20,6 +20,7 @@ from .proof import (
     Sym,
     Trans,
 )
+from .ring_nf import AlgebraContext
 from .syntax import Eq, Formula, Implies, Term, Var, forall
 from .tactics import Rule, axiom_rule, by_induction, lemma_rule, normalize_equality
 from .vocabulary import ZERO, S, add, mul, numeral
@@ -146,8 +147,8 @@ def mul_left_comm() -> Pf:
     )
 
 
-def ring_kit() -> tuple[Rule, ...]:
-    """Everything proved about `+` and `*` so far, as one rewrite kit.
+def _semiring_rules() -> tuple[Rule, ...]:
+    """Private PEANO recipes for the shared sparse semiring normalizer.
 
     On top of `add_kit`: the multiplication recursion axioms and their
     first-argument mirrors reduce a product against a zero or successor;
@@ -169,6 +170,21 @@ def ring_kit() -> tuple[Rule, ...]:
         lemma_rule(MUL_COMM, mul_comm(), ordered=True),
         lemma_rule(MUL_LEFT_COMM, mul_left_comm(), ordered=True),
     )
+
+
+PEANO_SEMIRING_CONTEXT = AlgebraContext(
+    zero=ZERO,
+    one=S(ZERO),
+    add="+",
+    mul="*",
+    neg=None,
+    successor="S",
+    coefficient_domain="natural",
+    atoms=frozenset(),
+    merge_rules=_semiring_rules(),
+    right_cancellation=add_cancel_right(),
+    rewrite_budget=200_000,
+)
 
 
 def _positive_cancel_pred(x: Term, z: Term) -> Formula:

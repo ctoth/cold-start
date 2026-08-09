@@ -152,19 +152,19 @@ The code is the `cold_start/` package (flat, no src-layout):
   machinery's first crossing: **the abelian group of integers interpreted
   into PRESBURGER**, a pair `(a,b)` denoting `a−b`, equivalent when
   `a+d = c+b`; zero the diagonal, addition componentwise, negation the swap.
-  A 28-node bridge, **every obligation paid** (toll: 155,545) — including
+  A 28-node bridge, **every obligation paid** (toll: 148,761) — including
   `x + (−x) = 0`, an axiom about subtraction landed as a theorem of a theory
   with no negative numbers anywhere. Every payment is one cancellation
   recipe: `Cong`-sum the hypotheses, AC-shuffle, cancel the suffix.
 - **`cold_start/ring_z.py`** — **the full commutative ring of integers
   interpreted into PEANO**, on the same pairs: `1` one step above the
   diagonal, multiplication the difference product `(x₁y₁+x₂y₂, x₁y₂+x₂y₁)`.
-  A 51-node bridge, **all 23 obligations paid** (toll: 876,035) — ring
+  A 51-node bridge, **all 23 obligations paid** (toll: 1,331,516) — ring
   axioms, multiplicative associativity, both distributive laws, and respect
-  for `·` among them. The engine is `combination.by_combination`: linear
-  combinations of hypotheses with *term coefficients*, shuffled into the
-  polynomial normal form of `peano_proofs.ring_kit` and closed by one
-  cancellation.
+  for `·` among them. The engine is `ring_nf.elaborate_combination`: linear
+  combinations of hypotheses with *term coefficients*, normalized by the one
+  sparse polynomial owner under `PEANO_SEMIRING_CONTEXT` and closed by its
+  proved cancellation recipe.
 - **`cold_start/ledger.py`** — the bridge ledger: every landed artifact of
   either kind re-verified and measured in one table
   (`uv run python -m cold_start.ledger`).
@@ -250,8 +250,8 @@ The same lockfile-backed gate, generated-file check, and Lean compilation run in
       (`cold_start.integers`): ℤ's abelian group into PRESBURGER, complete
 - [x] The full commutative ring ℤ into PEANO (`cold_start.ring_z`):
       multiplication as the difference product, all 23 obligations paid,
-      riding `ring_kit`'s semiring normal form and `by_combination`'s
-      term-coefficient linear combinations
+      riding `ring_nf`'s natural-semiring normal form and term-coefficient
+      combination elaboration
 - [ ] Pay Robinson Theorem 1.2's totality/uniqueness debts (the CRT/prime
       step): the order kit and Euclid-at-2 now stock its H1/H2 frontier;
       then Quine 1946 concatenation theory

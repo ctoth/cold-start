@@ -5,31 +5,38 @@ they never cross the proof boundary and the checker never evaluates them. Each
 fold step emits an ordinary equality proof using only the canonical proof
 constructors and context-supplied proved recipes.
 
-The initial coefficient implementation is characteristic two. The IR and
-context boundary are deliberately coefficient-aware so later phases can add
-natural and integer coefficients without creating another normalizer.
+The coefficient policy is explicit: natural semirings, integer rings, and
+characteristic-two rings share the polynomial owner but not cancellation or
+sign assumptions. The IR never crosses the proof boundary.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
-from .proof import Cong, Pf, Refl, Sym, Trans
+from .proof import MP, Cong, Inst, Pf, Refl, Sym, Trans
 from .syntax import Eq, Fun, Term, Var
-from .tactics import Rule, TacticError, prove_eq
+from .tactics import DEFAULT_BUDGET, Rule, TacticError, prove_eq
 
-CoefficientDomain: TypeAlias = Literal["mod2"]
+CoefficientDomain: TypeAlias = Literal["natural", "integer", "mod2"]
 AtomKey: TypeAlias = Term
 Monomial: TypeAlias = tuple[tuple[AtomKey, int], ...]
 PolynomialTerm: TypeAlias = tuple[Monomial, int]
 EquationProof: TypeAlias = tuple[Eq, Pf]
+CombinationSource: TypeAlias = tuple[Eq, Pf, Term | None]
 AtomSortKey: TypeAlias = tuple[str, str, str]
 MonomialSortKey: TypeAlias = tuple[tuple[AtomSortKey, int], ...]
 
 
 class RingNormalizationError(TacticError):
     """A term is outside the context or two polynomials are unequal."""
+
+
+def _validate_cancellation(value: object) -> None:
+    if value is not None and not isinstance(value, Pf):
+        raise TypeError("right_cancellation must be absent or a Pf")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,45 +50,56 @@ class Polynomial:
 class AlgebraContext:
     """Untrusted algebra symbols and proved recipes for one normalizer policy."""
 
-    zero: str
-    one: str
+    zero: Term
+    one: Term
     add: str
     mul: str
     neg: str | None
+    successor: str | None
     coefficient_domain: CoefficientDomain
     atoms: frozenset[Term]
     merge_rules: tuple[Rule, ...]
+    right_cancellation: Pf | None
     rewrite_budget: int
 
     def __post_init__(self) -> None:
-        names = (self.zero, self.one, self.add, self.mul)
+        if type(self.zero) not in {Var, Fun} or type(self.one) not in {Var, Fun}:
+            raise TypeError("zero and one must be exact terms")
+        if self.zero == self.one or self.zero.free_vars() or self.one.free_vars():
+            raise ValueError("zero and one must be distinct closed terms")
+        names = (self.add, self.mul)
         if any(type(name) is not str or not name for name in names):
-            raise ValueError("algebra symbols must be nonempty exact strings")
-        if len(set(names)) != len(names):
-            raise ValueError("zero, one, addition, and multiplication must be distinct")
-        if self.neg is not None and (type(self.neg) is not str or not self.neg):
-            raise ValueError("negation must be absent or a nonempty exact string")
-        if self.coefficient_domain != "mod2":
-            raise ValueError("only the mod2 coefficient domain is implemented")
+            raise ValueError("algebra operation symbols must be nonempty exact strings")
+        optional_names = (self.neg, self.successor)
+        if any(name is not None and (type(name) is not str or not name) for name in optional_names):
+            raise ValueError("optional algebra symbols must be nonempty exact strings")
+        present_names = (*names, *(name for name in optional_names if name is not None))
+        if len(set(present_names)) != len(present_names):
+            raise ValueError("algebra operation symbols must be distinct")
+        if self.coefficient_domain not in {"natural", "integer", "mod2"}:
+            raise ValueError("unsupported coefficient domain")
+        if self.coefficient_domain == "integer" and self.neg is None:
+            raise ValueError("integer coefficients require negation")
+        if self.coefficient_domain != "integer" and self.neg is not None:
+            raise ValueError("negation is reserved for integer coefficients")
+        if self.coefficient_domain == "mod2" and self.right_cancellation is not None:
+            raise ValueError("mod2 coefficients cannot carry natural cancellation")
+        if self.coefficient_domain != "natural" and self.successor is not None:
+            raise ValueError("successor is reserved for natural coefficients")
+        if self.coefficient_domain != "mod2" and self.right_cancellation is None:
+            raise ValueError("natural and integer contexts require right cancellation")
         if type(self.atoms) is not frozenset:
             raise TypeError("AlgebraContext.atoms must be a frozenset")
         for atom in self.atoms:
             if type(atom) is not Fun or atom.args:
                 raise ValueError("declared generators must be exact nullary Fun terms")
-            if atom.name in {self.zero, self.one, self.add, self.mul, self.neg}:
+            if atom in {self.zero, self.one} or atom.name in present_names:
                 raise ValueError(f"generator collides with algebra symbol {atom.name!r}")
         if type(self.merge_rules) is not tuple:
             raise TypeError("AlgebraContext.merge_rules must be a tuple")
+        _validate_cancellation(self.right_cancellation)
         if type(self.rewrite_budget) is not int or self.rewrite_budget <= 0:
             raise ValueError("rewrite_budget must be a positive exact int")
-
-    @property
-    def zero_term(self) -> Term:
-        return Fun(self.zero, ())
-
-    @property
-    def one_term(self) -> Term:
-        return Fun(self.one, ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,13 +124,25 @@ def monomial_sort_key(monomial: Monomial) -> MonomialSortKey:
     return tuple((_atom_sort_key(atom), exponent) for atom, exponent in monomial)
 
 
-def _polynomial(raw: dict[Monomial, int]) -> Polynomial:
+def _canonical_coefficient(coefficient: int, domain: CoefficientDomain) -> int:
+    match domain:
+        case "natural":
+            if coefficient < 0:
+                raise RingNormalizationError("natural coefficient became negative")
+            return coefficient
+        case "integer":
+            return coefficient
+        case "mod2":
+            return coefficient & 1
+
+
+def _polynomial(raw: dict[Monomial, int], domain: CoefficientDomain) -> Polynomial:
     terms = tuple(
-        (monomial, coefficient & 1)
+        (monomial, canonical)
         for monomial, coefficient in sorted(
             raw.items(), key=lambda item: monomial_sort_key(item[0])
         )
-        if coefficient & 1
+        if (canonical := _canonical_coefficient(coefficient, domain)) != 0
     )
     return Polynomial(terms)
 
@@ -129,11 +159,11 @@ def _atom(atom: Term) -> Polynomial:
     return Polynomial(((((atom, 1),), 1),))
 
 
-def _add(left: Polynomial, right: Polynomial) -> Polynomial:
+def _add(left: Polynomial, right: Polynomial, domain: CoefficientDomain) -> Polynomial:
     out = _raw(left)
     for monomial, coefficient in right.terms:
-        out[monomial] = out.get(monomial, 0) ^ coefficient
-    return _polynomial(out)
+        out[monomial] = out.get(monomial, 0) + coefficient
+    return _polynomial(out, domain)
 
 
 def _multiply_monomials(left: Monomial, right: Monomial) -> Monomial:
@@ -143,14 +173,23 @@ def _multiply_monomials(left: Monomial, right: Monomial) -> Monomial:
     return tuple(sorted(powers.items(), key=lambda item: _atom_sort_key(item[0])))
 
 
-def _mul(left: Polynomial, right: Polynomial) -> Polynomial:
+def _mul(left: Polynomial, right: Polynomial, domain: CoefficientDomain) -> Polynomial:
     out: dict[Monomial, int] = {}
     for left_monomial, left_coefficient in left.terms:
         for right_monomial, right_coefficient in right.terms:
             monomial = _multiply_monomials(left_monomial, right_monomial)
-            coefficient = left_coefficient & right_coefficient
-            out[monomial] = out.get(monomial, 0) ^ coefficient
-    return _polynomial(out)
+            coefficient = left_coefficient * right_coefficient
+            out[monomial] = out.get(monomial, 0) + coefficient
+    return _polynomial(out, domain)
+
+
+def _negate(polynomial: Polynomial, domain: CoefficientDomain) -> Polynomial:
+    if domain != "integer":
+        raise RingNormalizationError("negation requires integer coefficients")
+    return _polynomial(
+        {monomial: -coefficient for monomial, coefficient in polynomial.terms},
+        domain,
+    )
 
 
 def _right_associated(symbol: str, values: list[Term], identity: Term) -> Term:
@@ -166,32 +205,43 @@ def quote(polynomial: Polynomial, context: AlgebraContext) -> Term:
     """Quote one sparse polynomial in the context's fixed right-associated form."""
     monomial_terms: list[Term] = []
     for monomial, coefficient in polynomial.terms:
-        if coefficient != 1:
-            raise RingNormalizationError("mod2 polynomial has a non-bit coefficient")
+        if (
+            coefficient == 0
+            or _canonical_coefficient(coefficient, context.coefficient_domain)
+            != coefficient
+        ):
+            raise RingNormalizationError(
+                "polynomial contains a noncanonical coefficient"
+            )
         factors = [atom for atom, exponent in monomial for _ in range(exponent)]
-        monomial_terms.append(
-            _right_associated(context.mul, factors, context.one_term)
-        )
-    return _right_associated(context.add, monomial_terms, context.zero_term)
+        term = _right_associated(context.mul, factors, context.one)
+        if coefficient < 0:
+            if context.neg is None:
+                raise RingNormalizationError("negative coefficient requires negation")
+            term = Fun(context.neg, (term,))
+        monomial_terms.extend(term for _ in range(abs(coefficient)))
+    return _right_associated(context.add, monomial_terms, context.zero)
 
 
 def _node_children(term: object, context: AlgebraContext) -> tuple[Term, ...]:
     if type(term) is Var:
         return ()
     if type(term) is not Fun:
-        raise RingNormalizationError(
-            f"unsupported polynomial term type: {type(term).__name__}"
-        )
+        raise RingNormalizationError(f"unsupported polynomial term type: {type(term).__name__}")
+    if term == context.zero or term == context.one or term in context.atoms:
+        return ()
     if term.name in {context.add, context.mul}:
         if len(term.args) != 2:
-            raise RingNormalizationError(
-                f"unsupported arity for {term.name!r}: {len(term.args)}"
-            )
+            raise RingNormalizationError(f"unsupported arity for {term.name!r}: {len(term.args)}")
         return term.args
-    if not term.args and (
-        term.name in {context.zero, context.one} or term in context.atoms
-    ):
-        return ()
+    if context.neg is not None and term.name == context.neg:
+        if len(term.args) != 1:
+            raise RingNormalizationError(f"unsupported arity for {term.name!r}: {len(term.args)}")
+        return term.args
+    if context.successor is not None and term.name == context.successor:
+        if len(term.args) != 1:
+            raise RingNormalizationError(f"unsupported arity for {term.name!r}: {len(term.args)}")
+        return term.args
     raise RingNormalizationError(f"unsupported function in polynomial term: {term.name!r}")
 
 
@@ -249,6 +299,27 @@ def _merge(
     return Normalization(polynomial, canonical_target, proof)
 
 
+def _merge_unary(
+    original: Fun,
+    child: Normalization,
+    polynomial: Polynomial,
+    context: AlgebraContext,
+) -> Normalization:
+    canonical_source = Fun(original.name, (child.term,))
+    canonical_target = quote(polynomial, context)
+    descend = Cong(original.name, (child.proof,))
+    if canonical_source == canonical_target:
+        proof = descend
+    else:
+        merge = prove_eq(
+            Eq(canonical_source, canonical_target),
+            context.merge_rules,
+            context.rewrite_budget,
+        )
+        proof = Trans(descend, merge)
+    return Normalization(polynomial, canonical_target, proof)
+
+
 def normalize(term: object, context: AlgebraContext) -> Normalization:
     """Reify and prove one supported term equal to its sparse canonical quote."""
     results: dict[int, Normalization] = {}
@@ -258,9 +329,9 @@ def normalize(term: object, context: AlgebraContext) -> Normalization:
             continue
         if type(node) is not Fun:
             raise AssertionError("postorder admitted a non-term")
-        if node.name == context.zero:
+        if node == context.zero:
             results[id(node)] = Normalization(Polynomial(()), node, Refl(node))
-        elif node.name == context.one:
+        elif node == context.one:
             results[id(node)] = Normalization(_constant_one(), node, Refl(node))
         elif node.name == context.add:
             left, right = (results[id(child)] for child in node.args)
@@ -269,7 +340,11 @@ def normalize(term: object, context: AlgebraContext) -> Normalization:
                 context.add,
                 left,
                 right,
-                _add(left.polynomial, right.polynomial),
+                _add(
+                    left.polynomial,
+                    right.polynomial,
+                    context.coefficient_domain,
+                ),
                 context,
             )
         elif node.name == context.mul:
@@ -279,7 +354,31 @@ def normalize(term: object, context: AlgebraContext) -> Normalization:
                 context.mul,
                 left,
                 right,
-                _mul(left.polynomial, right.polynomial),
+                _mul(
+                    left.polynomial,
+                    right.polynomial,
+                    context.coefficient_domain,
+                ),
+                context,
+            )
+        elif context.neg is not None and node.name == context.neg:
+            child = results[id(node.args[0])]
+            results[id(node)] = _merge_unary(
+                node,
+                child,
+                _negate(child.polynomial, context.coefficient_domain),
+                context,
+            )
+        elif context.successor is not None and node.name == context.successor:
+            child = results[id(node.args[0])]
+            results[id(node)] = _merge_unary(
+                node,
+                child,
+                _add(
+                    child.polynomial,
+                    _constant_one(),
+                    context.coefficient_domain,
+                ),
                 context,
             )
         else:
@@ -310,6 +409,150 @@ def _require_equation_proof(candidate: object) -> EquationProof:
     return equation, proof
 
 
+def _require_combination_source(candidate: object) -> CombinationSource:
+    if type(candidate) is not tuple:
+        raise TypeError("each source must be an (Eq, Pf, coefficient) tuple")
+    items = cast("tuple[object, ...]", candidate)
+    if len(items) != 3:
+        raise TypeError("each source must be an (Eq, Pf, coefficient) tuple")
+    equation, proof, coefficient = items
+    if type(equation) is not Eq or not isinstance(proof, Pf):
+        raise TypeError("each source must contain an exact Eq and a Pf")
+    if coefficient is not None and type(coefficient) not in {Var, Fun}:
+        raise TypeError("a combination coefficient must be absent or an exact Term")
+    return equation, proof, cast(Term | None, coefficient)
+
+
+def instantiate_right_cancellation(
+    theorem: Pf,
+    lhs: Term,
+    rhs: Term,
+    suffix: Term,
+) -> Pf:
+    """Capture-safe ``x + z = y + z -> x = y`` instantiation."""
+    avoid: set[str] = set()
+    for term in (lhs, rhs, suffix):
+        avoid |= set(term.free_vars())
+    fresh: dict[str, str] = {}
+    for name in ("x", "y", "z"):
+        candidate = f"{name}!"
+        index = 0
+        while candidate in avoid:
+            index += 1
+            candidate = f"{name}!{index}"
+        fresh[name] = candidate
+        avoid.add(candidate)
+    proof = theorem
+    for name in ("x", "y", "z"):
+        proof = Inst(proof, name, Var(fresh[name]))
+    for name, value in (("x", lhs), ("y", rhs), ("z", suffix)):
+        proof = Inst(proof, fresh[name], value)
+    return proof
+
+
+def elaborate_combination(
+    goal: object,
+    sources: tuple[CombinationSource, ...],
+    context: AlgebraContext,
+) -> Pf:
+    """Prove an equality from a checked, optionally scaled equation sum."""
+    if type(goal) is not Eq:
+        raise RingNormalizationError("combination elaboration needs an exact Eq goal")
+    if type(sources) is not tuple:
+        raise TypeError("combination sources must be a tuple")
+    if not sources:
+        return ring_eq(goal, context)
+    cancellation = context.right_cancellation
+    if cancellation is None:
+        raise RingNormalizationError("coefficient context has no right-cancellation recipe")
+
+    scaled: list[EquationProof] = []
+    for candidate in sources:
+        equation, proof, coefficient = _require_combination_source(candidate)
+        if coefficient is not None:
+            equation = Eq(
+                Fun(context.mul, (equation.lhs, coefficient)),
+                Fun(context.mul, (equation.rhs, coefficient)),
+            )
+            proof = Cong(context.mul, (proof, Refl(coefficient)))
+        scaled.append((equation, proof))
+
+    (first_equation, combined), *rest = scaled
+    left_sum, right_sum = first_equation.lhs, first_equation.rhs
+    for equation, proof in rest:
+        combined = Cong(context.add, (combined, proof))
+        left_sum = Fun(context.add, (left_sum, equation.lhs))
+        right_sum = Fun(context.add, (right_sum, equation.rhs))
+
+    on_sum = Cong(context.add, (Refl(goal.lhs), combined))
+    shuffle = ring_eq(
+        Eq(
+            Fun(context.add, (goal.lhs, right_sum)),
+            Fun(context.add, (goal.rhs, left_sum)),
+        ),
+        context,
+    )
+    with_suffix = Trans(on_sum, shuffle)
+    return MP(
+        instantiate_right_cancellation(
+            cancellation,
+            goal.lhs,
+            goal.rhs,
+            left_sum,
+        ),
+        with_suffix,
+    )
+
+
+def elaborate_rewrite_combination(
+    goal: Eq,
+    sources: tuple[CombinationSource, ...],
+    rules: Iterable[Rule],
+    right_cancellation: Pf,
+    budget: int = DEFAULT_BUDGET,
+) -> Pf:
+    """Private fallback for recurrences outside the polynomial atom language.
+
+    Primitive squaring still needs its own recursion axioms before its terms are
+    polynomial. This keeps the shared scaled-sum/cancellation operation here
+    without admitting ``sq(...)`` as an opaque polynomial atom.
+    """
+    rewrite_rules = tuple(rules)
+    if not sources:
+        return prove_eq(goal, rewrite_rules, budget)
+    scaled: list[EquationProof] = []
+    for candidate in sources:
+        equation, proof, coefficient = _require_combination_source(candidate)
+        if coefficient is not None:
+            equation = Eq(
+                Fun("*", (equation.lhs, coefficient)),
+                Fun("*", (equation.rhs, coefficient)),
+            )
+            proof = Cong("*", (proof, Refl(coefficient)))
+        scaled.append((equation, proof))
+    (first_equation, combined), *rest = scaled
+    left_sum, right_sum = first_equation.lhs, first_equation.rhs
+    for equation, proof in rest:
+        combined = Cong("+", (combined, proof))
+        left_sum, right_sum = (
+            Fun("+", (left_sum, equation.lhs)),
+            Fun("+", (right_sum, equation.rhs)),
+        )
+    on_sum = Cong("+", (Refl(goal.lhs), combined))
+    shuffle = prove_eq(
+        Eq(
+            Fun("+", (goal.lhs, right_sum)),
+            Fun("+", (goal.rhs, left_sum)),
+        ),
+        rewrite_rules,
+        budget,
+    )
+    return MP(
+        instantiate_right_cancellation(right_cancellation, goal.lhs, goal.rhs, left_sum),
+        Trans(on_sum, shuffle),
+    )
+
+
 def elaborate_ideal_membership(
     goal: object,
     sources: tuple[EquationProof, ...],
@@ -329,6 +572,8 @@ def elaborate_ideal_membership(
         raise TypeError("sources and cofactors must be tuples")
     if len(sources) != len(cofactors):
         raise RingNormalizationError("cofactor count does not match source count")
+    if context.coefficient_domain != "mod2":
+        raise RingNormalizationError("ideal-membership elaboration requires mod2")
 
     scaled: list[EquationProof] = []
     for source, cofactor in zip(sources, cofactors, strict=True):
@@ -382,12 +627,14 @@ def elaborate_ideal_membership(
 __all__ = [
     "AlgebraContext",
     "AtomKey",
+    "CombinationSource",
     "CoefficientDomain",
     "EquationProof",
     "Monomial",
     "Normalization",
     "Polynomial",
     "RingNormalizationError",
+    "elaborate_combination",
     "elaborate_ideal_membership",
     "monomial_sort_key",
     "normalize",

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .combination import Hypothesis, by_combination
-from .presburger_proofs import add_kit
+from .peano_proofs import PEANO_SEMIRING_CONTEXT
 from .proof import Assume, ExistsIntro, ForallIntro, ImpIntro, Pf, Refl, Sym
 from .quotient import Vec, VecSymbol, vec
+from .ring_nf import CombinationSource, elaborate_combination
 from .syntax import Eq, Formula, Term, exists
 from .vocabulary import add
 
-Orientation = Callable[[tuple[Eq, ...], Eq, Eq], tuple[Hypothesis, ...]]
+Orientation = Callable[[tuple[Eq, ...], Eq, Eq], tuple[CombinationSource, ...]]
 
 
 def int_eq(left: Vec, right: Vec) -> Eq:
@@ -39,18 +39,16 @@ ZERO_AS_DIAGONAL = VecSymbol("0", 0, zero_graph)
 ADD_COMPONENTWISE = VecSymbol("+", 2, add_graph)
 NEG_AS_SWAP = VecSymbol("neg", 1, neg_graph)
 
-_KIT = add_kit()
+
+def cancel(goal: Eq, hypotheses: tuple[CombinationSource, ...]) -> Pf:
+    return elaborate_combination(goal, hypotheses, PEANO_SEMIRING_CONTEXT)
 
 
-def cancel(goal: Eq, hypotheses: tuple[Hypothesis, ...]) -> Pf:
-    return by_combination(goal, hypotheses, _KIT)
-
-
-def assume(equality: Eq) -> Hypothesis:
+def assume(equality: Eq) -> CombinationSource:
     return equality, Assume(equality), None
 
 
-def flip(equality: Eq) -> Hypothesis:
+def flip(equality: Eq) -> CombinationSource:
     return Eq(equality.rhs, equality.lhs), Sym(Assume(equality)), None
 
 
@@ -86,9 +84,7 @@ def pay_totality(symbol: VecSymbol, image: tuple[Term, Term]) -> Pf:
 def pay_respect(symbol: VecSymbol, orient: Orientation) -> Pf:
     args, primed = symbol.canonical_args(2), symbol.primed_args(2)
     result, other = vec("c!", 2), vec("d!", 2)
-    equivalences = tuple(
-        int_eq(old, new) for old, new in zip(args, primed, strict=True)
-    )
+    equivalences = tuple(int_eq(old, new) for old, new in zip(args, primed, strict=True))
     first_graph = symbol.graph(args, result)
     second_graph = symbol.graph(primed, other)
     if type(first_graph) is not Eq or type(second_graph) is not Eq:
@@ -107,7 +103,7 @@ def orient_zero(
     equivalences: tuple[Eq, ...],
     first_graph: Eq,
     second_graph: Eq,
-) -> tuple[Hypothesis, ...]:
+) -> tuple[CombinationSource, ...]:
     return (assume(first_graph), flip(second_graph))
 
 
@@ -115,7 +111,7 @@ def orient_add(
     equivalences: tuple[Eq, ...],
     first_graph: Eq,
     second_graph: Eq,
-) -> tuple[Hypothesis, ...]:
+) -> tuple[CombinationSource, ...]:
     return (
         flip(first_graph),
         assume(second_graph),
@@ -128,7 +124,7 @@ def orient_neg(
     equivalences: tuple[Eq, ...],
     first_graph: Eq,
     second_graph: Eq,
-) -> tuple[Hypothesis, ...]:
+) -> tuple[CombinationSource, ...]:
     return (flip(equivalences[0]), flip(first_graph), assume(second_graph))
 
 

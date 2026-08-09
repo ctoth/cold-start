@@ -77,8 +77,9 @@ repo's native artifact, with a measurable toll.
    `2z + x² + y² = (x+y)²`, so `(ℕ, +, x²)` defines `z=xy` without smuggling
    subtraction into the language. Register an honest addition-plus-square
    target theory, pay the graph's totality and uniqueness, and measure the
-   resulting bridge. `ring_kit` + `by_combination` should make this a short
-   campaign. First flag to plant.
+   resulting bridge. The shared sparse PEANO semiring context plus
+   `ring_nf`'s combination elaboration should make this a short campaign.
+   First flag to plant.
 2. **Divisibility (B2).** Julia Robinson's + and × from S and | — already in
    flight (`divisibility_bridges.py`, formula (2), two open debts: totality
    and uniqueness). Pay them or characterize them precisely.
@@ -105,7 +106,7 @@ repo's native artifact, with a measurable toll.
 
 Define a mixing measure on statements (alternation depth between additive and
 multiplicative vocabulary). Plot proof toll against it. Existing data points:
-Skolem bridge 116,358; ring-ℤ 876,035; integers 155,545; divisibility's two
+Skolem bridge 116,358; ring-ℤ 1,331,516; integers 148,761; divisibility's two
 unpaid debts. Question the curve answers: is the cost blowup smooth, or is
 there a phase transition — and where do the classical seeds (B1–B4) sit on it?
 Nobody has ever plotted this, because nobody has had interpretations as

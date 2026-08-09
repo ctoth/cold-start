@@ -14,9 +14,10 @@ totality and respect for the five symbols, and the ten translated ring
 axioms, multiplicative associativity, commutativity, units, and both
 distributive laws among them.
 
-Two facts do the work. `ring_kit` gives `prove_eq` a polynomial normal form,
-deciding every commutative-semiring identity the shuffles below reduce to.
-And `by_combination` admits TERM COEFFICIENTS: equal differences stay equal
+Two facts do the work. The PEANO semiring context gives the shared sparse
+normalizer proved polynomial merge recipes, deciding every commutative-semiring
+identity the shuffles below reduce to. The combination elaborator admits term
+coefficients: equal differences stay equal
 under `*` only after each hypothesis is multiplied through by factors of the
 other -- e.g. respect for `*` scales `a ~ a'` by `b1` and `b2`, and `b ~ b'`
 by `a'1` and `a'2`, before one cancellation lands the goal. The plain
@@ -41,7 +42,6 @@ from .algebra import (
     MUL_LEFT_ID,
     MUL_RIGHT_ID,
 )
-from .combination import Hypothesis, by_combination
 from .integer_pairs import (
     ADD_COMPONENTWISE,
     NEG_AS_SWAP,
@@ -67,9 +67,10 @@ from .integer_pairs import (
 )
 from .interp import ObligationKey
 from .peano import PEANO
-from .peano_proofs import ring_kit
+from .peano_proofs import PEANO_SEMIRING_CONTEXT
 from .proof import Assume, ImpIntro, Pf, Sym
 from .quotient import QuotientInterpretation, Vec, VecSymbol, vec
+from .ring_nf import CombinationSource, elaborate_combination
 from .syntax import Eq, Term
 from .vocabulary import ZERO, S, add, mul
 
@@ -101,19 +102,16 @@ MUL_DIFFERENCE_PRODUCT = VecSymbol("*", 2, _g_mul)
 # The proof engine: linear combinations under the semiring kit
 # ---------------------------------------------------------------------------
 
-_KIT = ring_kit()
-_BUDGET = 5000  # degree-3 shuffles (mul assoc, distribution) outgrow the default
+
+def _ring_cancel(goal: Eq, hyps: tuple[CombinationSource, ...]) -> Pf:
+    return elaborate_combination(goal, hyps, PEANO_SEMIRING_CONTEXT)
 
 
-def _ring_cancel(goal: Eq, hyps: tuple[Hypothesis, ...]) -> Pf:
-    return by_combination(goal, hyps, _KIT, _BUDGET)
-
-
-def _scale(eq: Eq, coeff: Term) -> Hypothesis:
+def _scale(eq: Eq, coeff: Term) -> CombinationSource:
     return eq, Assume(eq), coeff
 
 
-def _scale_flip(eq: Eq, coeff: Term) -> Hypothesis:
+def _scale_flip(eq: Eq, coeff: Term) -> CombinationSource:
     return Eq(eq.rhs, eq.lhs), Sym(Assume(eq)), coeff
 
 
@@ -137,7 +135,7 @@ def _orient_one(
     eps_hyps: tuple[Eq, ...],
     g_c: Eq,
     g_d: Eq,
-) -> tuple[Hypothesis, ...]:
+) -> tuple[CombinationSource, ...]:
     return (assume(g_c), flip(g_d))
 
 
@@ -145,7 +143,7 @@ def _orient_mul(
     eps_hyps: tuple[Eq, ...],
     g_c: Eq,
     g_d: Eq,
-) -> tuple[Hypothesis, ...]:
+) -> tuple[CombinationSource, ...]:
     """a ~ a' scaled by b's components, b ~ b' scaled by a''s components:
     exactly the cross-multiplication that makes equal differences multiply."""
     b, a_prime = vec("x!1", 2), vec("y!0", 2)
@@ -192,9 +190,7 @@ def _pay_mul_assoc() -> Pf:
             _scale_flip(g1, _x[1]),
         ),
     )
-    return guarded_axiom_payment(
-        (("u!", g1), ("u!0", g2), ("u!1", g3), ("u!2", g4)), core
-    )
+    return guarded_axiom_payment((("u!", g1), ("u!0", g2), ("u!1", g3), ("u!2", g4)), core)
 
 
 def _pay_mul_left_id() -> Pf:
