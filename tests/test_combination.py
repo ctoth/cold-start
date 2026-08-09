@@ -14,8 +14,13 @@ from cold_start.algebra_proofs import COMM_RING_CONTEXT
 from cold_start.checker import check
 from cold_start.peano import PEANO
 from cold_start.peano_proofs import PEANO_SEMIRING_CONTEXT
+from cold_start.presburger_proofs import add_cancel_right, add_kit
 from cold_start.proof import Assume
-from cold_start.ring_nf import elaborate_combination, ring_eq
+from cold_start.ring_nf import (
+    RewriteCombinationContext,
+    elaborate_combination,
+    ring_eq,
+)
 from cold_start.syntax import Eq, Var
 from cold_start.tactics import TacticError
 from cold_start.vocabulary import ZERO, S, add, mul, neg
@@ -142,4 +147,25 @@ def test_signed_combination_uses_the_general_ring_cancellation_recipe() -> None:
 
     sequent = check(proof, COMM_RING)
     assert sequent.hyps == frozenset({hypothesis})
+    assert sequent.concl == goal
+
+
+def test_rewrite_context_uses_the_single_combination_elaborator() -> None:
+    h1, h2 = Eq(_x, _y), Eq(_y, _z)
+    goal = Eq(_x, _z)
+    context = RewriteCombinationContext(
+        add="+",
+        mul="*",
+        rules=add_kit(),
+        right_cancellation=add_cancel_right(),
+    )
+
+    proof = elaborate_combination(
+        goal,
+        ((h1, Assume(h1), None), (h2, Assume(h2), None)),
+        context,
+    )
+
+    sequent = check(proof, PEANO)
+    assert sequent.hyps == frozenset({h1, h2})
     assert sequent.concl == goal

@@ -12,7 +12,6 @@ sign assumptions. The IR never crosses the proof boundary.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
@@ -37,6 +36,11 @@ class RingNormalizationError(TacticError):
 def _validate_cancellation(value: object) -> None:
     if value is not None and not isinstance(value, Pf):
         raise TypeError("right_cancellation must be absent or a Pf")
+
+
+def _validate_proof(value: object, name: str) -> None:
+    if not isinstance(value, Pf):
+        raise TypeError(f"{name} must be a Pf")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +104,30 @@ class AlgebraContext:
         _validate_cancellation(self.right_cancellation)
         if type(self.rewrite_budget) is not int or self.rewrite_budget <= 0:
             raise ValueError("rewrite_budget must be a positive exact int")
+
+
+@dataclass(frozen=True, slots=True)
+class RewriteCombinationContext:
+    """Explicit rewrite policy for non-polynomial combination goals."""
+
+    add: str
+    mul: str
+    rules: tuple[Rule, ...]
+    right_cancellation: Pf
+    budget: int = DEFAULT_BUDGET
+
+    def __post_init__(self) -> None:
+        if type(self.add) is not str or not self.add:
+            raise ValueError("addition symbol must be a nonempty exact string")
+        if type(self.mul) is not str or not self.mul:
+            raise ValueError("multiplication symbol must be a nonempty exact string")
+        if self.add == self.mul:
+            raise ValueError("addition and multiplication symbols must be distinct")
+        if type(self.rules) is not tuple:
+            raise TypeError("rewrite rules must be a tuple")
+        _validate_proof(self.right_cancellation, "right_cancellation")
+        if type(self.budget) is not int or self.budget <= 0:
+            raise ValueError("rewrite budget must be a positive exact int")
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,106 +478,134 @@ def instantiate_right_cancellation(
     return proof
 
 
+def _combine_sources(
+    sources: tuple[CombinationSource, ...],
+    add: str,
+    mul: str,
+) -> tuple[Term, Term, Pf]:
+    """Scale and sum one nonempty, explicitly typed source tuple."""
+    scaled: list[EquationProof] = []
+    for candidate in sources:
+        equation, proof, coefficient = _require_combination_source(candidate)
+        if coefficient is not None:
+            equation = Eq(
+                Fun(mul, (equation.lhs, coefficient)),
+                Fun(mul, (equation.rhs, coefficient)),
+            )
+            proof = Cong(mul, (proof, Refl(coefficient)))
+        scaled.append((equation, proof))
+
+    (first_equation, combined), *rest = scaled
+    left_sum, right_sum = first_equation.lhs, first_equation.rhs
+    for equation, proof in rest:
+        combined = Cong(add, (combined, proof))
+        left_sum = Fun(add, (left_sum, equation.lhs))
+        right_sum = Fun(add, (right_sum, equation.rhs))
+    return left_sum, right_sum, combined
+
+
+def _shuffle_goal(goal: Eq, left_sum: Term, right_sum: Term, add: str) -> Eq:
+    return Eq(
+        Fun(add, (goal.lhs, right_sum)),
+        Fun(add, (goal.rhs, left_sum)),
+    )
+
+
+def _finish_combination(
+    goal: Eq,
+    left_sum: Term,
+    combined: Pf,
+    shuffle: Pf,
+    add: str,
+    right_cancellation: Pf,
+) -> Pf:
+    on_sum = Cong(add, (Refl(goal.lhs), combined))
+    return MP(
+        instantiate_right_cancellation(
+            right_cancellation,
+            goal.lhs,
+            goal.rhs,
+            left_sum,
+        ),
+        Trans(on_sum, shuffle),
+    )
+
+
 def elaborate_combination(
     goal: object,
     sources: tuple[CombinationSource, ...],
-    context: AlgebraContext,
+    context: AlgebraContext | RewriteCombinationContext,
 ) -> Pf:
     """Prove an equality from a checked, optionally scaled equation sum."""
     if type(goal) is not Eq:
         raise RingNormalizationError("combination elaboration needs an exact Eq goal")
     if type(sources) is not tuple:
         raise TypeError("combination sources must be a tuple")
+    exact_goal = goal
+    if type(context) is RewriteCombinationContext:
+        return _elaborate_rewrite_combination(
+            exact_goal,
+            sources,
+            context,
+        )
+    if type(context) is not AlgebraContext:
+        raise TypeError("combination context must be an exact supported context")
+    algebra_context = context
     if not sources:
-        return ring_eq(goal, context)
-    cancellation = context.right_cancellation
+        return ring_eq(exact_goal, algebra_context)
+    cancellation = algebra_context.right_cancellation
     if cancellation is None:
         raise RingNormalizationError("coefficient context has no right-cancellation recipe")
 
-    scaled: list[EquationProof] = []
-    for candidate in sources:
-        equation, proof, coefficient = _require_combination_source(candidate)
-        if coefficient is not None:
-            equation = Eq(
-                Fun(context.mul, (equation.lhs, coefficient)),
-                Fun(context.mul, (equation.rhs, coefficient)),
-            )
-            proof = Cong(context.mul, (proof, Refl(coefficient)))
-        scaled.append((equation, proof))
-
-    (first_equation, combined), *rest = scaled
-    left_sum, right_sum = first_equation.lhs, first_equation.rhs
-    for equation, proof in rest:
-        combined = Cong(context.add, (combined, proof))
-        left_sum = Fun(context.add, (left_sum, equation.lhs))
-        right_sum = Fun(context.add, (right_sum, equation.rhs))
-
-    on_sum = Cong(context.add, (Refl(goal.lhs), combined))
+    left_sum, right_sum, combined = _combine_sources(
+        sources,
+        algebra_context.add,
+        algebra_context.mul,
+    )
     shuffle = ring_eq(
-        Eq(
-            Fun(context.add, (goal.lhs, right_sum)),
-            Fun(context.add, (goal.rhs, left_sum)),
-        ),
-        context,
+        _shuffle_goal(exact_goal, left_sum, right_sum, algebra_context.add),
+        algebra_context,
     )
-    with_suffix = Trans(on_sum, shuffle)
-    return MP(
-        instantiate_right_cancellation(
-            cancellation,
-            goal.lhs,
-            goal.rhs,
-            left_sum,
-        ),
-        with_suffix,
+    return _finish_combination(
+        exact_goal,
+        left_sum,
+        combined,
+        shuffle,
+        algebra_context.add,
+        cancellation,
     )
 
 
-def elaborate_rewrite_combination(
+def _elaborate_rewrite_combination(
     goal: Eq,
     sources: tuple[CombinationSource, ...],
-    rules: Iterable[Rule],
-    right_cancellation: Pf,
-    budget: int = DEFAULT_BUDGET,
+    context: RewriteCombinationContext,
 ) -> Pf:
-    """Private fallback for recurrences outside the polynomial atom language.
+    """Handle recurrences outside the polynomial atom language.
 
     Primitive squaring still needs its own recursion axioms before its terms are
     polynomial. This keeps the shared scaled-sum/cancellation operation here
     without admitting ``sq(...)`` as an opaque polynomial atom.
     """
-    rewrite_rules = tuple(rules)
     if not sources:
-        return prove_eq(goal, rewrite_rules, budget)
-    scaled: list[EquationProof] = []
-    for candidate in sources:
-        equation, proof, coefficient = _require_combination_source(candidate)
-        if coefficient is not None:
-            equation = Eq(
-                Fun("*", (equation.lhs, coefficient)),
-                Fun("*", (equation.rhs, coefficient)),
-            )
-            proof = Cong("*", (proof, Refl(coefficient)))
-        scaled.append((equation, proof))
-    (first_equation, combined), *rest = scaled
-    left_sum, right_sum = first_equation.lhs, first_equation.rhs
-    for equation, proof in rest:
-        combined = Cong("+", (combined, proof))
-        left_sum, right_sum = (
-            Fun("+", (left_sum, equation.lhs)),
-            Fun("+", (right_sum, equation.rhs)),
-        )
-    on_sum = Cong("+", (Refl(goal.lhs), combined))
-    shuffle = prove_eq(
-        Eq(
-            Fun("+", (goal.lhs, right_sum)),
-            Fun("+", (goal.rhs, left_sum)),
-        ),
-        rewrite_rules,
-        budget,
+        return prove_eq(goal, context.rules, context.budget)
+    left_sum, right_sum, combined = _combine_sources(
+        sources,
+        context.add,
+        context.mul,
     )
-    return MP(
-        instantiate_right_cancellation(right_cancellation, goal.lhs, goal.rhs, left_sum),
-        Trans(on_sum, shuffle),
+    shuffle = prove_eq(
+        _shuffle_goal(goal, left_sum, right_sum, context.add),
+        context.rules,
+        context.budget,
+    )
+    return _finish_combination(
+        goal,
+        left_sum,
+        combined,
+        shuffle,
+        context.add,
+        context.right_cancellation,
     )
 
 
@@ -633,6 +689,7 @@ __all__ = [
     "Monomial",
     "Normalization",
     "Polynomial",
+    "RewriteCombinationContext",
     "RingNormalizationError",
     "elaborate_combination",
     "elaborate_ideal_membership",

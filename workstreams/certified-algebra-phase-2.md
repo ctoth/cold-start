@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 
-Status: implemented; full-gate evidence pending.
+Status: implemented; full repository gate green.
 
 ## Red contracts
 

@@ -47,10 +47,11 @@ and right-cancellation path. `integer_pairs.py`, `ring_z.py`, and their tests no
 consume it directly through the exact `CombinationSource` type.
 
 Primitive squaring remains deliberately outside the polynomial atom language.
-Its two recurrence proofs use `ring_nf.elaborate_rewrite_combination`, the narrow
-rewrite-backed form of the same scaled-sum/cancellation operation, with square
-recursion rules supplied explicitly. No `sq(...)` or derivative
-application became an opaque polynomial atom.
+Its two recurrence proofs use the same `ring_nf.elaborate_combination` entry
+point with an explicit frozen `RewriteCombinationContext`. The shared internal
+scale/sum/cancel path is unchanged; only the context-selected proof of the
+shuffle equality differs. No second public combination function remains, and no
+`sq(...)` or derivative application became an opaque polynomial atom.
 
 `cold_start/combination.py` is deleted. Current source and current-facing
 documentation have zero hits for `by_combination`, `ring_kit`, or imports of the
@@ -100,4 +101,31 @@ generated Lean corpus freshness: clean
 Lean 4 compilation: passed
 GATE GREEN
 elapsed: 71.4619300 seconds
+```
+
+## Fixed-point audit repair
+
+The final literal-scope audit found that the earlier rewrite-backed helper had a
+public-looking name even though it was documented as private. A red focused test
+failed because the replacement typed context did not exist. The repair added the
+explicit context above, routed squaring through the single public elaborator,
+and retained only an underscore-private implementation branch in `ring_nf`.
+There is no alias or forwarding facade.
+
+The audit also confirmed that the Phase 5 work path and Phase 6 algebra path add
+no `getattr`, `hasattr`, or `setattr` coupling. The work meter uses direct typed
+fields, `Literal` counter names, and exhaustive `match`; algebra dispatch uses
+the exact `AlgebraContext | RewriteCombinationContext` union and direct fields.
+
+Post-repair verification is green:
+
+```text
+40 focused algebra/combination/interpretation tests passed
+1,497 repository tests passed in 64.58 seconds
+Ruff: all checks passed
+Pyright strict: 0 errors, 0 warnings, 0 informations
+Lean coverage: 16 proof rules, 16 feature families, 15 official theories
+generated Lean corpus freshness: clean
+Lean 4 compilation: passed
+GATE GREEN
 ```
