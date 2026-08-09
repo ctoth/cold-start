@@ -41,6 +41,18 @@ imports of untrusted code, and `notes-breakthrough*` staying uncommitted.
   negative control both passed. The eight-artifact ledger reverified the same
   14/20,230 measurement with both B1 obligations paid.
 
+### 2026-08-08 — Certified algebra closed; C1 resumed
+
+- The inserted certified-algebra campaign is complete through its Phase 6 fixed
+  point. Its Phase 7 handoff resumes C1 without claiming implementation.
+- `workstreams/certifying-cooper-program.md` freezes a separate signed-affine,
+  divisibility, NNF, and elimination certificate boundary. Polynomial and
+  Groebner values are explicitly excluded.
+- Primary-source proof-synthesis Cooper procedures operate over integers;
+  cold-start's `PRESBURGER` is over naturals. C1.0 therefore begins with the
+  natural-domain transport/lemma boundary, not with an unchecked integer
+  algorithm or a solver oracle.
+
 ## The Program in One Paragraph
 
 The cliff — (ℕ, +) decidable, (ℕ, ×) decidable, (ℕ, +, ×) undecidable — is
