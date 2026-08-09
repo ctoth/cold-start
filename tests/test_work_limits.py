@@ -20,7 +20,13 @@ from cold_start.proof import Assume, Axiom, Cong, Inst, Refl, Sym, Trans
 from cold_start.syntax import Eq, Fun, Rel, Var
 from cold_start.theory import Signature, Theory
 from cold_start.verify import THEORIES, verify_bytes, verify_certificate
-from cold_start.work import DEFAULT_WORK_LIMITS, WorkLimitError, WorkMeter
+from cold_start.work import (
+    DEFAULT_WORK_LIMITS,
+    WorkLimitError,
+    WorkLimits,
+    WorkMeter,
+    require_lowered_work_limits,
+)
 
 
 def _deep_term(depth: int):
@@ -131,6 +137,66 @@ def test_usage_snapshots_are_deterministic() -> None:
     assert first.usage == second.usage
     assert first.usage.proof_nodes == 2
     assert first.usage.proof_edges == 1
+
+
+def test_cumulative_usage_exactly_at_its_limit_is_accepted() -> None:
+    meter = WorkMeter(replace(DEFAULT_WORK_LIMITS, max_proof_nodes=2))
+
+    meter.consume("proof_nodes", 2)
+
+    assert meter.snapshot().proof_nodes == 2
+
+
+@pytest.mark.parametrize("value", [-1, True])
+def test_observed_maximum_requires_a_nonnegative_exact_int(value: int) -> None:
+    meter = WorkMeter()
+
+    with pytest.raises(TypeError, match="nonnegative exact int"):
+        meter.observe("single_term_nodes", value)
+
+
+def test_string_accounting_accepts_the_exact_ascii_byte_ceiling() -> None:
+    meter = WorkMeter(replace(DEFAULT_WORK_LIMITS, max_string_bytes=1))
+
+    meter.inspect_string("x")
+
+    assert meter.snapshot().string_bytes == 1
+
+
+@pytest.mark.parametrize("size", [0, -1, True])
+def test_cached_syntax_size_requires_a_positive_exact_int(size: int) -> None:
+    meter = WorkMeter()
+
+    with pytest.raises(TypeError, match="positive exact int"):
+        meter.remember_syntax_size(1, size)
+
+
+def test_work_meter_caches_reject_identity_inconsistency() -> None:
+    meter = WorkMeter()
+    meter.remember_syntax_size(1, 2)
+    meter.remember_term_sort(1, 2, (), "S")
+    meter.remember_free_var_sorts(3, frozenset({("x", "S")}))
+
+    assert meter.syntax_size(1) == 2
+    assert meter.term_sort(1, 2, ()) == "S"
+    assert meter.free_var_sorts(3) == frozenset({("x", "S")})
+    with pytest.raises(RuntimeError, match="changed size"):
+        meter.remember_syntax_size(1, 3)
+    with pytest.raises(RuntimeError, match="changed sort"):
+        meter.remember_term_sort(1, 2, (), "T")
+    with pytest.raises(RuntimeError, match="changed free variables"):
+        meter.remember_free_var_sorts(3, frozenset({("y", "S")}))
+
+
+def test_work_limit_lowering_requires_exact_objects_in_both_positions() -> None:
+    assert require_lowered_work_limits(DEFAULT_WORK_LIMITS) is DEFAULT_WORK_LIMITS
+    with pytest.raises(TypeError, match="exact WorkLimits"):
+        require_lowered_work_limits(cast(WorkLimits, object()))
+    with pytest.raises(TypeError, match="exact WorkLimits"):
+        require_lowered_work_limits(
+            DEFAULT_WORK_LIMITS,
+            cast(WorkLimits, object()),
+        )
 
 
 def test_intrinsic_syntax_accounting_distinguishes_each_operation_kind() -> None:
