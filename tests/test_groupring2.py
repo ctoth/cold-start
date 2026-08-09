@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 
 from cold_start.algebra import COMM
 from cold_start.checker import check
-from cold_start.codec import encode_proof
+from cold_start.codec import encode_certificate, make_certificate
 from cold_start.groupring2 import (
     A_INV,
     B_INV,
@@ -179,9 +179,12 @@ def test_both_unit_product_theorems_are_checked():
 
 
 def test_unit_product_proof_verifies_in_a_fresh_process():
+    proof_bytes = encode_certificate(
+        make_certificate("groupring2", GROUP_RING_P2, uv_product_proof())
+    )
     result = subprocess.run(
-        [sys.executable, "-m", "cold_start.verify", "--theory", "groupring2"],
-        input=encode_proof(uv_product_proof()),
+        [sys.executable, "-m", "cold_start.verify"],
+        input=proof_bytes,
         capture_output=True,
         check=False,
         timeout=3600,
