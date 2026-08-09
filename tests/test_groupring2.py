@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import TypeAlias
 
 from hypothesis import given
 from hypothesis import strategies as st
 
 from cold_start.algebra import COMM
+from cold_start.checker import check
+from cold_start.codec import encode_proof
 from cold_start.groupring2 import (
     A_INV,
     B_INV,
@@ -19,6 +23,20 @@ from cold_start.groupring2 import (
     A,
     B,
 )
+from cold_start.kaplansky_proofs import (
+    ground_multiplication_lemmas,
+    group_term,
+    lemma_library,
+    two_sided_unit_proof,
+    two_sided_unit_statement,
+    u_term,
+    unit_product_proofs,
+    unit_product_statements,
+    uv_product_proof,
+    v_term,
+    witness_coordinates,
+)
+from cold_start.sequent import Sequent
 from cold_start.syntax import Fun, Term
 from cold_start.verify import THEORIES
 
@@ -119,3 +137,62 @@ def test_generators_inverses_and_relations_hold_in_independent_model():
     assert _rmul(evaluate(B_INV), evaluate(B)) == R_ONE
     for relation in (GROUP_REL_A, GROUP_REL_B):
         assert evaluate(relation.lhs) == evaluate(relation.rhs)
+
+
+def test_normal_form_lemma_library_is_checked_and_model_guarded():
+    rules = lemma_library()
+    assert len(rules) == 40
+    for rule in rules:
+        assert check(rule.proof, GROUP_RING_P2) == Sequent(frozenset(), rule.eq)
+        ground = rule.eq
+        for name in ground.free_vars():
+            ground = ground.subst(name, A)
+        assert evaluate(ground.lhs) == evaluate(ground.rhs)
+
+
+def test_witness_words_and_all_uv_ground_products_are_certified():
+    u, v = witness_coordinates()
+    assert len(u) == len(v) == 21
+    for coordinate in (*u, *v):
+        assert evaluate(group_term(coordinate)) == frozenset({coordinate})
+
+    rules = ground_multiplication_lemmas(u, v)
+    assert len(rules) == 441
+    for rule in rules:
+        assert check(rule.proof, GROUP_RING_P2) == Sequent(frozenset(), rule.eq)
+        assert evaluate(rule.eq.lhs) == evaluate(rule.eq.rhs)
+
+
+def test_witness_ring_terms_and_product_statements_match_the_model():
+    u, v = witness_coordinates()
+    assert evaluate(u_term()) == frozenset(u)
+    assert evaluate(v_term()) == frozenset(v)
+    for statement in unit_product_statements():
+        assert evaluate(statement.lhs) == evaluate(statement.rhs) == R_ONE
+
+
+def test_both_unit_product_theorems_are_checked():
+    for statement, proof in zip(
+        unit_product_statements(), unit_product_proofs(), strict=True
+    ):
+        assert check(proof, GROUP_RING_P2) == Sequent(frozenset(), statement)
+
+
+def test_unit_product_proof_verifies_in_a_fresh_process():
+    result = subprocess.run(
+        [sys.executable, "-m", "cold_start.verify", "--theory", "groupring2"],
+        input=encode_proof(uv_product_proof()),
+        capture_output=True,
+        check=False,
+        timeout=3600,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    assert repr(unit_product_statements()[0]) in result.stdout.decode()
+
+
+def test_closed_two_sided_unit_statement_is_checked():
+    statement = two_sided_unit_statement()
+    assert statement.free_vars() == frozenset()
+    assert check(two_sided_unit_proof(), GROUP_RING_P2) == Sequent(
+        frozenset(), statement
+    )
