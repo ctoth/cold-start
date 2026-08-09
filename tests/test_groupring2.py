@@ -27,6 +27,8 @@ from cold_start.kaplansky_proofs import (
     ground_multiplication_lemmas,
     group_term,
     lemma_library,
+    two_sided_unit_proof,
+    two_sided_unit_statement,
     u_term,
     unit_product_proofs,
     unit_product_statements,
@@ -186,3 +188,11 @@ def test_unit_product_proof_verifies_in_a_fresh_process():
     )
     assert result.returncode == 0, result.stderr.decode()
     assert repr(unit_product_statements()[0]) in result.stdout.decode()
+
+
+def test_closed_two_sided_unit_statement_is_checked():
+    statement = two_sided_unit_statement()
+    assert statement.free_vars() == frozenset()
+    assert check(two_sided_unit_proof(), GROUP_RING_P2) == Sequent(
+        frozenset(), statement
+    )

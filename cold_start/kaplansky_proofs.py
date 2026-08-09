@@ -37,8 +37,9 @@ from .groupring2 import (
     A,
     B,
 )
-from .proof import Axiom, Cong, Pf, Refl, Sym, Trans
-from .syntax import Eq, Formula, Fun, Term, Var
+from .proof import Axiom, Cong, ExistsIntro, Pf, Refl, Sym, Trans
+from .prop import And, and_intro
+from .syntax import Eq, Formula, Fun, Term, Var, exists
 from .tactics import Rule, axiom_rule, lemma_rule, normalize, prove_eq, rewrite_step
 from .vocabulary import ONE, ZERO, add, mul
 
@@ -1074,6 +1075,102 @@ def unit_product_proofs(budget: int = 200_000) -> tuple[Pf, Pf]:
     return uv_product_proof(budget), vu_product_proof(budget)
 
 
+_unit_u, _unit_v = Var("unit_u"), Var("unit_v")
+
+
+def _two_sided_unit_body(left: Term, right: Term) -> Formula:
+    return And(Eq(mul(left, right), ONE), Eq(mul(right, left), ONE))
+
+
+@cache
+def two_sided_unit_statement() -> Formula:
+    """Some two ring elements are mutual inverses; nontriviality is not claimed."""
+    return exists(
+        _unit_u.name,
+        "",
+        exists(
+            _unit_v.name,
+            "",
+            _two_sided_unit_body(_unit_u, _unit_v),
+        ),
+    )
+
+
+@cache
+def two_sided_unit_proof(budget: int = 200_000) -> Pf:
+    uv_statement, vu_statement = unit_product_statements()
+    uv_proof, vu_proof = unit_product_proofs(budget)
+    proof: Pf = and_intro(
+        uv_statement,
+        vu_statement,
+        uv_proof,
+        vu_proof,
+    )
+    inner = exists(
+        _unit_v.name,
+        "",
+        _two_sided_unit_body(u_term(), _unit_v),
+    )
+    proof = ExistsIntro(inner, v_term(), proof)
+    return ExistsIntro(two_sided_unit_statement(), u_term(), proof)
+
+
+def _toll(proof: Pf) -> int:
+    """Count proof nodes iteratively, matching the repository ledger toll."""
+    from dataclasses import fields as dc_fields
+    from dataclasses import is_dataclass
+
+    count = 0
+    stack: list[object] = [proof]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, Pf) and is_dataclass(node):
+            count += 1
+            for field in dc_fields(node):
+                value: object = getattr(node, field.name)
+                if type(value) is tuple:
+                    stack.extend(cast("tuple[object, ...]", value))
+                else:
+                    stack.append(value)
+    return count
+
+
+def main() -> None:
+    """Rebuild, re-check, and toll every exported certificate theorem."""
+    from .checker import check
+    from .groupring2 import GROUP_RING_P2
+    from .sequent import Sequent
+
+    uv_statement, vu_statement = unit_product_statements()
+    uv_proof, vu_proof = unit_product_proofs()
+    closed_statement = two_sided_unit_statement()
+    closed_proof = two_sided_unit_proof()
+    groups: tuple[tuple[str, tuple[tuple[Pf, Formula], ...]], ...] = (
+        (
+            "normal-form lemmas (40)",
+            tuple((rule.proof, rule.eq) for rule in lemma_library()),
+        ),
+        ("u*v = 1 (441 products)", ((uv_proof, uv_statement),)),
+        ("v*u = 1 (441 products)", ((vu_proof, vu_statement),)),
+        ("two-sided unit (closed)", ((closed_proof, closed_statement),)),
+    )
+    total = 0
+    for label, theorems in groups:
+        toll = 0
+        for proof, statement in theorems:
+            expected = Sequent(frozenset(), statement)
+            if check(proof, GROUP_RING_P2) != expected:
+                raise AssertionError(f"checker conclusion drifted for {label}")
+            toll += _toll(proof)
+        total += toll
+        print(f"{label:<30} toll {toll:>12,}")
+    print(f"{'TOTAL':<30} toll {total:>12,}")
+
+
+if __name__ == "__main__":
+    main()
+
+
 __all__ = [
     "X",
     "X_INV",
@@ -1092,6 +1189,8 @@ __all__ = [
     "group_factors",
     "group_term",
     "lemma_library",
+    "two_sided_unit_proof",
+    "two_sided_unit_statement",
     "unit_product_proofs",
     "unit_product_statements",
     "u_term",
