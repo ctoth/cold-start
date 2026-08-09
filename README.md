@@ -206,11 +206,10 @@ The certificate deliberately has two claim tiers:
   presents a noncommutative characteristic-2 ring and the Promislow group
   relations. [`cold_start/kaplansky_proofs.py`](cold_start/kaplansky_proofs.py)
   derives the normal-form library and proves the concrete equations `u*v = 1`
-  and `v*u = 1`, then packages them as the closed sentence
-  `exists u, exists v, u*v = 1 and v*u = 1`. The checker re-derives all three
-  results from inert proof data. The existential states only that mutual
-  inverses exist; it does not encode support or nontriviality and, by itself,
-  is not the counterexample claim.
+  and `v*u = 1`. The checker re-derives both from inert proof data. A closed
+  existential packaging of both proof trees exceeds the repository's fixed
+  deterministic checker-work ceiling, so it is deliberately not part of the
+  certificate. Support and nontriviality are not encoded in Tier 1.
 - **Tier 2 — independent exact model guard:**
   [`tests/test_groupring2.py`](tests/test_groupring2.py) reimplements Promislow
   coordinates without importing jc, loads the solver JSON, and checks that the
@@ -227,8 +226,7 @@ certificate group before printing these proof-node-occurrence tolls:
 | normal-form lemmas (40) | 23,467 |
 | `u*v = 1` (441 products) | 1,743,809 |
 | `v*u = 1` (441 products) | 1,775,124 |
-| two-sided unit (closed) | 3,518,939 |
-| **TOTAL** | **7,061,339** |
+| **TOTAL** | **3,542,400** |
 
 ## Run it
 

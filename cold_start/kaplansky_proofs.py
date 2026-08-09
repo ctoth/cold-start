@@ -37,9 +37,8 @@ from .groupring2 import (
     A,
     B,
 )
-from .proof import Axiom, Cong, ExistsIntro, Pf, Refl, Sym, Trans
-from .prop import And, and_intro
-from .syntax import Eq, Formula, Fun, Term, Var, exists
+from .proof import Axiom, Cong, Pf, Refl, Sym, Trans
+from .syntax import Eq, Formula, Fun, Term, Var
 from .tactics import Rule, axiom_rule, lemma_rule, normalize, prove_eq, rewrite_step
 from .vocabulary import ONE, ZERO, add, mul
 
@@ -1075,46 +1074,6 @@ def unit_product_proofs(budget: int = 200_000) -> tuple[Pf, Pf]:
     return uv_product_proof(budget), vu_product_proof(budget)
 
 
-_unit_u, _unit_v = Var("unit_u"), Var("unit_v")
-
-
-def _two_sided_unit_body(left: Term, right: Term) -> Formula:
-    return And(Eq(mul(left, right), ONE), Eq(mul(right, left), ONE))
-
-
-@cache
-def two_sided_unit_statement() -> Formula:
-    """Some two ring elements are mutual inverses; nontriviality is not claimed."""
-    return exists(
-        _unit_u.name,
-        "",
-        exists(
-            _unit_v.name,
-            "",
-            _two_sided_unit_body(_unit_u, _unit_v),
-        ),
-    )
-
-
-@cache
-def two_sided_unit_proof(budget: int = 200_000) -> Pf:
-    uv_statement, vu_statement = unit_product_statements()
-    uv_proof, vu_proof = unit_product_proofs(budget)
-    proof: Pf = and_intro(
-        uv_statement,
-        vu_statement,
-        uv_proof,
-        vu_proof,
-    )
-    inner = exists(
-        _unit_v.name,
-        "",
-        _two_sided_unit_body(u_term(), _unit_v),
-    )
-    proof = ExistsIntro(inner, v_term(), proof)
-    return ExistsIntro(two_sided_unit_statement(), u_term(), proof)
-
-
 def _toll(proof: Pf) -> int:
     """Count proof nodes iteratively, matching the repository ledger toll."""
     from dataclasses import fields as dc_fields
@@ -1143,8 +1102,6 @@ def main() -> None:
 
     uv_statement, vu_statement = unit_product_statements()
     uv_proof, vu_proof = unit_product_proofs()
-    closed_statement = two_sided_unit_statement()
-    closed_proof = two_sided_unit_proof()
     groups: tuple[tuple[str, tuple[tuple[Pf, Formula], ...]], ...] = (
         (
             "normal-form lemmas (40)",
@@ -1152,7 +1109,6 @@ def main() -> None:
         ),
         ("u*v = 1 (441 products)", ((uv_proof, uv_statement),)),
         ("v*u = 1 (441 products)", ((vu_proof, vu_statement),)),
-        ("two-sided unit (closed)", ((closed_proof, closed_statement),)),
     )
     total = 0
     for label, theorems in groups:
@@ -1189,8 +1145,6 @@ __all__ = [
     "group_factors",
     "group_term",
     "lemma_library",
-    "two_sided_unit_proof",
-    "two_sided_unit_statement",
     "unit_product_proofs",
     "unit_product_statements",
     "u_term",
