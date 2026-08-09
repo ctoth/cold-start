@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import TypeAlias
 
 from hypothesis import given
@@ -9,6 +11,7 @@ from hypothesis import strategies as st
 
 from cold_start.algebra import COMM
 from cold_start.checker import check
+from cold_start.codec import encode_proof
 from cold_start.groupring2 import (
     A_INV,
     B_INV,
@@ -24,6 +27,11 @@ from cold_start.kaplansky_proofs import (
     ground_multiplication_lemmas,
     group_term,
     lemma_library,
+    u_term,
+    unit_product_proofs,
+    unit_product_statements,
+    uv_product_proof,
+    v_term,
     witness_coordinates,
 )
 from cold_start.sequent import Sequent
@@ -151,3 +159,30 @@ def test_witness_words_and_all_uv_ground_products_are_certified():
     for rule in rules:
         assert check(rule.proof, GROUP_RING_P2) == Sequent(frozenset(), rule.eq)
         assert evaluate(rule.eq.lhs) == evaluate(rule.eq.rhs)
+
+
+def test_witness_ring_terms_and_product_statements_match_the_model():
+    u, v = witness_coordinates()
+    assert evaluate(u_term()) == frozenset(u)
+    assert evaluate(v_term()) == frozenset(v)
+    for statement in unit_product_statements():
+        assert evaluate(statement.lhs) == evaluate(statement.rhs) == R_ONE
+
+
+def test_both_unit_product_theorems_are_checked():
+    for statement, proof in zip(
+        unit_product_statements(), unit_product_proofs(), strict=True
+    ):
+        assert check(proof, GROUP_RING_P2) == Sequent(frozenset(), statement)
+
+
+def test_unit_product_proof_verifies_in_a_fresh_process():
+    result = subprocess.run(
+        [sys.executable, "-m", "cold_start.verify", "--theory", "groupring2"],
+        input=encode_proof(uv_product_proof()),
+        capture_output=True,
+        check=False,
+        timeout=3600,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    assert repr(unit_product_statements()[0]) in result.stdout.decode()

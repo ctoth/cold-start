@@ -14,7 +14,16 @@ from functools import cache, reduce
 from pathlib import Path
 from typing import TypeAlias, cast
 
-from .algebra import MUL_ASSOC, MUL_LEFT_ID, MUL_RIGHT_ID
+from .algebra import (
+    ADD_ASSOC,
+    ADD_COMM,
+    ADD_ZERO,
+    DIST_LEFT,
+    DIST_RIGHT,
+    MUL_ASSOC,
+    MUL_LEFT_ID,
+    MUL_RIGHT_ID,
+)
 from .groupring2 import (
     A_INV,
     A_LEFT_INV,
@@ -22,6 +31,7 @@ from .groupring2 import (
     B_INV,
     B_LEFT_INV,
     B_RIGHT_INV,
+    CHAR2,
     GROUP_REL_A,
     GROUP_REL_B,
     A,
@@ -30,7 +40,7 @@ from .groupring2 import (
 from .proof import Axiom, Cong, Pf, Refl, Sym, Trans
 from .syntax import Eq, Formula, Fun, Term, Var
 from .tactics import Rule, axiom_rule, lemma_rule, normalize, prove_eq, rewrite_step
-from .vocabulary import ONE, mul
+from .vocabulary import ONE, ZERO, add, mul
 
 GElem: TypeAlias = tuple[int, int, int, int]
 
@@ -38,6 +48,11 @@ GElem: TypeAlias = tuple[int, int, int, int]
 def _m(*factors: Term) -> Term:
     """A right-nested nonempty product."""
     return reduce(lambda acc, factor: mul(factor, acc), reversed(factors[:-1]), factors[-1])
+
+
+def _s(*terms: Term) -> Term:
+    """A right-nested nonempty sum."""
+    return reduce(lambda acc, term: add(term, acc), reversed(terms[:-1]), terms[-1])
 
 
 X = _m(A, A)
@@ -733,6 +748,7 @@ def _normal_kind(factor: Term) -> tuple[int, int]:
     raise ValueError(f"not a canonical normal factor: {factor!r}")
 
 
+@cache
 def ground_multiplication_lemma(g: GElem, h: GElem) -> Rule:
     """Prove one concrete canonical-word multiplication equation."""
     left_factors = group_factors(g)
@@ -858,6 +874,206 @@ def ground_multiplication_lemmas(
     return tuple(ground_multiplication_lemma(g, h) for g in left for h in right)
 
 
+_add_x, _add_y, _add_z = Var("add_x"), Var("add_y"), Var("add_z")
+
+
+@cache
+def _add_rotate_rule() -> Rule:
+    """x+(y+z) = y+(x+z), ordered to complete additive AC sorting."""
+    assoc = axiom_rule(ADD_ASSOC)
+    proof = Trans(
+        Trans(
+            Sym(
+                assoc.instance(
+                    {"x": _add_x, "y": _add_y, "z": _add_z}
+                )
+            ),
+            Cong(
+                "+",
+                (
+                    axiom_rule(ADD_COMM).instance(
+                        {"x": _add_x, "y": _add_y}
+                    ),
+                    Refl(_add_z),
+                ),
+            ),
+        ),
+        assoc.instance({"x": _add_y, "y": _add_x, "z": _add_z}),
+    )
+    goal = Eq(
+        add(_add_x, add(_add_y, _add_z)),
+        add(_add_y, add(_add_x, _add_z)),
+    )
+    return Rule(
+        goal,
+        proof,
+        frozenset({_add_x.name, _add_y.name, _add_z.name}),
+        ordered=True,
+    )
+
+
+@cache
+def _cancel_pair_rule() -> Rule:
+    """x+(x+y) = y, by associativity, characteristic two, and additive zero."""
+    proof = Trans(
+        Trans(
+            Sym(
+                axiom_rule(ADD_ASSOC).instance(
+                    {"x": _add_x, "y": _add_x, "z": _add_y}
+                )
+            ),
+            Cong(
+                "+",
+                (
+                    axiom_rule(CHAR2).instance({"x": _add_x}),
+                    Refl(_add_y),
+                ),
+            ),
+        ),
+        Trans(
+            axiom_rule(ADD_COMM).instance({"x": ZERO, "y": _add_y}),
+            axiom_rule(ADD_ZERO).instance({"x": _add_y}),
+        ),
+    )
+    return lemma_rule(
+        Eq(add(_add_x, add(_add_x, _add_y)), _add_y),
+        proof,
+    )
+
+
+@cache
+def _zero_add_rule() -> Rule:
+    proof = Trans(
+        axiom_rule(ADD_COMM).instance({"x": ZERO, "y": _add_x}),
+        axiom_rule(ADD_ZERO).instance({"x": _add_x}),
+    )
+    return lemma_rule(Eq(add(ZERO, _add_x), _add_x), proof)
+
+
+def _additive_rules() -> tuple[Rule, ...]:
+    """Canonical additive normalization and cancellation in characteristic two."""
+    return (
+        axiom_rule(ADD_ASSOC),
+        axiom_rule(ADD_COMM, ordered=True),
+        _add_rotate_rule(),
+        axiom_rule(CHAR2),
+        _cancel_pair_rule(),
+        axiom_rule(ADD_ZERO),
+        _zero_add_rule(),
+    )
+
+
+@cache
+def u_term() -> Term:
+    u, _ = witness_coordinates()
+    return _s(*(group_term(g) for g in u))
+
+
+@cache
+def v_term() -> Term:
+    _, v = witness_coordinates()
+    return _s(*(group_term(g) for g in v))
+
+
+@cache
+def unit_product_statements() -> tuple[Eq, Eq]:
+    return Eq(mul(u_term(), v_term()), ONE), Eq(mul(v_term(), u_term()), ONE)
+
+
+@cache
+def _row_product_lemma(
+    left: GElem,
+    right: tuple[GElem, ...],
+    budget: int,
+) -> Rule:
+    """Expand and reduce one group word times one 21-term ring element."""
+    source = mul(group_term(left), _s(*(group_term(g) for g in right)))
+    products = tuple(mul(group_term(left), group_term(g)) for g in right)
+    expanded = _s(*products)
+    expanded_term, expansion_pf = normalize(
+        source,
+        (axiom_rule(DIST_LEFT),),
+        len(right),
+    )
+    if expanded_term != expanded:
+        raise ValueError(
+            f"column expansion disagrees: {expanded_term!r} != {expanded!r}"
+        )
+
+    ground = ground_multiplication_lemmas((left,), right)
+
+    def map_products(index: int) -> Pf:
+        if index == len(ground) - 1:
+            return ground[index].proof
+        return Cong("+", (ground[index].proof, map_products(index + 1)))
+
+    mapped = _s(*(rule.eq.rhs for rule in ground))
+    mapping_pf = map_products(0)
+    normal, normal_pf = normalize(mapped, _additive_rules(), budget)
+    proof = Trans(expansion_pf, Trans(mapping_pf, normal_pf))
+    return lemma_rule(Eq(source, normal), proof)
+
+
+def _staged_product_proof(
+    statement: Eq,
+    left: tuple[GElem, ...],
+    right: tuple[GElem, ...],
+    budget: int,
+) -> Pf:
+    """Reduce 21 rows, then combine their normal forms from right to left."""
+    rows = tuple(
+        mul(group_term(g), _s(*(group_term(h) for h in right))) for g in left
+    )
+    expanded = _s(*rows)
+    expanded_term, expansion_pf = normalize(
+        statement.lhs,
+        (axiom_rule(DIST_RIGHT),),
+        len(left),
+    )
+    if expanded_term != expanded:
+        raise ValueError(
+            f"row expansion disagrees: {expanded_term!r} != {expanded!r}"
+        )
+
+    row_rules = tuple(_row_product_lemma(g, right, budget) for g in left)
+
+    def combine(index: int) -> tuple[Term, Pf]:
+        row = row_rules[index]
+        if index == len(row_rules) - 1:
+            return row.eq.rhs, row.proof
+        tail_normal, tail_pf = combine(index + 1)
+        joined = Cong("+", (row.proof, tail_pf))
+        raw = add(row.eq.rhs, tail_normal)
+        normal, normal_pf = normalize(raw, _additive_rules(), budget)
+        return normal, Trans(joined, normal_pf)
+
+    normal, rows_pf = combine(0)
+    if normal != statement.rhs:
+        raise ValueError(
+            f"staged product normalization disagrees: {normal!r} != {statement.rhs!r}"
+        )
+    return Trans(expansion_pf, rows_pf)
+
+
+@cache
+def uv_product_proof(budget: int = 200_000) -> Pf:
+    u, v = witness_coordinates()
+    uv_statement, _ = unit_product_statements()
+    return _staged_product_proof(uv_statement, u, v, budget)
+
+
+@cache
+def vu_product_proof(budget: int = 200_000) -> Pf:
+    u, v = witness_coordinates()
+    _, vu_statement = unit_product_statements()
+    return _staged_product_proof(vu_statement, v, u, budget)
+
+
+def unit_product_proofs(budget: int = 200_000) -> tuple[Pf, Pf]:
+    """Checked certificates of u*v=1 and v*u=1 in the presented group ring."""
+    return uv_product_proof(budget), vu_product_proof(budget)
+
+
 __all__ = [
     "X",
     "X_INV",
@@ -876,5 +1092,11 @@ __all__ = [
     "group_factors",
     "group_term",
     "lemma_library",
+    "unit_product_proofs",
+    "unit_product_statements",
+    "u_term",
+    "uv_product_proof",
+    "v_term",
+    "vu_product_proof",
     "witness_coordinates",
 ]
