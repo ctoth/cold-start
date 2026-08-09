@@ -24,6 +24,7 @@ from .codec import (
     require_lowered_certificate_limits,
     theory_fingerprint,
 )
+from .cubicring import CUBIC_RING
 from .diffring2 import DIFF_RING_2
 from .groupring2 import GROUP_RING_P2
 from .peano import PEANO
@@ -44,6 +45,7 @@ THEORIES: Mapping[str, Theory] = MappingProxyType(
         "robinson": ROBINSON_PEANO,
         "diffring2": DIFF_RING_2,
         "groupring2": GROUP_RING_P2,
+        "cubicring": CUBIC_RING,
     }
 )
 
