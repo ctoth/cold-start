@@ -17,9 +17,10 @@ The design is the **De Bruijn criterion**: separate an untrusted, possibly-large
   checks its semantic fingerprint and claim, and re-checks the proof in a fresh
   process.
 
-Trust = the exact-type gates and the structural/rule/sort-checking methods they
-guard in `syntax.py`, `proof.py`, and `sequent.py`, driven by `checker.py`, plus
-each theory's axioms and induction structure. Syntax/proof *values*, the codec,
+Trust = the exact-type gates and the structural/sort-checking methods they guard
+in `syntax.py` and `sequent.py`, the exhaustive inert-proof rule dispatch and
+deterministic work meter driven by `checker.py`, plus each theory's axioms and
+induction structure. Syntax/proof *values*, the codec,
 notation, emitters, tactics, proof libraries, and Lean export are untrusted.
 
 ## The object language (`syntax.py`)
@@ -71,17 +72,12 @@ operates only on canonical nodes. This is the security property without a pile o
 per-type handler functions.
 
 ## The checker (`checker.py`)
-`check` runs the gate (`validate_proof`) then calls `pf.derive(theory)`. Each proof
-term checks **itself**: derivation is a polymorphic `derive` method on the `Pf`
-class (`_derive_rule` for the rule, with a `derive` wrapper that re-sort-checks the
-produced sequent), living in `proof.py` beside the term. "Inert data" means a `Pf`
-carries no pre-made theorem — you can build nonsense, and the checker rejects it —
-*not* that the class has no methods: the methods are trusted code, and the
-exact-type gate runs first so a hostile subclass's override never executes. (This
-replaced an earlier `_DERIVE` dispatch table of free functions; the table was a pile
-of shims, and a rule's logic is an operation over the proof tree, so it belongs on
-the node.) `Sequent` lives in `sequent.py` so `proof.py` can return and recurse on
-it without an import cycle. Side conditions are enforced in each rule's method:
+`check` uses one exact-type tri-color traversal to validate an inert proof graph,
+reject cycles, and produce unique identity postorder. `checker.py` then derives
+each reachable proof object exactly once through an exhaustive `_derive_rule`
+dispatch. Proof classes own no checking behavior: constructing a `Pf` asserts
+nothing. `Sequent` lives in `sequent.py` as equally inert result data. Side
+conditions are enforced in the checker dispatch:
 induction's eigenvariable (not free in undischarged hypotheses — the side condition
 that blocks the `1 = 0` exploit), `Inst`'s cross-sort guard, `ForallIntro`/
 `ExistsElim` eigenvariables. `sort_of`/`sort_check` are polymorphic node methods;
@@ -91,8 +87,14 @@ nothing else — and it is **iterative end to end**. Every operation it reaches
 (validation, derivation, `subst`/`abstract`/`instantiate`, `sort_of`/`sort_check`,
 `free_vars`, and even `==`/`hash` on the nodes) walks a heap agenda rather than the
 call stack, so a proof or term nested far past Python's recursion limit is checked
-or cleanly rejected without a `RecursionError`. The only bound is memory, which
-already held the input.
+or cleanly rejected without a `RecursionError`.
+
+`work.py` supplies a fresh explicit meter for every invocation. It bounds unique
+proof and input-syntax nodes/edges, hypothesis elements, syntax visits and
+rebuilds, sort and sequent steps, UTF-8 string bytes, and maximum derived sizes.
+The portable verifier may lower these repository ceilings but an artifact cannot
+raise them. `cold-start-verify --report-work` prints the measured usage and both
+checker and decoder ceilings for an artifact.
 
 ## External adapters (`codec.py`, `emitter.py`, and `notation.py`)
 

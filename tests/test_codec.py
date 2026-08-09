@@ -19,7 +19,7 @@ from cold_start.codec import (
 )
 from cold_start.peano import PEANO
 from cold_start.proof import CANONICAL_PROOF_TYPES, Pf, Refl
-from cold_start.syntax import CANONICAL_NODE_TYPES, Eq, Formula, Fun, Term, Var
+from cold_start.syntax import CANONICAL_NODE_TYPES, BVar, Eq, Formula, Fun, Term, Var
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,33 @@ def test_codec_registry_rejects_noncanonical_proof_and_syntax_classes():
             CANONICAL_NODE_TYPES,
             CANONICAL_PROOF_TYPES | {_ForeignProof},
         )
+
+
+def test_frozen_schema_field_kinds_are_exact_and_exhaustive() -> None:
+    assert codec._field_kind(int) == ("int", 0)
+    assert codec._field_kind(str) == ("string", 1)
+    assert codec._field_kind(Term) == ("syntax", 2)
+    assert codec._field_kind(Pf) == ("proof", 4)
+    assert codec._field_kind(tuple[Term, ...]) == ("syntax_tuple", 3)
+    assert codec._field_kind(tuple[Pf, ...]) == ("proof_tuple", 5)
+    with pytest.raises(TypeError, match="unsupported"):
+        codec._field_kind(tuple[Term])
+    with pytest.raises(TypeError, match="unsupported"):
+        codec._field_kind(tuple[int, ...])
+
+
+def test_open_term_depth_traverses_only_canonical_integer_bound_variables() -> None:
+    open_term = Fun("f", (BVar(3),))
+    assert codec._open_term_depth(open_term) == 4
+    assert decode_term(encode_term(open_term)) == open_term
+    assert codec._open_term_depth(BVar(cast(int, True))) == 0
+
+
+def test_private_unsigned_varint_rejects_bool_and_negative_values() -> None:
+    with pytest.raises(TypeError, match="nonnegative exact int"):
+        codec._uvarint(True)
+    with pytest.raises(TypeError, match="nonnegative exact int"):
+        codec._uvarint(-1)
     with pytest.raises(TypeError, match="noncanonical syntax type"):
         codec._build_registry(
             CANONICAL_NODE_TYPES | {_ForeignTerm},

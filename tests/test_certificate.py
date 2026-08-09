@@ -5,9 +5,11 @@ from __future__ import annotations
 import subprocess
 import sys
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
+import cold_start.verify as verifier
 from cold_start.certificate import Certificate
 from cold_start.codec import (
     DEFAULT_CERTIFICATE_LIMITS,
@@ -21,6 +23,7 @@ from cold_start.peano import PEANO
 from cold_start.proof import Assume, Axiom, Cong, Refl, Sym, Trans
 from cold_start.sequent import Sequent
 from cold_start.syntax import Eq, Fun, Var
+from cold_start.theory import Signature, Theory
 from cold_start.verify import THEORIES, verify_certificate
 
 
@@ -171,6 +174,19 @@ def test_syntax_self_forward_and_out_of_range_references_are_rejected(
         decode_certificate(_raw_certificate(syntax, (REFL_X,)))
 
 
+@pytest.mark.parametrize(
+    ("index", "message"),
+    [(1, "cyclic"), (2, "forward"), (3, "out of range")],
+)
+def test_syntax_tuple_references_are_checked_backward(
+    index: int, message: str
+) -> None:
+    bad_fun = _entry("Fun", _field_string("f"), _field_syntax_tuple(index))
+    syntax = (VAR_X, bad_fun, _entry("Var", _field_string("y"), _field_string("")))
+    with pytest.raises(ValueError, match=message):
+        decode_certificate(_raw_certificate(syntax, (REFL_X,)))
+
+
 def test_proof_self_forward_and_out_of_range_references_are_rejected() -> None:
     cases = (
         ((_entry("Sym", _field_proof(0)),), "cyclic"),
@@ -236,6 +252,38 @@ def test_theory_fingerprint_is_semantic_and_slug_independent() -> None:
         "an-alias", PEANO, proof
     ).theory_fingerprint
     assert theory_fingerprint(PEANO) != theory_fingerprint(THEORIES["presburger"])
+    assert theory_fingerprint(PEANO).hex() == (
+        "2fcbbde618c3db3c5136a63480178c21f05cfddfa8f92601514bd19a71da3ff3"
+    )
+    assert theory_fingerprint(THEORIES["robinson"]).hex() == (
+        "3dcb23bcdf128906e62982d82c361ea5384453e3c7c9cf759a5d183457bef6e5"
+    )
+    no_relation = Theory(
+        axioms=frozenset(),
+        signature=Signature(frozenset({"S"}), ()),
+    )
+    one_relation = Theory(
+        axioms=frozenset(),
+        signature=Signature(frozenset({"S"}), (), (("R", ("S",)),)),
+    )
+    assert theory_fingerprint(no_relation) != theory_fingerprint(one_relation)
+
+
+def test_certificate_scalar_fields_and_builder_key_are_exact() -> None:
+    certificate = _tiny_certificate()
+    malformed = (
+        replace(certificate, theory_key=""),
+        replace(certificate, theory_key=cast(str, 7)),
+        replace(certificate, theory_fingerprint=b""),
+        replace(certificate, theory_fingerprint=cast(bytes, bytearray(32))),
+    )
+    for value in malformed:
+        with pytest.raises(TypeError):
+            encode_certificate(value)
+    with pytest.raises(TypeError, match="nonempty exact str"):
+        make_certificate("", PEANO, Refl(Var("x")))
+    with pytest.raises(TypeError, match="nonempty exact str"):
+        make_certificate(cast(str, 7), PEANO, Refl(Var("x")))
 
 
 def test_verifier_rejects_unknown_theory_fingerprint_and_claim_mismatch() -> None:
@@ -275,6 +323,44 @@ def test_cli_has_no_external_theory_selector() -> None:
     )
     assert result.returncode == 2
     assert "unrecognized arguments" in result.stderr.decode()
+
+
+def test_cli_reports_artifact_work_and_repository_ceilings_on_request() -> None:
+    data = encode_certificate(_tiny_certificate())
+    result = subprocess.run(
+        [sys.executable, "-m", "cold_start.verify", "--report-work"],
+        input=data,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    output = result.stdout.decode()
+    assert f"certificate_bytes={len(data)}" in output
+    assert "proof_nodes=1" in output
+    assert "max_proof_nodes=1000000" in output
+    assert "max_input_bytes=67108864" in output
+
+
+def test_verifier_file_reader_accepts_exact_size_and_labels_file_errors(
+    tmp_path,
+) -> None:
+    path = tmp_path / "proof.cspc"
+    data = encode_certificate(_tiny_certificate())
+    path.write_bytes(data)
+    assert verifier._read_input(str(path), len(data)) == data
+    with pytest.raises(ValueError, match="input bytes limit"):
+        verifier._read_input(str(path), len(data) - 1)
+
+    missing = tmp_path / "missing.cspc"
+    result = subprocess.run(
+        [sys.executable, "-m", "cold_start.verify", str(missing)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "missing.cspc" in result.stderr.decode()
+    assert "standard input" not in result.stderr.decode()
 
 
 def test_each_certificate_input_limit_rejects_before_acceptance() -> None:
@@ -317,6 +403,68 @@ def test_each_certificate_input_limit_rejects_before_acceptance() -> None:
     for data, limits, message in cases:
         with pytest.raises(ValueError, match=message):
             decode_certificate(data, limits=limits)
+
+
+def test_each_certificate_limit_accepts_its_exact_boundary() -> None:
+    tiny = encode_certificate(_tiny_certificate())
+    exact_tiny = replace(
+        DEFAULT_CERTIFICATE_LIMITS,
+        max_input_bytes=len(tiny),
+        max_syntax_entries=2,
+        max_proof_entries=1,
+        max_edges=5,
+        max_string_bytes=5,
+    )
+    assert decode_certificate(tiny, limits=exact_tiny) == _tiny_certificate()
+
+    x, y = Var("x"), Var("y")
+    tuple_data = encode_certificate(
+        make_certificate("peano", PEANO, Refl(Fun("+", (x, y))))
+    )
+    assert decode_certificate(
+        tuple_data,
+        limits=replace(DEFAULT_CERTIFICATE_LIMITS, max_tuple_arity=2),
+    ).proof == Refl(Fun("+", (x, y)))
+
+    two_hypothesis_data = encode_certificate(
+        make_certificate(
+            "peano",
+            PEANO,
+            Cong("+", (Assume(Eq(x, x)), Assume(Eq(y, y)))),
+        )
+    )
+    assert len(
+        decode_certificate(
+            two_hypothesis_data,
+            limits=replace(DEFAULT_CERTIFICATE_LIMITS, max_claim_hypotheses=2),
+        ).claim.hyps
+    ) == 2
+
+
+def test_exactly_out_of_range_references_are_rejected() -> None:
+    var_y = _entry("Var", _field_string("y"), _field_string(""))
+    syntax = (VAR_X, EQ_XX, var_y)
+    cases = (
+        _raw_certificate(
+            (VAR_X, _entry("Eq", _field_syntax(2), _field_syntax(0))),
+            (REFL_X,),
+        ),
+        _raw_certificate(
+            (VAR_X, EQ_XX),
+            (_entry("Refl", _field_syntax(2)),),
+        ),
+        _raw_certificate(syntax, (REFL_X,), hypotheses=(3,)),
+        _raw_certificate((VAR_X, EQ_XX), (REFL_X,), conclusion=2),
+        _raw_certificate((VAR_X, EQ_XX), (REFL_X,), root=1),
+        _raw_certificate(
+            (VAR_X, EQ_XX),
+            (REFL_X, _entry("Sym", _field_proof(2))),
+            root=1,
+        ),
+    )
+    for data in cases:
+        with pytest.raises(ValueError, match="out of range"):
+            decode_certificate(data)
 
 
 def test_deep_valid_proof_graph_roundtrips_without_recursion() -> None:

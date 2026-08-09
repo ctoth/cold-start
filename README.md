@@ -34,14 +34,19 @@ The code is the `cold_start/` package (flat, no src-layout):
   *Not trusted* — a formula is a claim, not a proof.
 - **`cold_start/proof.py`** — proof terms (`Axiom`, `Assume`, `Refl`, `Sym`,
   `Trans`, `Cong`, `MP`, `ImpIntro`, `Inst`, `Induct`, classical rules, and
-  quantifier rules): the inert recipe a prover emits. *Not trusted as data; its
-  guarded rule methods are part of checking.*
+  quantifier rules): the inert recipe a prover emits. The values own no checking
+  behavior; exact exhaustive semantics live in `checker.py`.
 - **`cold_start/checker.py`** — drives the **trusted checking path**:
-  `validate_proof`, `check(proof, theory) -> Sequent`, and the guarded structural,
-  rule, sequent, and sort-checking methods in `syntax.py`, `proof.py`, and
-  `sequent.py`. A `Sequent` deliberately has no
+  exact proof-graph validation, unique iterative derivation, and
+  `check(proof, theory) -> Sequent`. Rule semantics are one exhaustive dispatch
+  over inert proof data. `syntax.py` and `sequent.py` own their guarded
+  structural and sort-checking operations. A `Sequent` deliberately has no
   construction guard: holding one proves nothing; only `check()` returning it is
   authority.
+- **`cold_start/work.py`** — explicit deterministic checker-work ceilings and
+  per-call usage. Proof/syntax graph work, hypothesis processing, reconstruction,
+  sorting, derived sequents, and strings are bounded without wall-clock policy or
+  artifact-controlled limits.
 - **`cold_start/presburger.py`** — Presburger arithmetic: signature (`0`, `S`,
   `+`), addition and successor axioms, and induction structure (`zero`/`succ`).
   Induction is a **first-class rule** (`Induct`), *not* an axiom formula —
@@ -196,6 +201,8 @@ uv run python -m cold_start.lean       # regenerate the checked-in Lean corpus
 # verify a portable certificate in a fresh process, end to end:
 # encode_certificate(make_certificate("peano", PEANO, proof)) produces the bytes.
 uv run python -m cold_start.verify proof.cspc
+# include deterministic artifact usage and repository ceilings:
+uv run python -m cold_start.verify --report-work proof.cspc
 
 # mutation is a separate explicit assurance surface (both campaigns run in CI):
 uv run python tools/mutate.py --campaign logical

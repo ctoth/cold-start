@@ -17,6 +17,7 @@ EXPECTED_TRUSTED_SOURCES = (
     Path("cold_start/sequent.py"),
     Path("cold_start/syntax.py"),
     Path("cold_start/theory.py"),
+    Path("cold_start/work.py"),
 )
 EXPECTED_PORTABLE_SOURCES = (
     Path("cold_start/certificate.py"),

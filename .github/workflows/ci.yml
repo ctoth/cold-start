@@ -25,7 +25,7 @@ jobs:
               tests/test_kernel_boundaries.py tests/test_logic.py tests/test_notation.py
               tests/test_properties.py tests/test_prop.py tests/test_quant_soundness.py
               tests/test_quantifiers.py tests/test_relations.py tests/test_sorts.py
-              tests/test_theory.py tests/test_vocabulary.py
+              tests/test_theory.py tests/test_vocabulary.py tests/test_work_limits.py
           - slice: proof-libraries
             tests: >-
               tests/test_algebra.py tests/test_brachynomial.py tests/test_combination.py

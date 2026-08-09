@@ -21,6 +21,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import Field, dataclass, fields, is_dataclass
 from typing import ClassVar, Protocol, TypeAlias, cast, overload
 
+from .work import WorkMeter
+
 
 class SignatureProtocol(Protocol):
     @property
@@ -105,6 +107,7 @@ def _rebuild(
     *,
     on_var: Callable[[Var, int], Node] | None = None,
     on_bvar: Callable[[BVar, int], Node] | None = None,
+    meter: WorkMeter | None = None,
 ) -> Node:
     """Rebuild the tree rooted at `root`, ITERATIVELY (post-order via a heap agenda,
     no recursion). `on_var(node, depth)` / `on_bvar(node, depth)` transform those
@@ -119,6 +122,8 @@ def _rebuild(
     stack: list[tuple[Node, int]] = [(root, start_depth)]
     while stack:
         n, d = stack.pop()
+        if meter is not None:
+            meter.consume("syntax_visits")
         order.append((n, d))
         cd = d + 1 if isinstance(n, (Forall, Exists)) else d
         for child in children(n):
@@ -127,11 +132,19 @@ def _rebuild(
     done: dict[tuple[int, int], Node] = {}
     for n, d in reversed(order):
         if type(n) is Var and on_var is not None:
-            done[(id(n), d)] = on_var(n, d)
+            rebuilt = on_var(n, d)
+            if meter is not None and rebuilt is not n:
+                meter.consume("syntax_rebuilds")
+            done[(id(n), d)] = rebuilt
         elif type(n) is BVar and on_bvar is not None:
-            done[(id(n), d)] = on_bvar(n, d)
+            rebuilt = on_bvar(n, d)
+            if meter is not None and rebuilt is not n:
+                meter.consume("syntax_rebuilds")
+            done[(id(n), d)] = rebuilt
         else:
             cd = d + 1 if isinstance(n, (Forall, Exists)) else d
+            if meter is not None:
+                meter.consume("syntax_rebuilds")
             done[(id(n), d)] = cast(
                 Node,
                 map_children(n, lambda child, _cd=cd: done[(id(child), _cd)]),
@@ -246,27 +259,38 @@ class Node:
         Each concrete node overrides."""
         raise NotImplementedError(f"cannot repr {type(self).__name__}")
 
-    def free_vars(self) -> frozenset[str]:
+    def free_vars(self, meter: WorkMeter | None = None) -> frozenset[str]:
         """Free variable names. Locally nameless, so every `Var` in the tree is free
         (a bound variable is a nameless `BVar`) -- the free names are just the names
         of the `Var` subnodes. Iterative, so arbitrarily deep terms are safe."""
+        if meter is not None:
+            return frozenset(name for name, _sort in self.free_var_sorts(meter))
         return frozenset(n.name for n in subnodes(self) if type(n) is Var)
 
-    def subst(self, var: str, repl: Term) -> Node:
+    def subst(self, var: str, repl: Term, meter: WorkMeter | None = None) -> Node:
         """Replace the free variable `var` with `repl`. Locally nameless, so no
         capture-avoidance: every `Var` named `var` in the tree is free."""
-        return _rebuild(self, 0, on_var=lambda n, d: repl if n.name == var else n)
+        return _rebuild(
+            self,
+            0,
+            on_var=lambda n, d: repl if n.name == var else n,
+            meter=meter,
+        )
 
-    def abstract(self, name: str, depth: int) -> Node:
+    def abstract(
+        self, name: str, depth: int, meter: WorkMeter | None = None
+    ) -> Node:
         """Close a binder: replace the free variable `name` with the bound index for
         its position (`depth` rises under each binder; `Var` becomes `BVar(d)`)."""
 
         def to_index(n: Var, d: int) -> Node:
             return BVar(d) if n.name == name else n
 
-        return _rebuild(self, depth, on_var=to_index)
+        return _rebuild(self, depth, on_var=to_index, meter=meter)
 
-    def instantiate(self, repl: Term, depth: int) -> Node:
+    def instantiate(
+        self, repl: Term, depth: int, meter: WorkMeter | None = None
+    ) -> Node:
         """Open a binder: the bound variable at the binder's depth becomes `repl`;
         deeper indices shift down by one. `depth` rises under each binder."""
 
@@ -275,12 +299,53 @@ class Node:
                 return repl
             return BVar(n.index - 1) if n.index >= d + 1 else n
 
-        return _rebuild(self, depth, on_bvar=open_bvar)
+        return _rebuild(self, depth, on_bvar=open_bvar, meter=meter)
 
-    def free_var_sorts(self) -> frozenset[tuple[str, str]]:
+    def free_var_sorts(
+        self, meter: WorkMeter | None = None
+    ) -> frozenset[tuple[str, str]]:
         """Free `(name, sort)` pairs -- like `free_vars` but keeping each variable's
         declared sort, so the checker can enforce one sort per name. Iterative."""
-        return frozenset((n.name, n.sort) for n in subnodes(self) if type(n) is Var)
+        if meter is None:
+            return frozenset(
+                (n.name, n.sort) for n in subnodes(self) if type(n) is Var
+            )
+        cached = meter.free_var_sorts(id(self))
+        if cached is not None:
+            return cached
+        active: set[int] = set()
+        stack: list[tuple[Node, bool]] = [(self, False)]
+        while stack:
+            node, leaving = stack.pop()
+            identity = id(node)
+            if leaving:
+                active.remove(identity)
+                if type(node) is Var:
+                    pairs = frozenset({(node.name, node.sort)})
+                else:
+                    collected: set[tuple[str, str]] = set()
+                    for child in children(node):
+                        child_pairs = meter.free_var_sorts(id(child))
+                        if child_pairs is None:
+                            raise RuntimeError("missing child free-variable result")
+                        collected.update(child_pairs)
+                    pairs = frozenset(collected)
+                meter.remember_free_var_sorts(identity, pairs)
+                continue
+            if meter.free_var_sorts(identity) is not None:
+                continue
+            if identity in active:
+                raise TypeError("cyclic syntax graph")
+            active.add(identity)
+            meter.consume("syntax_visits")
+            stack.append((node, True))
+            stack.extend(
+                (cast(Node, child), False) for child in reversed(children(node))
+            )
+        result = meter.free_var_sorts(id(self))
+        if result is None:
+            raise RuntimeError("missing root free-variable result")
+        return result
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
         """Check this node's own fields and return the `(child, depth)` agenda the
@@ -299,10 +364,17 @@ class Node:
 class Term(Node):
     __slots__ = ()
 
-    def subst(self, var: str, repl: Term) -> Term:  # substituting in a term yields a term
-        return cast(Term, super().subst(var, repl))
+    def subst(
+        self, var: str, repl: Term, meter: WorkMeter | None = None
+    ) -> Term:  # substituting in a term yields a term
+        return cast(Term, super().subst(var, repl, meter))
 
-    def sort_of(self, sig: SignatureProtocol, scope: Scope = ()) -> str:
+    def sort_of(
+        self,
+        sig: SignatureProtocol,
+        scope: Scope = (),
+        meter: WorkMeter | None = None,
+    ) -> str:
         """The sort of this term under signature `sig`, or raise if ill-sorted.
         `scope` is the stack of enclosing binders' sorts (a `BVar(i)` reads
         `scope[i]`); a term has no binders of its own, so `scope` is constant
@@ -311,15 +383,50 @@ class Term(Node):
 
         Iterative: each subterm's sort is computed bottom-up into an `id -> sort`
         map, so a term nested thousands deep is sorted without recursion."""
-        order: list[Term] = []
-        stack: list[Term] = [self]
-        while stack:
-            t = stack.pop()
-            order.append(t)
-            stack.extend(cast(Term, child) for child in children(t) if _is_node(child))
+        signature_identity = id(sig)
+        if meter is not None:
+            cached = meter.term_sort(signature_identity, id(self), scope)
+            if cached is not None:
+                return cached
+        active: set[int] = set()
         sorts: SortResults = {}
-        for t in reversed(order):
-            sorts[id(t)] = t._sort_step(sig, scope, sorts)
+        stack: list[tuple[Term, bool]] = [(self, False)]
+        while stack:
+            t, leaving = stack.pop()
+            identity = id(t)
+            if leaving:
+                active.remove(identity)
+                if meter is not None and type(t) is Fun:
+                    meter.consume("sort_steps")
+                sort = t._sort_step(sig, scope, sorts)
+                sorts[identity] = sort
+                if meter is not None:
+                    meter.remember_term_sort(
+                        signature_identity,
+                        identity,
+                        scope,
+                        sort,
+                    )
+                continue
+            if identity in sorts:
+                continue
+            if meter is not None:
+                cached = meter.term_sort(signature_identity, identity, scope)
+                if cached is not None:
+                    sorts[identity] = cached
+                    continue
+            if identity in active:
+                raise TypeError("cyclic term graph")
+            active.add(identity)
+            if meter is not None:
+                meter.consume("sort_steps")
+                meter.consume("syntax_visits")
+            stack.append((t, True))
+            stack.extend(
+                (cast(Term, child), False)
+                for child in reversed(children(t))
+                if _is_node(child)
+            )
         return sorts[id(self)]
 
     def _sort_step(self, sig: SignatureProtocol, scope: Scope, sorts: SortResults) -> str:
@@ -425,10 +532,17 @@ class BVar(Term):
 class Formula(Node):
     __slots__ = ()
 
-    def subst(self, var: str, repl: Term) -> Formula:  # substituting in a formula yields a formula
-        return cast(Formula, super().subst(var, repl))
+    def subst(
+        self, var: str, repl: Term, meter: WorkMeter | None = None
+    ) -> Formula:  # substituting in a formula yields a formula
+        return cast(Formula, super().subst(var, repl, meter))
 
-    def sort_check(self, sig: SignatureProtocol, scope: Scope = ()) -> None:
+    def sort_check(
+        self,
+        sig: SignatureProtocol,
+        scope: Scope = (),
+        meter: WorkMeter | None = None,
+    ) -> None:
         """Structural well-sortedness under `sig`: each equality relates same-sort
         terms; a binder pushes its bound sort onto `scope`, so a quantified sorted
         formula checks (sorts and quantifiers coexist).
@@ -440,6 +554,34 @@ class Formula(Node):
         stack: list[tuple[Formula, Scope]] = [(self, scope)]
         while stack:
             f, sc = stack.pop()
+            if meter is not None:
+                meter.consume("sort_steps")
+                meter.consume("syntax_visits")
+                if type(f) is Rel:
+                    meter.consume("sort_steps")
+            if type(f) is Eq:
+                left_sort = f.lhs.sort_of(sig, sc, meter)
+                right_sort = f.rhs.sort_of(sig, sc, meter)
+                if left_sort != right_sort:
+                    raise ValueError(
+                        f"equality across sorts: {left_sort!r} = {right_sort!r} in {f!r}"
+                    )
+                continue
+            if type(f) is Rel:
+                arg_sorts = sig.relation(f.name)
+                if arg_sorts is None:
+                    raise ValueError(f"undeclared relation {f.name!r}")
+                if len(f.args) != len(arg_sorts):
+                    raise ValueError(
+                        f"{f.name!r} expects {len(arg_sorts)} args, got {len(f.args)}"
+                    )
+                for arg, expected in zip(f.args, arg_sorts, strict=True):
+                    actual = arg.sort_of(sig, sc, meter)
+                    if actual != expected:
+                        raise ValueError(
+                            f"{f.name!r} arg has sort {actual!r}, expected {expected!r}"
+                        )
+                continue
             stack.extend(f._sort_check_step(sig, sc))
 
     def _sort_check_step(
@@ -461,16 +603,6 @@ class Eq(Formula):
 
     def _repr_emit(self, out: list[str], stack: ReprStack) -> None:
         _emit_pieces(stack, [("emit", self.lhs), ("lit", " = "), ("emit", self.rhs)])
-
-    def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
-        ls, rs = self.lhs.sort_of(sig, scope), self.rhs.sort_of(sig, scope)
-        if ls != rs:
-            raise ValueError(f"equality across sorts: {ls!r} = {rs!r} in {self!r}")
-        return ()
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
         return ((self.lhs, depth), (self.rhs, depth))
@@ -504,22 +636,6 @@ class Rel(Formula):
             pieces.append(("emit", arg))
         pieces.append(("lit", ")"))
         _emit_pieces(stack, pieces)
-
-    def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
-        arg_sorts = sig.relation(self.name)
-        if arg_sorts is None:
-            raise ValueError(f"undeclared relation {self.name!r}")
-        if len(self.args) != len(arg_sorts):
-            raise ValueError(f"{self.name!r} expects {len(arg_sorts)} args, got {len(self.args)}")
-        for arg, expected in zip(self.args, arg_sorts, strict=True):
-            actual = arg.sort_of(sig, scope)
-            if actual != expected:
-                raise ValueError(f"{self.name!r} arg has sort {actual!r}, expected {expected!r}")
-        return ()
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
         _check_str(self.name, "Rel.name")
@@ -640,19 +756,35 @@ class Exists(Formula):
 # named variable to a de Bruijn index. `instantiate` opens a binder with a term.
 
 
-def forall(name: str, sort: str, body: Formula) -> Formula:  # noqa: N802 -- connective
-    return Forall(sort, cast(Formula, body.abstract(name, 0)))
+def forall(  # noqa: N802 -- connective
+    name: str,
+    sort: str,
+    body: Formula,
+    meter: WorkMeter | None = None,
+) -> Formula:
+    if meter is not None:
+        meter.consume("syntax_rebuilds")
+    return Forall(sort, cast(Formula, body.abstract(name, 0, meter)))
 
 
-def exists(name: str, sort: str, body: Formula) -> Formula:  # noqa: N802 -- connective
-    return Exists(sort, cast(Formula, body.abstract(name, 0)))
+def exists(  # noqa: N802 -- connective
+    name: str,
+    sort: str,
+    body: Formula,
+    meter: WorkMeter | None = None,
+) -> Formula:
+    if meter is not None:
+        meter.consume("syntax_rebuilds")
+    return Exists(sort, cast(Formula, body.abstract(name, 0, meter)))
 
 
-def instantiate(binder: Formula, repl: Term) -> Formula:
+def instantiate(
+    binder: Formula, repl: Term, meter: WorkMeter | None = None
+) -> Formula:
     """Open the outermost binder of `binder` (a Forall/Exists) with `repl`."""
     if not isinstance(binder, (Forall, Exists)):
         raise TypeError(f"not a quantifier: {binder!r}")
-    return cast(Formula, binder.body.instantiate(repl, 0))
+    return cast(Formula, binder.body.instantiate(repl, 0, meter))
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +811,28 @@ CANONICAL_NODE_TYPES: frozenset[type[Node]] = frozenset(
 )
 
 
-def validate(node: object, depth: int = 0) -> None:
+def _validation_strings(node: Node) -> tuple[str, ...]:
+    """Return scalar strings with exact-type dispatch at the trust gate."""
+    match node:
+        case Var(name=name, sort=sort):
+            return (name, sort)
+        case Fun(name=name):
+            return (name,)
+        case Rel(name=name):
+            return (name,)
+        case Forall(sort=sort) | Exists(sort=sort):
+            return (sort,)
+        case BVar() | Eq() | Implies() | Bottom():
+            return ()
+        case _:
+            raise TypeError(f"non-canonical node: {type(node).__name__}")
+
+
+def validate(
+    node: object,
+    depth: int = 0,
+    meter: WorkMeter | None = None,
+) -> None:
     """Exact-type well-formedness for any term or formula. The trust gate: a
     hostile __eq__-overriding subclass is rejected because its exact type is not in
     `CANONICAL_NODE_TYPES`, so its `_validate` never runs. `depth` counts enclosing binders; a
@@ -695,4 +848,11 @@ def validate(node: object, depth: int = 0) -> None:
         n, d = stack.pop()
         if type(n) not in CANONICAL_NODE_TYPES:
             raise TypeError(f"non-canonical node: {type(n).__name__}")
-        stack.extend(cast(Node, n).validation_children(d))
+        canonical = cast(Node, n)
+        agenda = canonical.validation_children(d)
+        if meter is not None:
+            meter.consume("syntax_visits")
+            if meter.input_syntax(id(canonical), len(agenda)):
+                for value in _validation_strings(canonical):
+                    meter.inspect_string(value)
+        stack.extend(agenda)

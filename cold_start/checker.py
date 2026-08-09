@@ -15,6 +15,7 @@ memoization key and the soundness argument.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import cast
 
 from .proof import (
@@ -46,17 +47,26 @@ from .syntax import (
     Formula,
     Fun,
     Implies,
+    Node,
     Not,
     Term,
     Var,
+    children,
     forall,
     instantiate,
     validate,
 )
 from .theory import Signature, Theory, validate_theory
+from .work import DEFAULT_WORK_LIMITS, WorkLimits, WorkMeter, WorkUsage
 
 ProofChildren = tuple[Pf, ...]
 Derived = Callable[[Pf], Sequent]
+
+
+@dataclass(frozen=True, slots=True)
+class CheckResult:
+    sequent: Sequent
+    usage: WorkUsage
 
 # Deliberately independent from CANONICAL_PROOF_TYPES: equality between these
 # inventories is a fail-closed exhaustiveness contract checked before use.
@@ -82,21 +92,26 @@ CHECKER_PROOF_TYPES: frozenset[type[Pf]] = frozenset(
 )
 
 
-def sort_check_formula(formula: Formula, signature: Signature) -> None:
+def sort_check_formula(
+    formula: Formula,
+    signature: Signature,
+    *,
+    limits: WorkLimits = DEFAULT_WORK_LIMITS,
+) -> None:
     """Check a formula under one closed signature."""
-    Sequent(frozenset(), formula).sort_check(signature)
+    Sequent(frozenset(), formula).sort_check(signature, WorkMeter(limits))
 
 
-def _validate_node(proof: Pf) -> ProofChildren:
+def _validate_node(proof: Pf, meter: WorkMeter) -> ProofChildren:
     proof_type = type(proof)
     if proof_type is Axiom:
-        validate(cast(Axiom, proof).formula)
+        validate(cast(Axiom, proof).formula, meter=meter)
         return ()
     if proof_type is Assume:
-        validate(cast(Assume, proof).formula)
+        validate(cast(Assume, proof).formula, meter=meter)
         return ()
     if proof_type is Refl:
-        validate(cast(Refl, proof).term)
+        validate(cast(Refl, proof).term, meter=meter)
         return ()
     if proof_type is Sym:
         return (cast(Sym, proof).sub,)
@@ -107,6 +122,7 @@ def _validate_node(proof: Pf) -> ProofChildren:
         node = cast(Cong, proof)
         if type(node.fun) is not str:
             raise TypeError("Cong.fun must be a genuine str")
+        meter.inspect_string(node.fun)
         if type(node.args) is not tuple:
             raise TypeError("Cong.args must be a tuple")
         return node.args
@@ -115,51 +131,56 @@ def _validate_node(proof: Pf) -> ProofChildren:
         return (node.imp, node.ant)
     if proof_type is ImpIntro:
         node = cast(ImpIntro, proof)
-        validate(node.hyp)
+        validate(node.hyp, meter=meter)
         return (node.body,)
     if proof_type is Inst:
         node = cast(Inst, proof)
         if type(node.var) is not str:
             raise TypeError("Inst.var must be a genuine str")
-        validate(node.term)
+        meter.inspect_string(node.var)
+        validate(node.term, meter=meter)
         return (node.sub,)
     if proof_type is Induct:
         node = cast(Induct, proof)
         if type(node.var) is not str:
             raise TypeError("Induct.var must be a genuine str")
-        validate(node.pred)
+        meter.inspect_string(node.var)
+        validate(node.pred, meter=meter)
         return (node.base, node.step)
     if proof_type is ExFalso:
         node = cast(ExFalso, proof)
-        validate(node.concl)
+        validate(node.concl, meter=meter)
         return (node.sub,)
     if proof_type is RAA:
         node = cast(RAA, proof)
-        validate(node.goal)
+        validate(node.goal, meter=meter)
         return (node.sub,)
     if proof_type is ForallElim:
         node = cast(ForallElim, proof)
-        validate(node.term)
+        validate(node.term, meter=meter)
         return (node.sub,)
     if proof_type is ForallIntro:
         node = cast(ForallIntro, proof)
         if type(node.var) is not str or type(node.sort) is not str:
             raise TypeError("ForallIntro.var and .sort must be genuine strs")
+        meter.inspect_string(node.var)
+        meter.inspect_string(node.sort)
         return (node.sub,)
     if proof_type is ExistsIntro:
         node = cast(ExistsIntro, proof)
-        validate(node.claim)
-        validate(node.witness)
+        validate(node.claim, meter=meter)
+        validate(node.witness, meter=meter)
         return (node.sub,)
     if proof_type is ExistsElim:
         node = cast(ExistsElim, proof)
         if type(node.eigenvar) is not str:
             raise TypeError("ExistsElim.eigenvar must be a genuine str")
+        meter.inspect_string(node.eigenvar)
         return (node.sub_ex, node.sub_use)
     raise TypeError(f"not a proof term: {proof!r}")
 
 
-def _validated_postorder(proof: object) -> tuple[Pf, ...]:
+def _validated_postorder(proof: object, meter: WorkMeter) -> tuple[Pf, ...]:
     """Validate an exact proof graph and return one acyclic identity postorder.
 
     Colors are per-call and keyed by ``id``. The root strongly retains every
@@ -191,19 +212,91 @@ def _validated_postorder(proof: object) -> tuple[Pf, ...]:
         if color == active:
             raise ValueError(f"cycle in proof graph at {type(node).__name__}")
 
-        children = _validate_node(node)
+        meter.consume("proof_nodes")
+        children = _validate_node(node, meter)
+        meter.consume("proof_edges", len(children))
         colors[identity] = active
         stack.append((node, True))
         stack.extend((child, False) for child in reversed(children))
     return tuple(postorder)
 
 
-def validate_proof(proof: object) -> None:
+def validate_proof(
+    proof: object,
+    *,
+    limits: WorkLimits = DEFAULT_WORK_LIMITS,
+) -> None:
     """Iteratively validate one exact canonical acyclic proof graph."""
-    _validated_postorder(proof)
+    _validated_postorder(proof, WorkMeter(limits))
 
 
-def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
+def _hyp_union(
+    meter: WorkMeter, *collections: frozenset[Formula]
+) -> frozenset[Formula]:
+    meter.consume("hypothesis_elements", sum(len(values) for values in collections))
+    result: frozenset[Formula] = frozenset()
+    for values in collections:
+        result |= values
+    return result
+
+
+def _hyp_difference(
+    meter: WorkMeter,
+    values: frozenset[Formula],
+    removed: frozenset[Formula],
+) -> frozenset[Formula]:
+    meter.consume("hypothesis_elements", len(values) + len(removed))
+    return values - removed
+
+
+def _measure_syntax(root: Node, meter: WorkMeter) -> int:
+    """Measure a syntax DAG in child-first order, rejecting identity cycles."""
+    active: set[int] = set()
+    stack: list[tuple[Node, bool]] = [(root, False)]
+    while stack:
+        node, leaving = stack.pop()
+        identity = id(node)
+        if leaving:
+            active.remove(identity)
+            size = 1 + sum(
+                cast(int, meter.syntax_size(id(child))) for child in children(node)
+            )
+            meter.remember_syntax_size(identity, size)
+            if isinstance(node, Term):
+                meter.observe("single_term_nodes", size)
+            continue
+        if meter.syntax_size(identity) is not None:
+            continue
+        if identity in active:
+            raise TypeError("cyclic syntax graph")
+        active.add(identity)
+        meter.consume("syntax_visits")
+        stack.append((node, True))
+        stack.extend(
+            (cast(Node, child), False) for child in reversed(children(node))
+        )
+    size = cast(int, meter.syntax_size(id(root)))
+    if isinstance(root, Formula):
+        meter.observe("single_formula_nodes", size)
+    return size
+
+
+def _observe_sequent(sequent: Sequent, meter: WorkMeter) -> None:
+    meter.observe("derived_hypotheses", len(sequent.hyps))
+    meter.consume("hypothesis_elements", len(sequent.hyps))
+    total = _measure_syntax(sequent.concl, meter)
+    for hypothesis in sequent.hyps:
+        total += _measure_syntax(hypothesis, meter)
+    meter.observe("derived_sequent_nodes", total)
+    meter.consume("sequent_steps", len(sequent.hyps) + 1)
+
+
+def _derive_rule(
+    proof: Pf,
+    theory: Theory,
+    derived: Derived,
+    meter: WorkMeter,
+) -> Sequent:
     proof_type = type(proof)
     if proof_type is Axiom:
         node = cast(Axiom, proof)
@@ -215,11 +308,13 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         return Sequent(frozenset({formula}), formula)
     if proof_type is Refl:
         term = cast(Refl, proof).term
+        meter.consume("syntax_rebuilds")
         return Sequent(frozenset(), Eq(term, term))
     if proof_type is Sym:
         sequent = derived(cast(Sym, proof).sub)
         if type(sequent.concl) is not Eq:
             raise ValueError(f"sym needs an equality, got {sequent.concl!r}")
+        meter.consume("syntax_rebuilds")
         return Sequent(sequent.hyps, Eq(sequent.concl.rhs, sequent.concl.lhs))
     if proof_type is Trans:
         node = cast(Trans, proof)
@@ -231,7 +326,11 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
             raise ValueError(
                 f"trans: middle terms differ: {left.concl.rhs!r} vs {right.concl.lhs!r}"
             )
-        return Sequent(left.hyps | right.hyps, Eq(left.concl.lhs, right.concl.rhs))
+        meter.consume("syntax_rebuilds")
+        return Sequent(
+            _hyp_union(meter, left.hyps, right.hyps),
+            Eq(left.concl.lhs, right.concl.rhs),
+        )
     if proof_type is Cong:
         node = cast(Cong, proof)
         hypotheses: frozenset[Formula] = frozenset()
@@ -241,9 +340,10 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
             sequent = derived(subproof)
             if type(sequent.concl) is not Eq:
                 raise ValueError(f"cong needs equalities, got {sequent.concl!r}")
-            hypotheses |= sequent.hyps
+            hypotheses = _hyp_union(meter, hypotheses, sequent.hyps)
             left_terms.append(sequent.concl.lhs)
             right_terms.append(sequent.concl.rhs)
+        meter.consume("syntax_rebuilds", 3)
         return Sequent(
             hypotheses,
             Eq(Fun(node.fun, tuple(left_terms)), Fun(node.fun, tuple(right_terms))),
@@ -260,32 +360,45 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
                 f"  needs: {implication.concl.ant!r}\n"
                 f"  has:   {antecedent.concl!r}"
             )
-        return Sequent(implication.hyps | antecedent.hyps, implication.concl.con)
+        return Sequent(
+            _hyp_union(meter, implication.hyps, antecedent.hyps),
+            implication.concl.con,
+        )
     if proof_type is ImpIntro:
         node = cast(ImpIntro, proof)
         body = derived(node.body)
-        return Sequent(body.hyps - {node.hyp}, Implies(node.hyp, body.concl))
+        meter.consume("syntax_rebuilds")
+        return Sequent(
+            _hyp_difference(meter, body.hyps, frozenset({node.hyp})),
+            Implies(node.hyp, body.concl),
+        )
     if proof_type is Inst:
         node = cast(Inst, proof)
         sequent = derived(node.sub)
         for hypothesis in sequent.hyps:
-            if node.var in hypothesis.free_vars():
+            meter.consume("hypothesis_elements")
+            if node.var in hypothesis.free_vars(meter):
                 raise ValueError(
                     f"cannot instantiate {node.var!r}: free in hypothesis {hypothesis!r}"
                 )
         signature = theory.signature
         if signature is not None:
             variable_sorts = {
-                sort for name, sort in sequent.concl.free_var_sorts() if name == node.var
+                sort
+                for name, sort in sequent.concl.free_var_sorts(meter)
+                if name == node.var
             }
             if variable_sorts:
-                term_sort = node.term.sort_of(signature)
+                term_sort = node.term.sort_of(signature, meter=meter)
                 if term_sort not in variable_sorts:
                     raise ValueError(
                         f"cannot instantiate {node.var!r}:{variable_sorts} "
                         f"with a term of sort {term_sort!r}"
                     )
-        return Sequent(sequent.hyps, sequent.concl.subst(node.var, node.term))
+        return Sequent(
+            sequent.hyps,
+            sequent.concl.subst(node.var, node.term, meter),
+        )
     if proof_type is Induct:
         node = cast(Induct, proof)
         if theory.zero is None:
@@ -293,25 +406,29 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         successor = cast(str, theory.succ)
         base = derived(node.base)
         step = derived(node.step)
-        predicate_at_zero = node.pred.subst(node.var, theory.zero)
+        predicate_at_zero = node.pred.subst(node.var, theory.zero, meter)
         induction_sort = theory.induction_sort()
+        meter.consume("syntax_rebuilds", 2)
         induction_variable = Var(node.var, induction_sort)
         predicate_at_successor = node.pred.subst(
             node.var,
             Fun(successor, (induction_variable,)),
+            meter,
         )
         if base.concl != predicate_at_zero:
             raise ValueError(
                 f"induction base must prove {predicate_at_zero!r}, got {base.concl!r}"
             )
+        meter.consume("syntax_rebuilds")
         expected_step = Implies(node.pred, predicate_at_successor)
         if step.concl != expected_step:
             raise ValueError(
                 f"induction step must prove {expected_step!r}, got {step.concl!r}"
             )
-        hypotheses = base.hyps | step.hyps
+        hypotheses = _hyp_union(meter, base.hyps, step.hyps)
         for hypothesis in hypotheses:
-            if node.var in hypothesis.free_vars():
+            meter.consume("hypothesis_elements")
+            if node.var in hypothesis.free_vars(meter):
                 raise ValueError(
                     f"induction variable {node.var!r} is free in hypothesis {hypothesis!r}"
                 )
@@ -327,7 +444,12 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         sequent = derived(node.sub)
         if type(sequent.concl) is not Bottom:
             raise ValueError(f"reductio needs a proof of Bottom, got {sequent.concl!r}")
-        return Sequent(sequent.hyps - {Not(node.goal)}, node.goal)
+        meter.consume("syntax_rebuilds", 2)
+        negated = Not(node.goal)
+        return Sequent(
+            _hyp_difference(meter, sequent.hyps, frozenset({negated})),
+            node.goal,
+        )
     if proof_type is ForallElim:
         node = cast(ForallElim, proof)
         sequent = derived(node.sub)
@@ -335,35 +457,42 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
             raise ValueError(f"forall-elim needs a universal, got {sequent.concl!r}")
         signature = theory.signature
         if signature is not None:
-            term_sort = node.term.sort_of(signature)
+            term_sort = node.term.sort_of(signature, meter=meter)
             if term_sort != sequent.concl.sort:
                 raise ValueError(
                     f"cannot instantiate forall :{sequent.concl.sort!r} "
                     f"with a term of sort {term_sort!r}"
                 )
-        return Sequent(sequent.hyps, instantiate(sequent.concl, node.term))
+        return Sequent(
+            sequent.hyps,
+            instantiate(sequent.concl, node.term, meter),
+        )
     if proof_type is ForallIntro:
         node = cast(ForallIntro, proof)
         sequent = derived(node.sub)
         for hypothesis in sequent.hyps:
-            if node.var in hypothesis.free_vars():
+            meter.consume("hypothesis_elements")
+            if node.var in hypothesis.free_vars(meter):
                 raise ValueError(
                     f"cannot generalize {node.var!r}: free in hypothesis {hypothesis!r}"
                 )
-        return Sequent(sequent.hyps, forall(node.var, node.sort, sequent.concl))
+        return Sequent(
+            sequent.hyps,
+            forall(node.var, node.sort, sequent.concl, meter),
+        )
     if proof_type is ExistsIntro:
         node = cast(ExistsIntro, proof)
         if type(node.claim) is not Exists:
             raise ValueError(f"exists-intro needs an existential claim, got {node.claim!r}")
         sequent = derived(node.sub)
-        expected = instantiate(node.claim, node.witness)
+        expected = instantiate(node.claim, node.witness, meter)
         if sequent.concl != expected:
             raise ValueError(
                 f"exists-intro: sub-proof must prove {expected!r}, got {sequent.concl!r}"
             )
         signature = theory.signature
         if signature is not None:
-            witness_sort = node.witness.sort_of(signature)
+            witness_sort = node.witness.sort_of(signature, meter=meter)
             if witness_sort != node.claim.sort:
                 raise ValueError(
                     f"exists-intro witness has sort {witness_sort!r}, "
@@ -375,9 +504,11 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
         existential = derived(node.sub_ex)
         if type(existential.concl) is not Exists:
             raise ValueError(f"exists-elim needs an existential, got {existential.concl!r}")
+        meter.consume("syntax_rebuilds")
         instance = instantiate(
             existential.concl,
             Var(node.eigenvar, existential.concl.sort),
+            meter,
         )
         use = derived(node.sub_use)
         if instance not in use.hyps:
@@ -385,14 +516,16 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
                 f"exists-elim: the using proof must assume the instance {instance!r}"
             )
         conclusion = use.concl
-        hypotheses = existential.hyps | (use.hyps - {instance})
-        if node.eigenvar in conclusion.free_vars():
+        remaining = _hyp_difference(meter, use.hyps, frozenset({instance}))
+        hypotheses = _hyp_union(meter, existential.hyps, remaining)
+        if node.eigenvar in conclusion.free_vars(meter):
             raise ValueError(
                 f"exists-elim eigenvariable {node.eigenvar!r} escapes into "
                 f"the conclusion {conclusion!r}"
             )
         for hypothesis in hypotheses:
-            if node.eigenvar in hypothesis.free_vars():
+            meter.consume("hypothesis_elements")
+            if node.eigenvar in hypothesis.free_vars(meter):
                 raise ValueError(
                     f"exists-elim eigenvariable {node.eigenvar!r} is free in "
                     f"hypothesis {hypothesis!r}"
@@ -401,7 +534,12 @@ def _derive_rule(proof: Pf, theory: Theory, derived: Derived) -> Sequent:
     raise TypeError(f"checker has no rule for proof term: {proof!r}")
 
 
-def _derive(proof: Pf, theory: Theory, postorder: tuple[Pf, ...]) -> Sequent:
+def _derive(
+    proof: Pf,
+    theory: Theory,
+    postorder: tuple[Pf, ...],
+    meter: WorkMeter,
+) -> Sequent:
     """Derive an already-validated graph once per exact proof identity."""
     signature = theory.signature
     results: dict[int, Sequent] = {}
@@ -410,18 +548,70 @@ def _derive(proof: Pf, theory: Theory, postorder: tuple[Pf, ...]) -> Sequent:
         return results[id(child)]
 
     for candidate in postorder:
-        sequent = _derive_rule(candidate, theory, derived)
+        sequent = _derive_rule(candidate, theory, derived, meter)
         if signature is not None:
-            sequent.sort_check(signature)
+            sequent.sort_check(signature, meter)
+        _observe_sequent(sequent, meter)
         results[id(candidate)] = sequent
     return results[id(proof)]
 
 
-def check(proof: object, theory: object) -> Sequent:
-    """Validate and iteratively re-derive the sequent proved by ``proof``."""
+def _check_metered(proof: object, theory: object, meter: WorkMeter) -> Sequent:
     checked_theory = validate_theory(theory)
-    postorder = _validated_postorder(proof)
-    return _derive(cast(Pf, proof), checked_theory, postorder)
+    postorder = _validated_postorder(proof, meter)
+    return _derive(cast(Pf, proof), checked_theory, postorder, meter)
 
 
-__all__ = ["CHECKER_PROOF_TYPES", "check", "sort_check_formula", "validate_proof"]
+def check_with_usage(
+    proof: object,
+    theory: object,
+    *,
+    limits: WorkLimits = DEFAULT_WORK_LIMITS,
+) -> CheckResult:
+    """Check once and return its deterministic work-usage snapshot."""
+    meter = WorkMeter(limits)
+    sequent = _check_metered(proof, theory, meter)
+    return CheckResult(sequent, meter.snapshot())
+
+
+def check_claim_with_usage(
+    proof: object,
+    theory: object,
+    claim: object,
+    *,
+    limits: WorkLimits = DEFAULT_WORK_LIMITS,
+) -> CheckResult:
+    """Check and compare one exact claimed sequent under the same work meter."""
+    if type(claim) is not Sequent:
+        raise TypeError("claim must be an exact Sequent")
+    meter = WorkMeter(limits)
+    sequent = _check_metered(proof, theory, meter)
+    _observe_sequent(claim, meter)
+    meter.consume(
+        "hypothesis_elements",
+        len(sequent.hyps) + len(claim.hyps),
+    )
+    if sequent != claim:
+        raise ValueError("certificate claim mismatch")
+    return CheckResult(sequent, meter.snapshot())
+
+
+def check(
+    proof: object,
+    theory: object,
+    *,
+    limits: WorkLimits = DEFAULT_WORK_LIMITS,
+) -> Sequent:
+    """Validate and iteratively re-derive the sequent proved by ``proof``."""
+    return check_with_usage(proof, theory, limits=limits).sequent
+
+
+__all__ = [
+    "CHECKER_PROOF_TYPES",
+    "CheckResult",
+    "check",
+    "check_claim_with_usage",
+    "check_with_usage",
+    "sort_check_formula",
+    "validate_proof",
+]

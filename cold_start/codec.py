@@ -55,10 +55,18 @@ class CertificateLimits:
     max_claim_hypotheses: int
 
     def __post_init__(self) -> None:
-        for field_info in fields(self):
-            value = getattr(self, field_info.name)
+        values = (
+            ("max_input_bytes", self.max_input_bytes),
+            ("max_syntax_entries", self.max_syntax_entries),
+            ("max_proof_entries", self.max_proof_entries),
+            ("max_edges", self.max_edges),
+            ("max_tuple_arity", self.max_tuple_arity),
+            ("max_string_bytes", self.max_string_bytes),
+            ("max_claim_hypotheses", self.max_claim_hypotheses),
+        )
+        for name, value in values:
             if type(value) is not int or value <= 0:
-                raise ValueError(f"{field_info.name} must be a positive exact int")
+                raise ValueError(f"{name} must be a positive exact int")
 
 
 DEFAULT_CERTIFICATE_LIMITS = CertificateLimits(
@@ -394,8 +402,10 @@ def encode_certificate(certificate: Certificate) -> bytes:
     )
     syntax_records, syntax_indices = _build_syntax_table(syntax_roots)
     proof_records, proof_indices = _build_proof_table(proof_order, syntax_indices)
-    if not syntax_records or not proof_records:
-        raise ValueError("certificate tables must be nonempty")
+    if not syntax_records:
+        raise ValueError("certificate syntax table must be nonempty")
+    if not proof_records:
+        raise ValueError("certificate proof table must be nonempty")
 
     return b"".join(
         (
@@ -544,12 +554,12 @@ class _Reader:
 
 
 def _checked_ref(index: int, current: int, total: int, label: str) -> int:
-    if index == current:
-        raise ValueError(f"cyclic {label} reference")
-    if index > current and index < total:
-        raise ValueError(f"forward {label} reference")
     if index >= total:
         raise ValueError(f"{label} reference out of range")
+    if index >= current:
+        if index == current:
+            raise ValueError(f"cyclic {label} reference")
+        raise ValueError(f"forward {label} reference")
     return index
 
 
@@ -593,15 +603,14 @@ def _read_entry(
                 raise ValueError("syntax reference out of range")
             values.append(syntax[index])
         elif spec.kind == "syntax_tuple":
+            if table != "syntax":
+                raise AssertionError("proof schemas cannot contain syntax tuples")
             arity = reader.arity()
             syntax_items: list[Node] = []
             for _ in range(arity):
                 reader.edge()
                 index = reader.uvarint()
-                if table == "syntax":
-                    index = _checked_ref(index, current, total, "syntax")
-                elif index >= len(syntax):
-                    raise ValueError("syntax reference out of range")
+                index = _checked_ref(index, current, total, "syntax")
                 syntax_items.append(syntax[index])
             values.append(tuple(syntax_items))
         elif spec.kind == "proof":
@@ -754,6 +763,27 @@ def decode_certificate(
     return certificate
 
 
+def require_lowered_certificate_limits(
+    limits: CertificateLimits,
+    ceiling: CertificateLimits = DEFAULT_CERTIFICATE_LIMITS,
+) -> CertificateLimits:
+    """Accept exact I/O limits only when no repository ceiling is raised."""
+    if type(limits) is not CertificateLimits or type(ceiling) is not CertificateLimits:
+        raise TypeError("certificate limits and ceiling must be exact CertificateLimits")
+    comparisons = (
+        (limits.max_input_bytes, ceiling.max_input_bytes),
+        (limits.max_syntax_entries, ceiling.max_syntax_entries),
+        (limits.max_proof_entries, ceiling.max_proof_entries),
+        (limits.max_edges, ceiling.max_edges),
+        (limits.max_tuple_arity, ceiling.max_tuple_arity),
+        (limits.max_string_bytes, ceiling.max_string_bytes),
+        (limits.max_claim_hypotheses, ceiling.max_claim_hypotheses),
+    )
+    if any(value > maximum for value, maximum in comparisons):
+        raise ValueError("verifier certificate limits may only lower repository ceilings")
+    return limits
+
+
 __all__ = [
     "DEFAULT_CERTIFICATE_LIMITS",
     "CertificateLimits",
@@ -764,5 +794,6 @@ __all__ = [
     "encode_formula",
     "encode_term",
     "make_certificate",
+    "require_lowered_certificate_limits",
     "theory_fingerprint",
 ]

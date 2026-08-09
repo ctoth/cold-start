@@ -399,13 +399,13 @@ def test_shared_proof_is_validated_and_derived_once_by_identity(monkeypatch) -> 
     original_validate = checker._validate_node
     original_derive = checker._derive_rule
 
-    def counted_validate(node: Pf):
+    def counted_validate(node: Pf, meter):
         validation_count[id(node)] = validation_count.get(id(node), 0) + 1
-        return original_validate(node)
+        return original_validate(node, meter)
 
-    def counted_derive(node: Pf, theory: Theory, derived):
+    def counted_derive(node: Pf, theory: Theory, derived, meter):
         derivation_count[id(node)] = derivation_count.get(id(node), 0) + 1
-        return original_derive(node, theory, derived)
+        return original_derive(node, theory, derived, meter)
 
     monkeypatch.setattr(checker, "_validate_node", counted_validate)
     monkeypatch.setattr(checker, "_derive_rule", counted_derive)

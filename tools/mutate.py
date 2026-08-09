@@ -47,6 +47,7 @@ MUTATION_CAMPAIGNS = MappingProxyType(
                 Path("cold_start/sequent.py"),
                 Path("cold_start/syntax.py"),
                 Path("cold_start/theory.py"),
+                Path("cold_start/work.py"),
             ),
             tests=(
                 "tests/test_checker.py",
@@ -59,6 +60,7 @@ MUTATION_CAMPAIGNS = MappingProxyType(
                 "tests/test_relations.py",
                 "tests/test_properties.py",
                 "tests/test_rings.py",
+                "tests/test_work_limits.py",
             ),
         ),
         "portable": MutationCampaign(
@@ -70,6 +72,7 @@ MUTATION_CAMPAIGNS = MappingProxyType(
             tests=(
                 "tests/test_certificate.py",
                 "tests/test_codec.py",
+                "tests/test_work_limits.py",
             ),
         ),
     }
