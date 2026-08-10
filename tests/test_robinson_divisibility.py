@@ -6,7 +6,6 @@ from itertools import product
 
 from semantics import Model, evaluate
 
-from cold_start.codec import decode_formula, encode_formula
 from cold_start.notation import format_formula
 from cold_start.prop import And, Iff, Or
 from cold_start.robinson_divisibility import (
@@ -101,7 +100,6 @@ def test_robinson_product_is_an_honest_successor_divisibility_formula():
     nodes = tuple(subnodes(formula))
 
     validate(formula)
-    assert decode_formula(encode_formula(formula)) == formula
     assert formula.free_vars() == frozenset({"a", "b", "c"})
     assert {n.name for n in nodes if type(n) is Rel} == {"|"}
     assert {n.name for n in nodes if type(n) is Fun} == {"S"}

@@ -99,10 +99,9 @@ checker and decoder ceilings for an artifact.
 ## External adapters (`codec.py`, `emitter.py`, and `notation.py`)
 
 Serialization is not a syntax/proof responsibility. `codec.py` builds its
-registries from the canonical owner sets and exposes standalone
-`encode_term`/`decode_term` and `encode_formula`/`decode_formula` adapters. Proofs
-cross the external boundary only through versioned `Certificate` values encoded
-as canonical syntax/proof DAG tables. The artifact embeds the theory key,
+registries from the canonical owner sets and owns exactly one external encoding:
+terms, formulas and proofs cross the boundary only inside versioned
+`Certificate` values encoded as canonical syntax/proof DAG tables. The artifact embeds the theory key,
 semantic fingerprint, and exact claimed sequent. Decoded structures are
 exact-root checked and validated before they can reach the checker; the trusted
 core never imports the codec.

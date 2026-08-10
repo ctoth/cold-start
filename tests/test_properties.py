@@ -12,15 +12,7 @@ from hypothesis import strategies as st
 import cold_start.proof as P
 from cold_start.certificate import Certificate
 from cold_start.checker import check
-from cold_start.codec import (
-    decode_certificate,
-    decode_formula,
-    decode_term,
-    encode_certificate,
-    encode_formula,
-    encode_term,
-    theory_fingerprint,
-)
+from cold_start.codec import decode_certificate, encode_certificate, theory_fingerprint
 from cold_start.peano import PEANO
 from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
@@ -44,6 +36,7 @@ from cold_start.syntax import (
     Rel,
     Term,
     Var,
+    children,
     exists,
     forall,
     validate,
@@ -63,6 +56,33 @@ def _proof_bytes(proof: P.Pf) -> bytes:
 
 def _roundtrip_proof(proof: P.Pf) -> P.Pf:
     return decode_certificate(_proof_bytes(proof)).proof
+
+
+def _has_bvar(node) -> bool:
+    return type(node) is BVar or any(_has_bvar(child) for child in children(node))
+
+
+def _roundtrip_term(term):
+    """Terms cross the external boundary inside the certificate's syntax table
+    -- the only external syntax encoding this repo still owns.
+
+    A term holding an open BVar is legal only underneath a binder, which is
+    exactly where a certificate ever carries one, so send it across there."""
+    if _has_bvar(term):
+        decoded = _roundtrip_formula(Forall("", Eq(term, term)))
+        assert type(decoded) is Forall
+        body = decoded.body
+        assert type(body) is Eq
+        return body.lhs
+    proof = _roundtrip_proof(P.Refl(term))
+    assert type(proof) is P.Refl
+    return proof.term
+
+
+def _roundtrip_formula(formula):
+    decoded = _roundtrip_proof(P.Assume(formula))
+    assert type(decoded) is P.Assume
+    return decoded.formula
 
 # --- strategies -----------------------------------------------------------
 
@@ -179,7 +199,7 @@ def test_examples_cover_every_concrete_node_class():
 @given(st.sampled_from(list(TERM_EXAMPLES.items())))
 def test_every_term_kind_round_trips(item):
     cls, term = item
-    decoded = decode_term(encode_term(term))
+    decoded = _roundtrip_term(term)
     assert type(decoded) is cls
     assert decoded == term
 
@@ -187,7 +207,7 @@ def test_every_term_kind_round_trips(item):
 @given(st.sampled_from(list(FORMULA_EXAMPLES.items())))
 def test_every_formula_kind_round_trips(item):
     cls, formula = item
-    decoded = decode_formula(encode_formula(formula))
+    decoded = _roundtrip_formula(formula)
     assert type(decoded) is cls
     assert decoded == formula
 
@@ -202,12 +222,12 @@ def test_every_proof_kind_round_trips(item):
 
 @given(terms())
 def test_term_roundtrips(t):
-    assert decode_term(encode_term(t)) == t
+    assert _roundtrip_term(t) == t
 
 
 @given(formulas())
 def test_formula_roundtrips(f):
-    assert decode_formula(encode_formula(f)) == f
+    assert _roundtrip_formula(f) == f
 
 
 @given(proofs())
@@ -221,9 +241,10 @@ def test_deep_proof_survives_serialization_without_recursion():
     """The verifier's front door + trust path: a proof whose term is nested far
     deeper than the recursion limit serializes to bytes and is decoded + re-checked
     with NO RecursionError. The old JSON path died exactly here (json.loads, and the
-    recursive dict decoder, both blow the call stack). hamblin's postfix codec does
-    not, so the only bound is memory. (The human-readable repr of a result this deep
-    still recurses -- that is the output path, not the trust path; tracked separately.)"""
+    recursive dict decoder, both blow the call stack). The certificate's flat
+    postfix tables do not, so the only bound is memory. (The human-readable repr
+    of a result this deep still recurses -- that is the output path, not the
+    trust path; tracked separately.)"""
     import sys as _sys
 
     from cold_start.theory import Theory
