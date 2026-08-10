@@ -124,6 +124,19 @@ class Signature:
             raise TypeError("Signature relation lookup is not canonical")
         return cast(_RelationView, raw_relations).get(name)
 
+    def extend(self, ranks: tuple[FunctionRank, ...]) -> Signature:
+        """This vocabulary plus more function symbols, sorts and relations kept.
+
+        Conservative extension is how PEANO, SQUARE_ARITHMETIC and
+        ROBINSON_PEANO_F are built on top of their bases. Rebuilding the
+        `Signature` by hand at each site silently dropped `relations` whenever a
+        caller forgot to forward it, so the operation belongs here."""
+        return Signature(
+            sorts=self.sorts,
+            ranks=self.ranks + ranks,
+            relations=self.relations,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Theory:

@@ -16,7 +16,6 @@ from dataclasses import replace
 
 from .presburger import PRESBURGER, PRESBURGER_SIG
 from .syntax import Eq, Formula, Fun, Term, Var
-from .theory import Signature
 from .vocabulary import ZERO, S, add
 
 
@@ -44,10 +43,7 @@ SQUARE_SUCC_F: Formula = Eq(
     add(sq(_x), S(add(_x, _x))),
 )
 
-SQUARE_ARITHMETIC_SIG = Signature(
-    sorts=PRESBURGER_SIG.sorts,
-    ranks=PRESBURGER_SIG.ranks + (("sq", ("",), ""),),
-)
+SQUARE_ARITHMETIC_SIG = PRESBURGER_SIG.extend((("sq", ("",), ""),))
 SQUARE_ARITHMETIC = replace(
     PRESBURGER,
     axioms=PRESBURGER.axioms | {SQUARE_ZERO_F, SQUARE_SUCC_F},

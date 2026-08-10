@@ -53,7 +53,6 @@ from .proof import Assume, Axiom, Cong, ImpIntro, Pf, Trans
 from .robinson import ONE, ROBINSON_PEANO
 from .syntax import Eq, Formula, Fun, Term, Var
 from .tactics import lemma_rule, prove_eq
-from .theory import Signature
 from .vocabulary import S, mul
 
 # --- the extra symbol: a self-map of the positive integers -----------------
@@ -79,11 +78,7 @@ if ROBINSON_PEANO.signature is None:
 ROBINSON_PEANO_F = replace(
     ROBINSON_PEANO,
     axioms=ROBINSON_PEANO.axioms | {F_ONE, F_SUCC},
-    signature=Signature(
-        sorts=ROBINSON_PEANO.signature.sorts,
-        ranks=ROBINSON_PEANO.signature.ranks + (("f", ("",), ""),),
-        relations=ROBINSON_PEANO.signature.relations,
-    ),
+    signature=ROBINSON_PEANO.signature.extend((("f", ("",), ""),)),
 )
 
 # --- the theorems ----------------------------------------------------------

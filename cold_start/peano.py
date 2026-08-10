@@ -18,7 +18,6 @@ from dataclasses import replace
 from . import vocabulary as _v
 from .presburger import PRESBURGER, PRESBURGER_SIG
 from .syntax import Eq, Formula, Var
-from .theory import Signature
 
 # --- multiplication axioms (recursion on the second argument) -------------
 
@@ -31,10 +30,7 @@ MUL_SUCC_F: Formula = Eq(  # x * S y = (x * y) + x
 
 # Peano = Presburger + {the two multiplication axioms}. Same zero, successor, and
 # induction rule; the only change is two more axioms and the `*` symbol they use.
-PEANO_SIG = Signature(
-    sorts=PRESBURGER_SIG.sorts,
-    ranks=PRESBURGER_SIG.ranks + (("*", ("", ""), ""),),
-)
+PEANO_SIG = PRESBURGER_SIG.extend((("*", ("", ""), ""),))
 PEANO = replace(
     PRESBURGER,
     axioms=PRESBURGER.axioms | {MUL_ZERO_F, MUL_SUCC_F},
