@@ -194,7 +194,8 @@ def _add(left: Polynomial, right: Polynomial, domain: CoefficientDomain) -> Poly
     return _polynomial(out, domain)
 
 
-def _multiply_monomials(left: Monomial, right: Monomial) -> Monomial:
+def multiply_monomials(left: Monomial, right: Monomial) -> Monomial:
+    """The canonical monomial whose exponents are the two monomials' summed."""
     powers: dict[Term, int] = {}
     for atom, exponent in (*left, *right):
         powers[atom] = powers.get(atom, 0) + exponent
@@ -205,7 +206,7 @@ def _mul(left: Polynomial, right: Polynomial, domain: CoefficientDomain) -> Poly
     out: dict[Monomial, int] = {}
     for left_monomial, left_coefficient in left.terms:
         for right_monomial, right_coefficient in right.terms:
-            monomial = _multiply_monomials(left_monomial, right_monomial)
+            monomial = multiply_monomials(left_monomial, right_monomial)
             coefficient = left_coefficient * right_coefficient
             out[monomial] = out.get(monomial, 0) + coefficient
     return _polynomial(out, domain)
@@ -305,37 +306,18 @@ def _postorder(term: object, context: AlgebraContext) -> tuple[Term, ...]:
 
 
 def _merge(
-    original: Term,
     symbol: str,
-    left: Normalization,
-    right: Normalization,
+    parts: tuple[Normalization, ...],
     polynomial: Polynomial,
     context: AlgebraContext,
 ) -> Normalization:
-    canonical_source = Fun(symbol, (left.term, right.term))
+    """Rebuild `symbol` over already-normalized arguments and prove the result
+    equal to the quote of `polynomial`. Arity is whatever `parts` says: the
+    binary `+`/`*` case and the unary `neg`/successor case differ in nothing
+    else."""
+    canonical_source = Fun(symbol, tuple(part.term for part in parts))
     canonical_target = quote(polynomial, context)
-    descend = Cong(symbol, (left.proof, right.proof))
-    if canonical_source == canonical_target:
-        proof = descend
-    else:
-        merge = prove_eq(
-            Eq(canonical_source, canonical_target),
-            context.merge_rules,
-            context.rewrite_budget,
-        )
-        proof = Trans(descend, merge)
-    return Normalization(polynomial, canonical_target, proof)
-
-
-def _merge_unary(
-    original: Fun,
-    child: Normalization,
-    polynomial: Polynomial,
-    context: AlgebraContext,
-) -> Normalization:
-    canonical_source = Fun(original.name, (child.term,))
-    canonical_target = quote(polynomial, context)
-    descend = Cong(original.name, (child.proof,))
+    descend = Cong(symbol, tuple(part.proof for part in parts))
     if canonical_source == canonical_target:
         proof = descend
     else:
@@ -364,10 +346,8 @@ def normalize(term: object, context: AlgebraContext) -> Normalization:
         elif node.name == context.add:
             left, right = (results[id(child)] for child in node.args)
             results[id(node)] = _merge(
-                node,
                 context.add,
-                left,
-                right,
+                (left, right),
                 _add(
                     left.polynomial,
                     right.polynomial,
@@ -378,10 +358,8 @@ def normalize(term: object, context: AlgebraContext) -> Normalization:
         elif node.name == context.mul:
             left, right = (results[id(child)] for child in node.args)
             results[id(node)] = _merge(
-                node,
                 context.mul,
-                left,
-                right,
+                (left, right),
                 _mul(
                     left.polynomial,
                     right.polynomial,
@@ -391,17 +369,17 @@ def normalize(term: object, context: AlgebraContext) -> Normalization:
             )
         elif context.neg is not None and node.name == context.neg:
             child = results[id(node.args[0])]
-            results[id(node)] = _merge_unary(
-                node,
-                child,
+            results[id(node)] = _merge(
+                node.name,
+                (child,),
                 _negate(child.polynomial, context.coefficient_domain),
                 context,
             )
         elif context.successor is not None and node.name == context.successor:
             child = results[id(node.args[0])]
-            results[id(node)] = _merge_unary(
-                node,
-                child,
+            results[id(node)] = _merge(
+                node.name,
+                (child,),
                 _add(
                     child.polynomial,
                     _constant_one(),
@@ -614,40 +592,22 @@ def elaborate_ideal_membership(
     if context.coefficient_domain != "mod2":
         raise RingNormalizationError("ideal-membership elaboration requires mod2")
 
-    scaled: list[EquationProof] = []
+    scaled: list[CombinationSource] = []
     for source, cofactor in zip(sources, cofactors, strict=True):
         equation, proof = _require_equation_proof(source)
         if not cofactor.terms:
             continue
-        coefficient = quote(cofactor, context)
-        scaled.append(
-            (
-                Eq(
-                    Fun(context.mul, (equation.lhs, coefficient)),
-                    Fun(context.mul, (equation.rhs, coefficient)),
-                ),
-                Cong(context.mul, (proof, Refl(coefficient))),
-            )
-        )
+        scaled.append((equation, proof, quote(cofactor, context)))
 
     if not scaled:
         return ring_eq(goal, context)
 
-    first_equation, combined = scaled[0]
-    left_sum, right_sum = first_equation.lhs, first_equation.rhs
-    for equation, proof in scaled[1:]:
-        combined = Cong(context.add, (combined, proof))
-        left_sum = Fun(context.add, (left_sum, equation.lhs))
-        right_sum = Fun(context.add, (right_sum, equation.rhs))
+    left_sum, right_sum, combined = _combine_sources(
+        tuple(scaled), context.add, context.mul
+    )
 
     on_sum = Cong(context.add, (Refl(goal.lhs), combined))
-    shuffle = ring_eq(
-        Eq(
-            Fun(context.add, (goal.lhs, right_sum)),
-            Fun(context.add, (goal.rhs, left_sum)),
-        ),
-        context,
-    )
+    shuffle = ring_eq(_shuffle_goal(goal, left_sum, right_sum, context.add), context)
     with_suffix = Trans(on_sum, shuffle)
     doubled = Cong(context.add, (with_suffix, Refl(left_sum)))
     left_doubled = Fun(
@@ -677,6 +637,7 @@ __all__ = [
     "elaborate_combination",
     "elaborate_ideal_membership",
     "monomial_sort_key",
+    "multiply_monomials",
     "normalize",
     "quote",
     "ring_eq",

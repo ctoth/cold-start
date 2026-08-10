@@ -22,6 +22,7 @@ from .ring_nf import (
     Polynomial,
     elaborate_ideal_membership,
     monomial_sort_key,
+    multiply_monomials,
     normalize,
 )
 from .syntax import Eq, Term
@@ -187,16 +188,9 @@ def _add(left: Polynomial, right: Polynomial) -> Polynomial:
     return _canonical(monomials)
 
 
-def _multiply_monomials(left: Monomial, right: Monomial) -> Monomial:
-    powers: dict[Term, int] = {}
-    for atom, exponent in (*left, *right):
-        powers[atom] = powers.get(atom, 0) + exponent
-    return tuple(sorted(powers.items(), key=lambda item: monomial_sort_key(((item[0], 1),))))
-
-
 def _scale(polynomial: Polynomial, monomial: Monomial) -> Polynomial:
     return _canonical(
-        {_multiply_monomials(source, monomial) for source, _ in polynomial.terms}
+        {multiply_monomials(source, monomial) for source, _ in polynomial.terms}
     )
 
 
