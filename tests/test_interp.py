@@ -26,9 +26,9 @@ from cold_start.interp import (
     translate,
     verify,
 )
-from cold_start.proof import Axiom, Refl
+from cold_start.proof import Axiom, Refl, proof_size
 from cold_start.robinson import ADD_ONE, ADD_SUCC, ONE, ROBINSON_PEANO, bridge
-from cold_start.syntax import Eq, Implies, Not, Var, exists, forall
+from cold_start.syntax import Eq, Implies, Not, Var, exists, forall, node_size
 from cold_start.vocabulary import S, add
 
 _a, _b, _c, _d = Var("a"), Var("b"), Var("c"), Var("d")
@@ -254,3 +254,21 @@ def test_translate_negated_atom() -> None:
     # of negation as →⊥.
     f = Not(Eq(add(_a, ONE), ONE))
     assert translate(f, (PLUS,)) == Not(bridge(_a, ONE, ONE))
+
+
+# --- the two node measures ------------------------------------------------
+
+
+def test_node_size_counts_every_node_of_a_tree() -> None:
+    # Eq, its two Fun applications, and the three Vars underneath them.
+    assert node_size(Var("a")) == 1
+    assert node_size(Eq(add(_a, _b), S(_c))) == 1 + 3 + 2
+
+
+def test_proof_size_counts_proof_nodes_only() -> None:
+    """The certificate toll is a count of PROOF-node occurrences, so the
+    formulas a proof carries do not inflate it. `node_size` counts those too --
+    the two measures are different, and each has exactly one owner."""
+    pf = Axiom(Eq(add(_a, _b), S(_c)))
+    assert proof_size(pf) == 1
+    assert node_size(pf) == 1 + node_size(Eq(add(_a, _b), S(_c)))

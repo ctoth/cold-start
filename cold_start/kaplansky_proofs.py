@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from functools import cache, reduce
+from functools import cache
 from pathlib import Path
 from typing import TypeAlias, cast
 
@@ -37,30 +37,20 @@ from .groupring2 import (
     A,
     B,
 )
-from .proof import Axiom, Cong, Pf, Refl, Sym, Trans
+from .proof import Axiom, Cong, Pf, Refl, Sym, Trans, proof_size
 from .syntax import Eq, Formula, Fun, Term, Var
 from .tactics import Rule, axiom_rule, lemma_rule, normalize, prove_eq, rewrite_step
-from .vocabulary import ONE, ZERO, add, mul
+from .vocabulary import ONE, ZERO, add, mul, product, summation
 
 GElem: TypeAlias = tuple[int, int, int, int]
 
 
-def _m(*factors: Term) -> Term:
-    """A right-nested nonempty product."""
-    return reduce(lambda acc, factor: mul(factor, acc), reversed(factors[:-1]), factors[-1])
-
-
-def _s(*terms: Term) -> Term:
-    """A right-nested nonempty sum."""
-    return reduce(lambda acc, term: add(term, acc), reversed(terms[:-1]), terms[-1])
-
-
-X = _m(A, A)
-X_INV = _m(A_INV, A_INV)
-Y = _m(B, B)
-Y_INV = _m(B_INV, B_INV)
-Z = _m(A, B, A, B)
-Z_INV = _m(B_INV, A_INV, B_INV, A_INV)
+X = product(A, A)
+X_INV = product(A_INV, A_INV)
+Y = product(B, B)
+Y_INV = product(B_INV, B_INV)
+Z = product(A, B, A, B)
+Z_INV = product(B_INV, A_INV, B_INV, A_INV)
 
 _tail = Var("tail")
 
@@ -379,10 +369,10 @@ def lemma_library() -> tuple[Rule, ...]:
 def _factor_product(factors: Sequence[Term]) -> Term:
     if not factors:
         return ONE
-    return _m(*factors)
+    return product(*factors)
 
 
-_SECTION = (ONE, A, B, _m(A, B))
+_SECTION = (ONE, A, B, product(A, B))
 
 
 def group_factors(g: GElem) -> tuple[Term, ...]:
@@ -966,13 +956,13 @@ def _additive_rules() -> tuple[Rule, ...]:
 @cache
 def u_term() -> Term:
     u, _ = witness_coordinates()
-    return _s(*(group_term(g) for g in u))
+    return summation(*(group_term(g) for g in u))
 
 
 @cache
 def v_term() -> Term:
     _, v = witness_coordinates()
-    return _s(*(group_term(g) for g in v))
+    return summation(*(group_term(g) for g in v))
 
 
 @cache
@@ -987,9 +977,9 @@ def _row_product_lemma(
     budget: int,
 ) -> Rule:
     """Expand and reduce one group word times one 21-term ring element."""
-    source = mul(group_term(left), _s(*(group_term(g) for g in right)))
+    source = mul(group_term(left), summation(*(group_term(g) for g in right)))
     products = tuple(mul(group_term(left), group_term(g)) for g in right)
-    expanded = _s(*products)
+    expanded = summation(*products)
     expanded_term, expansion_pf = normalize(
         source,
         (axiom_rule(DIST_LEFT),),
@@ -1007,7 +997,7 @@ def _row_product_lemma(
             return ground[index].proof
         return Cong("+", (ground[index].proof, map_products(index + 1)))
 
-    mapped = _s(*(rule.eq.rhs for rule in ground))
+    mapped = summation(*(rule.eq.rhs for rule in ground))
     mapping_pf = map_products(0)
     normal, normal_pf = normalize(mapped, _additive_rules(), budget)
     proof = Trans(expansion_pf, Trans(mapping_pf, normal_pf))
@@ -1022,9 +1012,9 @@ def _staged_product_proof(
 ) -> Pf:
     """Reduce 21 rows, then combine their normal forms from right to left."""
     rows = tuple(
-        mul(group_term(g), _s(*(group_term(h) for h in right))) for g in left
+        mul(group_term(g), summation(*(group_term(h) for h in right))) for g in left
     )
-    expanded = _s(*rows)
+    expanded = summation(*rows)
     expanded_term, expansion_pf = normalize(
         statement.lhs,
         (axiom_rule(DIST_RIGHT),),
@@ -1074,26 +1064,6 @@ def unit_product_proofs(budget: int = 200_000) -> tuple[Pf, Pf]:
     return uv_product_proof(budget), vu_product_proof(budget)
 
 
-def _toll(proof: Pf) -> int:
-    """Count proof nodes iteratively, matching the repository ledger toll."""
-    from dataclasses import fields as dc_fields
-    from dataclasses import is_dataclass
-
-    count = 0
-    stack: list[object] = [proof]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, Pf) and is_dataclass(node):
-            count += 1
-            for field in dc_fields(node):
-                value: object = getattr(node, field.name)
-                if type(value) is tuple:
-                    stack.extend(cast("tuple[object, ...]", value))
-                else:
-                    stack.append(value)
-    return count
-
-
 def main() -> None:
     """Rebuild, re-check, and toll every exported certificate theorem."""
     from .checker import check
@@ -1117,7 +1087,7 @@ def main() -> None:
             expected = Sequent(frozenset(), statement)
             if check(proof, GROUP_RING_P2) != expected:
                 raise AssertionError(f"checker conclusion drifted for {label}")
-            toll += _toll(proof)
+            toll += proof_size(proof)
         total += toll
         print(f"{label:<30} toll {toll:>12,}")
     print(f"{'TOTAL':<30} toll {total:>12,}")
