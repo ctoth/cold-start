@@ -25,6 +25,7 @@ from collections.abc import Callable
 
 from .prop import And, Iff, Or
 from .syntax import Eq, Formula, Implies, Rel, Term, Var, exists, forall
+from .tactics import fresh_name
 from .vocabulary import S
 
 Divides = Callable[[Term, Term], Formula]
@@ -34,16 +35,6 @@ Domain = Callable[[Term], Formula]
 def divides(divisor: Term, dividend: Term) -> Rel:
     """The atomic relation ``divisor | dividend``."""
     return Rel("|", (divisor, dividend))
-
-
-def _fresh(stem: str, *nodes: Term | Formula) -> str:
-    used = {name for node in nodes for name in node.free_vars()}
-    if stem not in used:
-        return stem
-    index = 0
-    while f"{stem}{index}" in used:
-        index += 1
-    return f"{stem}{index}"
 
 
 def _forall_in(name: str, body: Formula, domain: Domain | None) -> Formula:
@@ -70,9 +61,9 @@ def coprime(
     Every common divisor of ``a`` and ``b`` divides every positive integer; on
     the positive integers, that says the only common divisor is the unit 1.
     """
-    divisor_name = _fresh("d", a, b)
+    divisor_name = fresh_name("d", a, b)
     divisor = Var(divisor_name)
-    arbitrary_name = _fresh("y", a, b, divisor)
+    arbitrary_name = fresh_name("y", a, b, divisor)
     arbitrary = Var(arbitrary_name)
     body = Implies(
         And(via(divisor, a), via(divisor, b)),
@@ -90,7 +81,7 @@ def lcm(
     domain: Domain | None = None,
 ) -> Formula:
     """The graph ``c = lcm(a,b)`` using divisibility alone."""
-    multiple_name = _fresh("x", a, b, c)
+    multiple_name = fresh_name("x", a, b, c)
     multiple = Var(multiple_name)
     return _forall_in(
         multiple_name,
@@ -111,7 +102,7 @@ def unit_case(
     domain: Domain | None = None,
 ) -> Formula:
     """Formula (2)'s first disjunct, true exactly when ``a=b=c=1``."""
-    arbitrary_name = _fresh("x", a, b, c)
+    arbitrary_name = fresh_name("x", a, b, c)
     arbitrary = Var(arbitrary_name)
     return _forall_in(
         arbitrary_name,
@@ -127,7 +118,7 @@ def _lcm_successor_multiple(
     via: Divides,
     domain: Domain | None,
 ) -> Formula:
-    lcm_name = _fresh("l", modulus, a, x)
+    lcm_name = fresh_name("l", modulus, a, x)
     value = Var(lcm_name)
     return _exists_in(
         lcm_name,
@@ -144,9 +135,9 @@ def _successor_is_nested_lcm(
     via: Divides,
     domain: Domain | None,
 ) -> Formula:
-    xy_name = _fresh("l", u, c, x, y)
+    xy_name = fresh_name("l", u, c, x, y)
     xy = Var(xy_name)
-    cxy_name = _fresh("v", u, c, x, y, xy)
+    cxy_name = fresh_name("v", u, c, x, y, xy)
     cxy = Var(cxy_name)
     return _exists_in(
         xy_name,
@@ -176,13 +167,13 @@ def robinson_product(
     Chinese-remainder characterization, with every coprimality/lcm abbreviation
     expanded hygienically.
     """
-    x_name = _fresh("x", a, b, c)
+    x_name = fresh_name("x", a, b, c)
     x = Var(x_name)
-    y_name = _fresh("y", a, b, c, x)
+    y_name = fresh_name("y", a, b, c, x)
     y = Var(y_name)
-    modulus_name = _fresh("m", a, b, c, x, y)
+    modulus_name = fresh_name("m", a, b, c, x, y)
     modulus = Var(modulus_name)
-    u_name = _fresh("u", a, b, c, x, y, modulus)
+    u_name = fresh_name("u", a, b, c, x, y, modulus)
     u = Var(u_name)
 
     hypothesis = And(

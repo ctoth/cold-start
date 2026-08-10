@@ -152,13 +152,26 @@ def match(
 # ---------------------------------------------------------------------------
 
 
-def _fresh(base: str, avoid: set[str]) -> str:
-    k = 0
-    name = f"{base}!"
-    while name in avoid:
-        k += 1
-        name = f"{base}!{k}"
-    return name
+def fresh_name(stem: str, *scope: Node | str) -> str:
+    """The first of ``stem``, ``stem0``, ``stem1``, ... that ``scope`` leaves free.
+
+    The one owner of fresh-name generation: binder witnesses in `order`,
+    `divisibility` and `robinson_divisibility` name themselves this way, and so
+    do the staging slots of `simultaneous_inst`. A `Node` in `scope` contributes
+    its free variables; a bare `str` contributes itself.
+    """
+    avoid: set[str] = set()
+    for item in scope:
+        if type(item) is str:
+            avoid.add(item)
+        else:
+            avoid |= set(cast(Node, item).free_vars())
+    if stem not in avoid:
+        return stem
+    index = 0
+    while f"{stem}{index}" in avoid:
+        index += 1
+    return f"{stem}{index}"
 
 
 def _subst_all(term: Term, sigma: Substitution) -> Term:
@@ -339,7 +352,7 @@ class Rule:
         holes = sorted(self.vars)
         renaming: dict[str, str] = {}
         for v in holes:
-            renaming[v] = _fresh(v, avoid)
+            renaming[v] = fresh_name(f"{v}!", *avoid)
             avoid.add(renaming[v])
         pf = self.proof
         for v in holes:
@@ -569,12 +582,12 @@ def transport(pattern: Formula, var: str, eq: Eq, eq_pf: Pf, pf: Pf) -> Pf:
         back = transport(pattern.ant, var, Eq(eq.rhs, eq.lhs), Sym(eq_pf), Assume(moved_ant))
         return ImpIntro(moved_ant, transport(pattern.con, var, eq, eq_pf, MP(pf, back)))
     if type(pattern) is Forall:
-        u = _fresh("t", set(pattern.free_vars()) | set(eq.free_vars()) | {var})
+        u = fresh_name("t!", pattern, eq, var)
         opened = instantiate(pattern, Var(u, pattern.sort))
         inner = transport(opened, var, eq, eq_pf, ForallElim(pf, Var(u, pattern.sort)))
         return ForallIntro(u, pattern.sort, inner)
     if type(pattern) is Exists:
-        u = _fresh("t", set(pattern.free_vars()) | set(eq.free_vars()) | {var})
+        u = fresh_name("t!", pattern, eq, var)
         opened = instantiate(pattern, Var(u, pattern.sort))
         assumption = opened.subst(var, eq.lhs)
         moved = transport(opened, var, eq, eq_pf, Assume(assumption))
@@ -653,6 +666,7 @@ __all__ = [
     "TacticError",
     "axiom_rule",
     "by_induction",
+    "fresh_name",
     "hypothesis_rule",
     "lemma_rule",
     "match",

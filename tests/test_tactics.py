@@ -36,6 +36,7 @@ from cold_start.tactics import (
     _under_context,
     axiom_rule,
     by_induction,
+    fresh_name,
     hypothesis_rule,
     lemma_rule,
     match,
@@ -651,3 +652,23 @@ def test_a_non_permutative_rule_may_not_be_ordered():
     # calling it "ordered" would be a lie. (It needs no taming anyway.)
     with pytest.raises(TacticError):
         axiom_rule(ADD_ZERO_F, ordered=True)
+
+
+# --- one owner for fresh names -------------------------------------------
+
+
+def test_fresh_name_keeps_the_stem_when_nothing_shadows_it():
+    assert fresh_name("w", add(x, y)) == "w"
+
+
+def test_fresh_name_avoids_free_variables_of_every_node_in_scope():
+    # Nodes contribute their free variables; bare strings contribute themselves.
+    assert fresh_name("x", add(x, y)) == "x0"
+    assert fresh_name("x", add(x, y), Var("x0")) == "x1"
+    assert fresh_name("x", "x", "x0") == "x1"
+
+
+def test_fresh_name_counts_only_free_occurrences():
+    bound = Implies(Eq(x, x), Eq(y, y))
+    assert fresh_name("z", bound) == "z"
+    assert fresh_name("y", bound) == "y0"
