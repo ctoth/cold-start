@@ -36,6 +36,7 @@ from cold_start.tactics import (
     _under_context,
     axiom_rule,
     by_induction,
+    denormalize_equality,
     fresh_name,
     hypothesis_rule,
     lemma_rule,
@@ -570,21 +571,38 @@ def test_prove_eq_computes_numeral_addition(a, b):
 def test_normalize_equality_transports_a_proved_equation():
     x, y = Var("x"), Var("y")
     source = Eq(add(x, ZERO), add(y, ZERO))
-    transported = normalize_equality(source, Assume(source), ADD_RULES)
+    # The normal form comes back with the recipe: callers need both, and
+    # rebuilding the Eq by hand is how three copies of this got written.
+    normal, transported = normalize_equality(source, Assume(source), ADD_RULES)
 
     seq = check(transported, PRESBURGER)
 
-    assert seq.concl == Eq(x, y)
+    assert normal == Eq(x, y)
+    assert seq.concl == normal
     assert seq.hyps == frozenset({source})
 
 
 def test_normalize_equality_does_not_authorize_a_mismatched_proof():
     x, y = Var("x"), Var("y")
     source = Eq(add(x, ZERO), add(y, ZERO))
-    forged = normalize_equality(source, Refl(add(x, ZERO)), ADD_RULES)
+    _, forged = normalize_equality(source, Refl(add(x, ZERO)), ADD_RULES)
 
     with pytest.raises(ValueError, match="middle terms differ"):
         check(forged, PRESBURGER)
+
+
+def test_denormalize_equality_carries_a_normal_form_proof_back_to_the_target():
+    """The mirror of `normalize_equality`: given a proof that the normal forms
+    agree, hand back a proof of the original equality."""
+    x = Var("x")
+    target = Eq(add(x, ZERO), add(ZERO, ZERO))
+    normal, _ = normalize_equality(target, Assume(target), ADD_RULES)
+    assert normal == Eq(x, ZERO)
+
+    folded = denormalize_equality(target, Assume(normal), ADD_RULES)
+    seq = check(folded, PRESBURGER)
+    assert seq.concl == target
+    assert seq.hyps == frozenset({normal})
 
 
 @given(

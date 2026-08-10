@@ -19,6 +19,7 @@ The layer is a small equational engine:
     rewrite_step(term, rules)      rewrite the leftmost-outermost redex
     normalize(term, rules)         rewrite to a fixpoint, Trans-chained
     normalize_equality(eq, pf, rules) transport a proved equation to normal form
+    denormalize_equality(eq, pf, rules) and the mirror, back from normal form
     prove_eq(goal, rules)          normalize both sides, join with Trans/Sym
     by_induction(var, pred, rules) base + step by prove_eq, closed by Induct
 """
@@ -552,7 +553,7 @@ def normalize_equality(
     proof: Pf,
     rules: Iterable[Rule],
     budget: int = DEFAULT_BUDGET,
-) -> Pf:
+) -> tuple[Eq, Pf]:
     """Transport a proof of ``lhs = rhs`` to the equality of its normal forms.
 
     If normalization emits ``lhs = lhs_nf`` and ``rhs = rhs_nf``, the returned
@@ -562,15 +563,38 @@ def normalize_equality(
     exposing the algebraic content of that equality for a later inference such
     as injectivity or cancellation.
 
+    Both halves come back together -- ``Eq(lhs_nf, rhs_nf)`` and its recipe --
+    because a caller that has to rebuild the statement by hand ends up
+    rebuilding the recipe too, which is how three copies of this got written.
+
     The caller supplies ``source`` because tactics are deliberately untrusted
     and do not derive proof conclusions.  A mismatch between it and ``proof``
     produces an invalid ``Trans`` node that the checker rejects.
     """
     eq = _equation(source)
     rules = tuple(rules)
+    left_nf, left_pf = normalize(eq.lhs, rules, budget)
+    right_nf, right_pf = normalize(eq.rhs, rules, budget)
+    return Eq(left_nf, right_nf), Trans(Sym(left_pf), Trans(proof, right_pf))
+
+
+def denormalize_equality(
+    target: Formula,
+    proof: Pf,
+    rules: Iterable[Rule],
+    budget: int = DEFAULT_BUDGET,
+) -> Pf:
+    """The mirror of :func:`normalize_equality`: fold a normal-form proof back.
+
+    Given a proof of ``lhs_nf = rhs_nf``, the returned recipe is
+    ``lhs = lhs_nf = rhs_nf = rhs`` -- the equality the caller actually wants,
+    reached through the normal forms it was easier to prove there.
+    """
+    eq = _equation(target)
+    rules = tuple(rules)
     _, left_pf = normalize(eq.lhs, rules, budget)
     _, right_pf = normalize(eq.rhs, rules, budget)
-    return Trans(Sym(left_pf), Trans(proof, right_pf))
+    return Trans(left_pf, Trans(proof, Sym(right_pf)))
 
 
 # ---------------------------------------------------------------------------
@@ -699,6 +723,7 @@ __all__ = [
     "TacticError",
     "axiom_rule",
     "by_induction",
+    "denormalize_equality",
     "fresh_name",
     "hypothesis_rule",
     "lemma_rule",

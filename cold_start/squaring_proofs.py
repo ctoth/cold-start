@@ -58,7 +58,7 @@ def double_injective() -> Pf:
     )
 
     base_hyp = Eq(double(ZERO), double(y))
-    base_normal = normalize_equality(base_hyp, Assume(base_hyp), add_kit())
+    _, base_normal = normalize_equality(base_hyp, Assume(base_hyp), add_kit())
     both_zero = MP(
         Inst(Inst(add_eq_zero(), "x", y), "y", y),
         Sym(base_normal),
@@ -75,7 +75,7 @@ def double_injective() -> Pf:
         Assume(step_hyp),
         Cong("+", (Assume(y_is_zero), Assume(y_is_zero))),
     )
-    normalized_zero = normalize_equality(
+    _, normalized_zero = normalize_equality(
         Eq(double(S(_x)), double(ZERO)),
         shifted_zero,
         add_kit(),
@@ -89,7 +89,7 @@ def double_injective() -> Pf:
         Assume(step_hyp),
         Cong("+", (Assume(y_eq_succ), Assume(y_eq_succ))),
     )
-    normalized_succ = normalize_equality(
+    _, normalized_succ = normalize_equality(
         Eq(double(S(_x)), double(S(w))),
         shifted_succ,
         add_kit(),

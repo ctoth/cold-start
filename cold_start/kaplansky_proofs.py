@@ -39,7 +39,15 @@ from .groupring2 import (
 )
 from .proof import Axiom, Cong, Pf, Refl, Sym, Trans, proof_size
 from .syntax import Eq, Formula, Fun, Term, Var
-from .tactics import Rule, axiom_rule, lemma_rule, normalize, prove_eq, rewrite_step
+from .tactics import (
+    Rule,
+    axiom_rule,
+    lemma_rule,
+    normalize,
+    normalize_equality,
+    prove_eq,
+    rewrite_step,
+)
 from .vocabulary import ONE, ZERO, add, mul, product, summation
 
 GElem: TypeAlias = tuple[int, int, int, int]
@@ -124,9 +132,7 @@ def _normalize_congruence(
         if left
         else Cong("*", (proof, Refl(factor)))
     )
-    left_nf, left_pf = normalize(raw.lhs, _base_rules(), 2_000)
-    right_nf, right_pf = normalize(raw.rhs, _base_rules(), 2_000)
-    return Eq(left_nf, right_nf), Trans(Sym(left_pf), Trans(congruence, right_pf))
+    return normalize_equality(raw, congruence, _base_rules(), 2_000)
 
 
 def _sandwich(
@@ -147,10 +153,8 @@ def _tail_lift(equation: Eq, proof: Pf) -> Rule:
     """Lift ``lhs = rhs`` to a right-nested rule that preserves a tail."""
     raw = Eq(mul(equation.lhs, _tail), mul(equation.rhs, _tail))
     congruence = Cong("*", (proof, Refl(_tail)))
-    left_nf, left_pf = normalize(raw.lhs, (axiom_rule(MUL_ASSOC),), 20)
-    right_nf, right_pf = normalize(raw.rhs, (axiom_rule(MUL_ASSOC),), 20)
-    pf = Trans(Sym(left_pf), Trans(congruence, right_pf))
-    return lemma_rule(Eq(left_nf, right_nf), pf)
+    lifted, pf = normalize_equality(raw, congruence, (axiom_rule(MUL_ASSOC),), 20)
+    return lemma_rule(lifted, pf)
 
 
 def _action_family(

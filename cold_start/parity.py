@@ -186,7 +186,7 @@ def even_ne_odd() -> Pf:
         a_succ = Eq(_a, S(m))
         to_succ = Cong("*", (Assume(a_succ), Refl(TWO)))  # a*2 = S(m!)*2
         shifted = Trans(Sym(to_succ), Assume(hyp))  # S(m!)*2 = S(rhs_head)
-        normal = normalize_equality(Eq(double(S(m)), S(rhs_head)), shifted, _rules())
+        _, normal = normalize_equality(Eq(double(S(m)), S(rhs_head)), shifted, _rules())
         ex_succ = exists("m", "", Eq(_a, S(Var("m"))))
         return ImpIntro(ex_succ, ExistsElim("m!", Assume(ex_succ), use_smaller(m, normal)))
 

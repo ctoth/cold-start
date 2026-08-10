@@ -221,7 +221,7 @@ def _zero_product_cancel(z: Term) -> Pf:
         lemma_rule(MUL_ZERO_LEFT, mul_zero_left()),
         lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),
     )
-    zero_eq_succ = normalize_equality(step_hyp, Assume(step_hyp), nonzero_rules)
+    _, zero_eq_succ = normalize_equality(step_hyp, Assume(step_hyp), nonzero_rules)
     successor = add(mul(y, S(z)), z)
     successor_ne_zero = Inst(Axiom(SUCC_NEQ_ZERO), "x", successor)
     contradiction = MP(successor_ne_zero, Sym(zero_eq_succ))
@@ -257,7 +257,7 @@ def mul_cancel_right_succ() -> Pf:
         lemma_rule(MUL_ZERO_LEFT, mul_zero_left()),
         lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),
     )
-    succ_eq_zero = normalize_equality(
+    _, succ_eq_zero = normalize_equality(
         nested_base_hyp,
         Assume(nested_base_hyp),
         nonzero_rules,
@@ -271,7 +271,7 @@ def mul_cancel_right_succ() -> Pf:
     )
 
     nested_step_hyp = Eq(mul(S(x), S(z)), mul(S(y), S(z)))
-    unfolded = normalize_equality(
+    _, unfolded = normalize_equality(
         nested_step_hyp,
         Assume(nested_step_hyp),
         (lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),),
