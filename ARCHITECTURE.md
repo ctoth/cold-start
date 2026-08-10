@@ -196,8 +196,9 @@ state without changing its semantics, and the two axiom-free interpretation
   equational presentation: a noncommutative unital char-2 ring plus four named
   group elements, their inverse equations, and the two presentation relations.
   `kaplansky_proofs.py` derives the normal-form library and the concrete
-  equations `u*v = 1`, `v*u = 1` (Gardam's unit); coordinates and support size
-  are guarded independently, in the tests, not by the kernel.
+  equations `u*v = 1`, `v*u = 1` for the solver-found 21-term unit — the
+  Kaplansky-unit shape Gardam settled. Coordinates and support size are guarded
+  independently, in the tests, not by the kernel.
 - `cubicring.py` — the commutative ring `ℤ[θ | θ³ = 2]` over constants `θ, k, m, n`,
   one non-ring axiom `θ·(θ·θ) = 1+1`. `cubicring_proofs.py` checks the HRT
   Lemma 7.1 norm factorization `d·e = k³+2m³+4n³−6kmn`, arranged
