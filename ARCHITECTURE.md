@@ -290,7 +290,10 @@ nodes). Robinson's rendered Theorem 1.2 formula (2) is transcribed literally as
 a multiplication graph containing only `S`, `|`, equality, and logic. It measures
 331 nodes. Its report is deliberately incomplete with exactly `totality:*` and
 `uniqueness:*` open: those are the Chinese-remainder/prime debts in Robinson's
-argument, now isolated rather than blurred into the transcription.
+argument, now isolated rather than blurred into the transcription. The same
+graph relativized to the positives (624 nodes, composed with PEANO
+divisibility) pays only its domain-nonemptiness obligation and carries the same
+two debts openly.
 
 `bridges.py` lands Robinson's §2 twice over the same 19-node translation
 `x + y = z ↦ S(x·z)·S(y·z) = S((z·z)·S(x·y))`. Into her own `(1, S, ·)` theory,
@@ -304,7 +307,8 @@ checked theorem (`uniqueness_descends`): A5' maps bridge solutions injectively *
 the second argument, so uniqueness propagates *downward* — while induction only
 climbs, and no axiom inverts a bridge. Our open obligation is the paper's own open
 question, with the reason it resists derivable and derived. Into PEANO relativized to the positives
-(`δ(x) := ∃k. x = S(k)`), **every obligation is paid** (toll: 484,089 proof nodes):
+(`δ(x) := ∃k. x = S(k)`), **every obligation is paid** (the δ-guard makes it a
+21-node bridge; toll: 484,107 proof nodes):
 the guarded A5' theorem settles the translated recursion axiom and the bridge
 converse settles uniqueness — and the relativization is forced, since unguarded
 A5' is false at zero. The δ-guard on `S(a) ≠ 1` earns its keep the same way: at
@@ -319,7 +323,7 @@ signature translates away: `0 ↦ 1`, `S(x) ↦ x·2`, `x + y ↦ x·y`, relativ
 `pow2(t) := ∀d (d|t → d≠1 → 2|d)` — "every divisor except 1 is even", a
 definition of *power of two* with no exponentiation, spoken entirely in the
 paid divisibility predicate. The 16-node bridge lands in PEANO **complete**
-(toll: 116,358 proof nodes). The toll's engine is
+(toll: 116,388 proof nodes). The toll's engine is
 `parity.py`: the 2-adic case split (`n = m·2 ∨ n = S(m·2)`), even ≠ odd, and
 **Euclid's lemma at the prime 2** (`¬2|d → d|x·2 → d|x`) — proved by parity
 alone, with no order relation and no Bézout — which yields closure of the
