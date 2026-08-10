@@ -260,10 +260,6 @@ theorem coldstart_theory_bare_multiplication {M : Type}
     : ∀ x : M, x = x :=
   fun x : M => (Eq.refl x)
 
-theorem coldstart_theory_multiplication_from_square {M : Type}
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
-
 /-
   The epilogue: registered semantic models discharge every hypothesis, so the
   corresponding conditional theorems become unconditional facts.

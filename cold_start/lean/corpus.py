@@ -27,7 +27,6 @@ from ..robinson_divisibility_proofs import coprime_one_left
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
 from ..skolem import skolem_interpretation
 from ..squaring import SQUARE_ARITHMETIC
-from ..squaring_bridges import BARE_MULTIPLICATION_FROM_SQUARE
 from ..squaring_proofs import square_product_total, square_product_unique
 from ..syntax import Var
 from ..theory import Theory
@@ -108,7 +107,6 @@ OFFICIAL_THEORIES: tuple[tuple[str, Theory], ...] = (
     ("successor-divisibility", PURE_SUCCESSOR_DIVISIBILITY),
     ("bare-multiplication", BARE_MULTIPLICATION),
     ("addition-and-square", SQUARE_ARITHMETIC),
-    ("multiplication-from-square", BARE_MULTIPLICATION_FROM_SQUARE),
 )
 
 

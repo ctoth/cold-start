@@ -17,6 +17,7 @@ An open bridge is a measured conjecture with a ledger, never a theorem claim.
 
 from __future__ import annotations
 
+from .algebra import BARE_MULTIPLICATION
 from .divisibility import (
     divides_factor,
     divides_product,
@@ -126,13 +127,6 @@ PURE_SUCCESSOR_DIVISIBILITY = Theory(
         relations=(("|", ("", "")),),
     ),
 )
-BARE_MULTIPLICATION = Theory(
-    axioms=frozenset(),
-    signature=Signature(
-        sorts=frozenset({""}),
-        ranks=(("*", ("", ""), ""),),
-    ),
-)
 
 
 def robinson_product_interpretation() -> Interpretation:
@@ -170,7 +164,6 @@ def robinson_product_into_positive_peano() -> Interpretation:
 
 
 __all__ = [
-    "BARE_MULTIPLICATION",
     "DIVIDES_IN_PEANO",
     "DIVISIBILITY_CORE",
     "PRODUCT_FROM_DIVIDES",
