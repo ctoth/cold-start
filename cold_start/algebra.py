@@ -15,7 +15,7 @@ place sorts earn their keep, on the way to modules and Clifford.
 from __future__ import annotations
 
 from . import vocabulary as _v
-from .syntax import Eq, Fun, Term, Var
+from .syntax import Eq, Formula, Fun, Not, Term, Var
 from .theory import Signature, Theory
 
 # --- signature ------------------------------------------------------------
@@ -148,3 +148,14 @@ AB_GROUP = Theory(
 )
 """The additive fragment of RING on its own: an abelian group (0, +, neg).
 The source theory of the Grothendieck bridge in `cold_start.integers`."""
+
+
+# --- characteristic two ----------------------------------------------------
+# `x + x = 0` replaces ADD_NEG: every element is its own additive inverse, so
+# `neg` is not in the signature at all and the rewriting kits derive their
+# cancellation from CHAR2 instead. NONTRIVIAL is what keeps the one-element
+# ring out -- without it `0 = 1` is consistent and every separation collapses.
+# Shared, as mathematical content must be, by `groupring2` and `diffring2`.
+
+CHAR2: Formula = Eq(_v.add(_x, _x), _v.ZERO)
+NONTRIVIAL: Formula = Not(Eq(_v.ZERO, _v.ONE))

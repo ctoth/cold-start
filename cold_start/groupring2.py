@@ -18,15 +18,17 @@ from .algebra import (
     ADD_ASSOC,
     ADD_COMM,
     ADD_ZERO,
+    CHAR2,
     DIST_LEFT,
     DIST_RIGHT,
     MUL_ASSOC,
     MUL_LEFT_ID,
     MUL_RIGHT_ID,
+    NONTRIVIAL,
 )
-from .syntax import Eq, Formula, Fun, Not, Term, Var
+from .syntax import Eq, Formula, Fun, Term, Var
 from .theory import Signature, Theory
-from .vocabulary import ONE, ZERO, add, mul
+from .vocabulary import ONE, mul
 
 A: Term = Fun("A", ())
 B: Term = Fun("B", ())
@@ -34,9 +36,6 @@ A_INV: Term = Fun("A'", ())
 B_INV: Term = Fun("B'", ())
 
 _x = Var("x")
-
-CHAR2: Formula = Eq(add(_x, _x), ZERO)
-NONTRIVIAL: Formula = Not(Eq(ZERO, ONE))
 
 A_RIGHT_INV: Formula = Eq(mul(A, A_INV), ONE)
 A_LEFT_INV: Formula = Eq(mul(A_INV, A), ONE)

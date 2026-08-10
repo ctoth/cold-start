@@ -18,10 +18,12 @@ from semantics import evaluate
 import cold_start.proof as P
 from cold_start.algebra import (
     ASSOC,
+    CHAR2,
     COMM,
     COMM_MONOID,
     LEFT_ID,
     MONOID,
+    NONTRIVIAL,
     RIGHT_ID,
     E,
 )
@@ -183,3 +185,14 @@ def test_commutativity_requires_the_comm_axiom():
     except ValueError:
         return
     raise AssertionError("MONOID accepted commutativity as an axiom")
+
+
+def test_the_two_characteristic_two_theories_share_one_definition():
+    """`x + x = 0` and `0 != 1` are mathematical content, not boilerplate. Two
+    identical spellings can drift apart; one definition cannot."""
+    from cold_start import diffring2, groupring2
+
+    assert groupring2.CHAR2 is CHAR2
+    assert groupring2.NONTRIVIAL is NONTRIVIAL
+    assert diffring2.CHAR2 is CHAR2
+    assert diffring2.NONTRIVIAL is NONTRIVIAL

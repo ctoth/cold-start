@@ -29,14 +29,16 @@ from .algebra import (
     ADD_ASSOC,
     ADD_COMM,
     ADD_ZERO,
+    CHAR2,
     COMM,
     DIST_LEFT,
     DIST_RIGHT,
     MUL_ASSOC,
     MUL_LEFT_ID,
     MUL_RIGHT_ID,
+    NONTRIVIAL,
 )
-from .syntax import Eq, Formula, Fun, Not, Term, Var
+from .syntax import Eq, Formula, Fun, Term, Var
 from .theory import Signature, Theory
 from .vocabulary import ONE, ZERO, add, mul
 
@@ -65,9 +67,6 @@ DERIVATIONS = (dx, dy, dz)
 # --- axioms ---------------------------------------------------------------
 
 _x, _y = Var("x"), Var("y")
-
-CHAR2: Formula = Eq(add(_x, _x), ZERO)
-NONTRIVIAL: Formula = Not(Eq(ZERO, ONE))
 
 _D_AXIOMS: list[Formula] = []
 for _d, _values in zip(
