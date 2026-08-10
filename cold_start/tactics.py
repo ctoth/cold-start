@@ -11,6 +11,8 @@ not for the polymorphism discipline the trusted core lives under.
 The layer is a small equational engine:
 
     match(pattern, target)         first-order matching, pattern Vars are holes
+    fresh_name(stem, *scope)       the one owner of fresh-name generation
+    simultaneous_inst(pf, subs)    all of `subs` at once, staged through slots
     Rule                           a directed equation + the Pf that justifies it
     Rule(..., ordered=True)        a permutative rule, fired only downhill
     Rule.fire(sigma)               the rewritten term and its proof, together
@@ -23,7 +25,7 @@ The layer is a small equational engine:
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, is_dataclass
 from typing import TypeAlias, cast
 
@@ -172,6 +174,53 @@ def fresh_name(stem: str, *scope: Node | str) -> str:
     while f"{stem}{index}" in avoid:
         index += 1
     return f"{stem}{index}"
+
+
+def simultaneous_inst(
+    proof: Pf,
+    subs: Mapping[str, Term],
+    *scope: Node | str,
+    sorts: Mapping[str, str] | None = None,
+) -> Pf:
+    """`proof` with every name in `subs` replaced *at once*.
+
+    The checker's `Inst` substitutes one variable at a time, so instantiating
+    x := y and then y := 0 would rewrite the `y` the first step introduced --
+    and a swap x := y, y := x would collapse both onto one variable. Every
+    simultaneous substitution therefore has to stage its replacements through
+    fresh slot variables first, and this is the one place that does it.
+
+    `scope` names everything else the slots must dodge -- typically the
+    theorem's conclusion, whose other free variables `subs` never mentions.
+    `sorts` gives the sort of each substituted variable; a slot declared at the
+    wrong sort is rejected by the checker in a many-sorted theory.
+    """
+    raw = cast(dict[object, object], cast(object, subs))
+    for name, term in raw.items():
+        if type(name) is not str or not isinstance(term, Term):
+            raise TacticError(f"a substitution must bind names to terms, got {name!r} -> {term!r}")
+    if not subs:
+        return proof
+    sorts = sorts or {}
+    avoid: set[str] = set(subs)
+    for item in scope:
+        if type(item) is str:
+            avoid.add(item)
+        else:
+            avoid |= set(cast(Node, item).free_vars())
+    for t in subs.values():
+        avoid |= set(t.free_vars())
+    names = sorted(subs)
+    slots: dict[str, str] = {}
+    for name in names:
+        slots[name] = fresh_name(f"{name}!", *avoid)
+        avoid.add(slots[name])
+    pf = proof
+    for name in names:
+        pf = Inst(pf, name, Var(slots[name], sorts.get(name, "")))
+    for name in names:
+        pf = Inst(pf, slots[name], subs[name])
+    return pf
 
 
 def _subst_all(term: Term, sigma: Substitution) -> Term:
@@ -327,12 +376,8 @@ class Rule:
     def instance(self, sigma: Substitution) -> Pf:
         """A `Pf` of `eq` with every hole replaced per `sigma`.
 
-        `Inst` substitutes *sequentially*, so instantiating x := y and then
-        y := 0 would rewrite the `y` the first step introduced. We therefore
-        rename all holes to fresh names first and only then substitute -- a
-        simultaneous substitution, spelled in the trusted core's sequential
-        primitive. Holes `sigma` does not mention are renamed back to
-        themselves."""
+        Holes `sigma` does not mention are substituted for themselves, so the
+        whole hole set moves in one `simultaneous_inst` step."""
         raw_sigma = cast(dict[object, object], cast(object, sigma))
         for name, term in raw_sigma.items():
             if type(name) is not str or not isinstance(term, Term):
@@ -346,20 +391,8 @@ class Rule:
                     f"variable {name!r} is used at two sorts ({sorts[name]!r} and {sort!r}) "
                     f"in {self.eq!r}"
                 )
-        avoid = set(self.eq.free_vars())
-        for t in sigma.values():
-            avoid |= set(t.free_vars())
-        holes = sorted(self.vars)
-        renaming: dict[str, str] = {}
-        for v in holes:
-            renaming[v] = fresh_name(f"{v}!", *avoid)
-            avoid.add(renaming[v])
-        pf = self.proof
-        for v in holes:
-            pf = Inst(pf, v, Var(renaming[v], sorts.get(v, "")))
-        for v in holes:
-            pf = Inst(pf, renaming[v], sigma.get(v, Var(v, sorts.get(v, ""))))
-        return pf
+        subs = {v: sigma.get(v, Var(v, sorts.get(v, ""))) for v in self.vars}
+        return simultaneous_inst(self.proof, subs, self.eq, sorts=sorts)
 
     def fire(self, sigma: Substitution) -> RewriteResult:
         """The rule applied at a match: `(rhs under sigma, Pf of lhs = rhs under
@@ -674,5 +707,6 @@ __all__ = [
     "normalize_equality",
     "prove_eq",
     "rewrite_step",
+    "simultaneous_inst",
     "transport",
 ]

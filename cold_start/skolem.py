@@ -64,7 +64,7 @@ from .proof import (
 )
 from .prop import And, and_intro, or_elim
 from .syntax import Bottom, Eq, Formula, Implies, Not, Term, Var, exists, forall
-from .tactics import lemma_rule, prove_eq, transport
+from .tactics import lemma_rule, prove_eq, simultaneous_inst, transport
 from .vocabulary import ZERO, S, mul
 
 ONE = S(ZERO)
@@ -249,7 +249,7 @@ def pow2_mul() -> Pf:
     #   h! = S(p!): the half is positive -- descend one dyadic layer.
     ex_h_succ = exists("m", "", Eq(h, S(Var("m"))))
     h_succ = Eq(h, S(p))
-    descend = Inst(Inst(Inst(pos_half_le(), "a", h), "m", p), "n", bound)
+    descend = simultaneous_inst(pos_half_le(), {"a": h, "m": p, "n": bound})
     h_below = MP(MP(descend, Assume(h_succ)), Sym(half_eq))  # h! <= n!
     hole = Var("t!")
     dom_double = transport(

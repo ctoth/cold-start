@@ -15,9 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
-from .proof import MP, Cong, Inst, Pf, Refl, Sym, Trans
+from .proof import MP, Cong, Pf, Refl, Sym, Trans
 from .syntax import Eq, Fun, Term, Var
-from .tactics import DEFAULT_BUDGET, Rule, TacticError, prove_eq
+from .tactics import DEFAULT_BUDGET, Rule, TacticError, prove_eq, simultaneous_inst
 
 CoefficientDomain: TypeAlias = Literal["natural", "integer", "mod2"]
 AtomKey: TypeAlias = Term
@@ -458,24 +458,7 @@ def instantiate_right_cancellation(
     suffix: Term,
 ) -> Pf:
     """Capture-safe ``x + z = y + z -> x = y`` instantiation."""
-    avoid: set[str] = set()
-    for term in (lhs, rhs, suffix):
-        avoid |= set(term.free_vars())
-    fresh: dict[str, str] = {}
-    for name in ("x", "y", "z"):
-        candidate = f"{name}!"
-        index = 0
-        while candidate in avoid:
-            index += 1
-            candidate = f"{name}!{index}"
-        fresh[name] = candidate
-        avoid.add(candidate)
-    proof = theorem
-    for name in ("x", "y", "z"):
-        proof = Inst(proof, name, Var(fresh[name]))
-    for name, value in (("x", lhs), ("y", rhs), ("z", suffix)):
-        proof = Inst(proof, fresh[name], value)
-    return proof
+    return simultaneous_inst(theorem, {"x": lhs, "y": rhs, "z": suffix})
 
 
 def _combine_sources(

@@ -60,8 +60,8 @@ from .proof import (
 from .prop import And, and_intro, and_left, and_right, or_elim, or_left
 from .robinson_divisibility import coprime, lcm, robinson_product, unit_case
 from .robinson_proofs import POLY_BUDGET, poly_kit
-from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
-from .tactics import prove_eq
+from .syntax import Eq, Formula, Implies, Var, exists, instantiate
+from .tactics import prove_eq, simultaneous_inst
 from .vocabulary import ZERO, S, add, mul
 
 _a, _b, _c, _d, _x, _y = Var("a"), Var("b"), Var("c"), Var("d"), Var("x"), Var("y")
@@ -312,13 +312,9 @@ def product_divides_both() -> Pf:
     totality's hard leaf needs; the converse direction is Euclid-grade.
     """
     hyp = peano_divides(mul(_a, _b), _c)
-    staged = Inst(Inst(Inst(divides_trans(), "a", Var("t!")), "b", mul(_a, _b)), "t!", _a)
+    staged = simultaneous_inst(divides_trans(), {"a": _a, "b": mul(_a, _b)})
     left = MP(MP(staged, divides_factor()), Assume(hyp))
-    staged_right = Inst(
-        Inst(Inst(divides_trans(), "a", Var("t!")), "b", mul(_a, _b)),
-        "t!",
-        _b,
-    )
+    staged_right = simultaneous_inst(divides_trans(), {"a": _b, "b": mul(_a, _b)})
     right = MP(MP(staged_right, divides_product_right()), Assume(hyp))
     packed = and_intro(peano_divides(_a, _c), peano_divides(_b, _c), left, right)
     return ImpIntro(hyp, packed)
@@ -381,21 +377,16 @@ def divides_le_positive() -> Pf:
     return ImpIntro(pos, ImpIntro(dvd, use_n))
 
 
-def _binary_instance(proof: Pf, left: Term, right: Term) -> Pf:
-    slot = Var("rhs!")
-    return Inst(Inst(Inst(proof, "b", slot), "a", left), "rhs!", right)
-
-
 def divides_antisym_positive() -> Pf:
     """Positive naturals that divide each other are equal."""
     pos_a, pos_b = positive_peano(_a), positive_peano(_b)
     a_b, b_a = peano_divides(_a, _b), peano_divides(_b, _a)
     ab_le = MP(MP(divides_le_positive(), Assume(pos_b)), Assume(a_b))
     ba_le = MP(
-        MP(_binary_instance(divides_le_positive(), _b, _a), Assume(pos_a)),
+        MP(simultaneous_inst(divides_le_positive(), {"a": _b, "b": _a}), Assume(pos_a)),
         Assume(b_a),
     )
-    antisym = _binary_instance(le_antisym(), _a, _b)
+    antisym = simultaneous_inst(le_antisym(), {"a": _a, "b": _b})
     equal = MP(MP(antisym, ab_le), ba_le)
     return ImpIntro(pos_a, ImpIntro(pos_b, ImpIntro(a_b, ImpIntro(b_a, equal))))
 
@@ -424,7 +415,7 @@ def lcm_unique_positive() -> Pf:
     common_c = MP(lc_backward, Inst(divides_refl(), "a", _c))
     d_divides_c = MP(ld_forward, common_c)
 
-    antisym = _binary_instance(divides_antisym_positive(), _c, _d)
+    antisym = simultaneous_inst(divides_antisym_positive(), {"a": _c, "b": _d})
     equal = MP(
         MP(MP(MP(antisym, Assume(pos_c)), Assume(pos_d)), c_divides_d),
         d_divides_c,

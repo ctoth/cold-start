@@ -22,7 +22,14 @@ from .proof import (
 )
 from .ring_nf import AlgebraContext
 from .syntax import Eq, Formula, Implies, Term, Var, forall
-from .tactics import Rule, axiom_rule, by_induction, lemma_rule, normalize_equality
+from .tactics import (
+    Rule,
+    axiom_rule,
+    by_induction,
+    lemma_rule,
+    normalize_equality,
+    simultaneous_inst,
+)
 from .vocabulary import ZERO, S, add, mul, numeral
 
 _x, _y, _z, _n = Var("x"), Var("y"), Var("z"), Var("n")
@@ -269,16 +276,10 @@ def mul_cancel_right_succ() -> Pf:
         Assume(nested_step_hyp),
         (lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),),
     )
-    # Instantiate z first: the x/y replacements contain z and must not be
-    # rewritten again by a later sequential Inst node.
-    add_cancel = Inst(
-        Inst(
-            Inst(add_cancel_right(), "z", S(z)),
-            "x",
-            mul(x, S(z)),
-        ),
-        "y",
-        mul(y, S(z)),
+    # The x/y replacements contain z, so all three must move at once.
+    add_cancel = simultaneous_inst(
+        add_cancel_right(),
+        {"x": mul(x, S(z)), "y": mul(y, S(z)), "z": S(z)},
     )
     products_equal = MP(add_cancel, unfolded)
     outer_ih_at_y = ForallElim(Assume(pred), y)

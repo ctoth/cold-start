@@ -44,6 +44,7 @@ from cold_start.tactics import (
     normalize_equality,  # transport a proved equation, not just a bare term
     prove_eq,
     rewrite_step,
+    simultaneous_inst,
 )
 from cold_start.vocabulary import ZERO, S, add, mul, numeral
 
@@ -672,3 +673,48 @@ def test_fresh_name_counts_only_free_occurrences():
     bound = Implies(Eq(x, x), Eq(y, y))
     assert fresh_name("z", bound) == "z"
     assert fresh_name("y", bound) == "y0"
+
+
+# --- simultaneous instantiation ------------------------------------------
+
+
+def test_simultaneous_inst_swaps_two_variables_at_once():
+    """`Inst` substitutes sequentially, so x := y followed by y := x collapses
+    both sides onto one variable. A simultaneous substitution must not."""
+    pf = simultaneous_inst(add_comm(), {"x": y, "y": x})
+    assert check(pf, PRESBURGER).concl == Eq(add(y, x), add(x, y))
+
+
+def test_a_sequential_pair_of_insts_really_does_collapse_the_swap():
+    # The bug simultaneous_inst exists to prevent, spelled out.
+    naive = Inst(Inst(add_comm(), "x", y), "y", x)
+    assert check(naive, PRESBURGER).concl == Eq(add(x, x), add(x, x))
+
+
+def test_simultaneous_inst_does_not_capture_a_bang_name_already_in_scope():
+    """The staging slots are named against everything in `scope`, so a theorem
+    that already talks about `x!` does not have it hijacked."""
+    bang = Var("x!")
+    pf = Inst(add_comm(), "y", bang)
+    concl = check(pf, PRESBURGER).concl
+    assert concl == Eq(add(x, bang), add(bang, x))
+    moved = simultaneous_inst(pf, {"x": bang}, concl)
+    assert check(moved, PRESBURGER).concl == Eq(add(bang, bang), add(bang, bang))
+
+
+def test_simultaneous_inst_of_nothing_is_the_proof_itself():
+    assert simultaneous_inst(add_comm(), {}) == add_comm()
+
+
+def test_simultaneous_inst_carries_the_sort_of_each_staged_variable():
+    # In a many-sorted theory the staging slot must be declared at the sort of
+    # the variable it stands in for, or the checker rejects the Inst.
+    m, n, xX = Var("m", "M"), Var("n", "M"), Var("x", "X")
+    pf = simultaneous_inst(
+        Axiom(ACT_COMP),
+        {"m": n, "n": m},
+        sorts={"m": "M", "n": "M"},
+    )
+    assert check(pf, MONOID_ACTION).concl == Eq(
+        act(n, act(m, xX)), act(Fun("*", (n, m)), xX)
+    )
