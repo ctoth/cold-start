@@ -56,10 +56,13 @@ The code is the `cold_start/` package (flat, no src-layout):
   step quantified correctly and enforces *var not free in the hypotheses*. The
   exploit is a permanent regression test.
 - **`cold_start/certificate.py` / `cold_start/codec.py`** — inert portable
-  certificate data and its untrusted canonical DAG wire owner. Standalone
-  term/formula Hamblin adapters remain available, but proofs cross the external
-  boundary only with an embedded theory key, semantic fingerprint, and exact
-  claimed sequent. The trusted core never imports the codec.
+  certificate data and its untrusted canonical DAG wire owner. The whole byte
+  format is hand-rolled here (uvarints and length-prefixed UTF-8 behind the
+  magic `CSPC` and a version), so the repo has no serialization dependency, and
+  it is the *only* external encoding: terms, formulas, and proofs cross the
+  boundary solely inside a certificate carrying an embedded theory key, semantic
+  fingerprint, and exact claimed sequent. The trusted core never imports the
+  codec.
 - **`cold_start/emitter.py`** — one exact-type, iterative external-text emission
   mechanism used by notation and Lean adapters. Its metadata-only `@case`
   declarations are checked for complete canonical coverage at class creation.
@@ -246,6 +249,16 @@ uv run python -m cold_start.verify --report-work proof.cspc
 uv run python tools/mutate.py --campaign logical
 uv run python tools/mutate.py --campaign portable
 ```
+
+The gate runs pytest under `pytest-xdist` as `-n auto --dist loadfile`, which
+keeps every test of a module on one worker so module-scoped fixtures (the Lean
+corpus rebuild above all) are built once rather than once per worker. Parallelism
+stays out of the pyproject `addopts` on purpose: worker startup would tax every
+focused single-file run.
+
+Static analysis is deliberately asymmetric. Pyright runs in **strict** mode over
+`cold_start/` and `tools/` only; `tests/` is covered by Ruff alone, so test code
+can stay direct about the hostile and malformed values it feeds the checker.
 
 The same lockfile-backed gate, generated-file check, and Lean compilation run in
 `.github/workflows/ci.yml` on pushes and pull requests.
