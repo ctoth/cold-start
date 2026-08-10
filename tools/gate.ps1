@@ -22,7 +22,13 @@ function Invoke-Gate {
     }
 }
 
-Invoke-Gate -Label 'pytest'  -Command @('uv', 'run', 'pytest', '-n', 'auto')
+# --dist loadfile keeps every test of a module on one worker. Without it xdist
+# hands a module's tests to whichever worker is free, so module-scoped fixtures
+# (the Lean corpus rebuild in tests/test_lean.py above all) are set up once per
+# worker instead of once. Parallelism stays opt-in here rather than in the
+# pyproject addopts: worker startup costs several seconds, which would tax every
+# focused single-file run for no gain.
+Invoke-Gate -Label 'pytest'  -Command @('uv', 'run', 'pytest', '-n', 'auto', '--dist', 'loadfile')
 Invoke-Gate -Label 'ruff'    -Command @('uv', 'run', 'ruff', 'check', '.')
 Invoke-Gate -Label 'pyright (strict)' -Command @('uv', 'run', 'pyright')
 Invoke-Gate -Label 'Lean corpus generation' -Command @('uv', 'run', 'python', '-m', 'cold_start.lean')
