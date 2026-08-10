@@ -56,10 +56,13 @@ The code is the `cold_start/` package (flat, no src-layout):
   step quantified correctly and enforces *var not free in the hypotheses*. The
   exploit is a permanent regression test.
 - **`cold_start/certificate.py` / `cold_start/codec.py`** — inert portable
-  certificate data and its untrusted canonical DAG wire owner. Standalone
-  term/formula Hamblin adapters remain available, but proofs cross the external
-  boundary only with an embedded theory key, semantic fingerprint, and exact
-  claimed sequent. The trusted core never imports the codec.
+  certificate data and its untrusted canonical DAG wire owner. The whole byte
+  format is hand-rolled here (uvarints and length-prefixed UTF-8 behind the
+  magic `CSPC` and a version), so the repo has no serialization dependency, and
+  it is the *only* external encoding: terms, formulas, and proofs cross the
+  boundary solely inside a certificate carrying an embedded theory key, semantic
+  fingerprint, and exact claimed sequent. The trusted core never imports the
+  codec.
 - **`cold_start/emitter.py`** — one exact-type, iterative external-text emission
   mechanism used by notation and Lean adapters. Its metadata-only `@case`
   declarations are checked for complete canonical coverage at class creation.
@@ -109,9 +112,10 @@ The code is the `cold_start/` package (flat, no src-layout):
 - **`cold_start/bridges.py`** — the concrete crossings. Robinson's §2 as two
   landed bridges: base-1 Presburger into `(1, S, ·)` (axioms land on A4'/A5',
   totality `∃c bridge(a,b,c)` is the repo's first existential theorem, proved
-  by induction based at 1; uniqueness ledgered open), and the same **19-node
-  bridge** into PEANO relativized to the positives — **every obligation paid**
-  (toll: 484,089 proof nodes), with the previous campaign's converse theorem
+  by induction based at 1; uniqueness ledgered open, over a **19-node bridge**),
+  and the same translation into PEANO relativized to the positives — 21 nodes
+  with the δ-guard, **every obligation paid**
+  (toll: 484,107 proof nodes), with the previous campaign's converse theorem
   paying uniqueness. Unguarded PEANO is provably impassable (A5' fails at 0),
   so the relativization is forced, not decorative.
 - **`cold_start/robinson_divisibility.py` / `divisibility.py`** — Robinson's exact
@@ -121,7 +125,9 @@ The code is the `cold_start/` package (flat, no src-layout):
 - **`cold_start/divisibility_bridges.py`** — the boundary ledger. The predicate
   interpretation is a 6-node bridge with seven laws fully paid (9,953 proof
   nodes). Robinson's full formula (2) is a 331-node multiplication bridge with
-  exactly its two deep debts exposed: totality and uniqueness.
+  exactly its two deep debts exposed: totality and uniqueness — and, relativized
+  to the positives over PEANO divisibility, a 624-node bridge carrying the same
+  two debts with its domain obligation paid.
 - **`cold_start/parity.py`** — the 2-adic kit in PEANO: every number is `m·2`
   or `S(m·2)`, even never equals odd, cancellation by 2, and **Euclid's lemma
   at the prime 2** (`¬2|d → d|x·2 → d|x`) — carried by parity alone, no order
@@ -135,7 +141,7 @@ The code is the `cold_start/` package (flat, no src-layout):
   alone** (Mostowski's embedding into Skolem arithmetic): `0 ↦ 1`,
   `S(x) ↦ x·2`, `+ ↦ ·`, relativized to the powers of two, defined by
   divisibility only (`every divisor ≠ 1 is even`). A 16-node bridge into
-  PEANO, **every obligation paid** (toll: 116,358): product closure fell to
+  PEANO, **every obligation paid** (toll: 116,388): product closure fell to
   course-of-values descent through the dyadic layers.
 - **`cold_start/squaring.py`**, **`cold_start/squaring_proofs.py`**, and
   **`cold_start/squaring_bridges.py`** — multiplication recovered inside
@@ -246,6 +252,16 @@ uv run python -m cold_start.verify --report-work proof.cspc
 uv run python tools/mutate.py --campaign logical
 uv run python tools/mutate.py --campaign portable
 ```
+
+The gate runs pytest under `pytest-xdist` as `-n auto --dist loadfile`, which
+keeps every test of a module on one worker so module-scoped fixtures (the Lean
+corpus rebuild above all) are built once rather than once per worker. Parallelism
+stays out of the pyproject `addopts` on purpose: worker startup would tax every
+focused single-file run.
+
+Static analysis is deliberately asymmetric. Pyright runs in **strict** mode over
+`cold_start/` and `tools/` only; `tests/` is covered by Ruff alone, so test code
+can stay direct about the hostile and malformed values it feeds the checker.
 
 The same lockfile-backed gate, generated-file check, and Lean compilation run in
 `.github/workflows/ci.yml` on pushes and pull requests.

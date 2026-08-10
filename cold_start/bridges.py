@@ -25,6 +25,10 @@ with a successor second factor; A7', the recursion law that could, is itself
 a bridge, usable as an equation only GIVEN uniqueness. An interpretation with
 an open obligation is a conjecture with a ledger, not a theorem.
 
+Why the crossing is possible at all is itself checked, in `cold_start.rigidity`:
+adjoining `S` to multiplication kills the prime-permuting automorphisms that
+hide addition.
+
 Untrusted, like every prover module: `check` remains the only judge.
 """
 

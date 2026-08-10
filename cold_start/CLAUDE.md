@@ -5,8 +5,10 @@ proof terms are inert, serializable data that claim nothing; one small *trusted*
 `check(proof, theory)` re-derives the sequent. Trust is the checking code -- the
 exact-type gates plus the syntax/sequent validation methods they guard and the
 exhaustive proof validation and rule semantics in `checker.py` -- plus each
-theory's axioms. `codec.py` owns standalone Hamblin syntax bytes and canonical
-portable DAG certificates; `verify.py` resolves the artifact's embedded theory,
+theory's axioms. `codec.py` owns the one hand-rolled, dependency-free wire
+format -- uvarint- and length-prefixed bytes over canonical syntax and proof DAG
+tables, reachable only through a versioned `CSPC` certificate; `verify.py`
+resolves the artifact's embedded theory,
 checks its semantic fingerprint and exact claim, and re-checks the proof in a
 fresh process.
 
@@ -34,7 +36,7 @@ fresh process.
 - **Derivation is central; human notation is external.** `check()` validates the
   selected theory, validates the whole exact proof graph, and applies the rule
   semantics in `checker.py`. Proof construction alone claims nothing. Human
-  notation lives in `notation.py`, and Lean/Hamblin representations remain
+  notation lives in `notation.py`, and the Lean and wire representations remain
   downstream adapters. `Sequent` lives in `sequent.py` as an inert result value
   with intrinsic sort validation.
 

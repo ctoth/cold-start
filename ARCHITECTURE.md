@@ -12,8 +12,8 @@ The design is the **De Bruijn criterion**: separate an untrusted, possibly-large
 - `check(proof, theory)` (`checker.py`) re-derives the `Sequent` the proof proves,
   or raises. A `Sequent(hyps, concl)` is plain data you
   can fabricate freely; its authority is `check()` *returning* it, never the value.
-- `codec.py` owns standalone Hamblin syntax bytes and the canonical portable DAG
-  certificate boundary. `verify.py` resolves the certificate's embedded theory,
+- `codec.py` owns the canonical portable DAG certificate boundary — the repo's
+  only external byte format. `verify.py` resolves the certificate's embedded theory,
   checks its semantic fingerprint and claim, and re-checks the proof in a fresh
   process.
 
@@ -80,7 +80,11 @@ nothing. `Sequent` lives in `sequent.py` as equally inert result data. Side
 conditions are enforced in the checker dispatch:
 induction's eigenvariable (not free in undischarged hypotheses — the side condition
 that blocks the `1 = 0` exploit), `Inst`'s cross-sort guard, `ForallIntro`/
-`ExistsElim` eigenvariables. `sort_of`/`sort_check` are polymorphic node methods;
+`ExistsElim` eigenvariables. `Inst` also substitutes exactly one variable per
+step, so replacing several at once must stage through fresh slots or a later step
+rewrites what an earlier one introduced; the untrusted
+`tactics.simultaneous_inst` is the one place that staging is done.
+`sort_of`/`sort_check` are polymorphic node methods;
 sequents are re-sort-checked (`Sequent.sort_check`) when the theory has a signature.
 `check` is **total**: it returns a `Sequent` or raises `TypeError` / `ValueError`,
 nothing else — and it is **iterative end to end**. Every operation it reaches
@@ -101,7 +105,10 @@ checker and decoder ceilings for an artifact.
 Serialization is not a syntax/proof responsibility. `codec.py` builds its
 registries from the canonical owner sets and owns exactly one external encoding:
 terms, formulas and proofs cross the boundary only inside versioned
-`Certificate` values encoded as canonical syntax/proof DAG tables. The artifact embeds the theory key,
+`Certificate` values encoded as canonical syntax/proof DAG tables. That encoding
+is hand-rolled here — uvarints and length-prefixed UTF-8 behind the magic `CSPC`
+and a format version — so the wire format is a repository artifact with no
+serialization dependency behind it. The artifact embeds the theory key,
 semantic fingerprint, and exact claimed sequent. Decoded structures are
 exact-root checked and validated before they can reach the checker; the trusted
 core never imports the codec.
@@ -134,6 +141,21 @@ conditional proof and every registered semantic discharge. Importing Lean *proof
 is out of scope (that would mean swallowing CIC); only the emitted statement
 fragment parses back.
 
+**Coverage is measured honestly, or reported missing.** `lean/coverage.py`
+counts a corpus entry for its theory only if the proof actually cites an `Axiom`
+or uses `Induct` (`cites_its_theory`) — a `Refl(Var("x"))` holds in the empty
+theory and so certifies nothing, which is why no filler theorem can close a gap.
+Feature labels are split into DERIVED ones, read off the exported proof and
+axioms themselves, and ASSERTED ones, hand-written proof-family tags that the
+report explicitly marks as unchecked; an unknown assertion is an error, not a
+feature. `lean/corpus.py` carries the roster: `OFFICIAL_THEORIES` is what the
+export owes a real theorem for — now including the char-2 group ring
+(`group-ring-p2`), `cubic-ring`, and `differential-ring` — and any gap is
+printed by name. `EXCLUDED_THEORIES` names the deliberate omissions with their
+reasons: the many-sorted monoid action, which Lean's one-carrier fragment cannot
+state without changing its semantics, and the two axiom-free interpretation
+*source* signatures, in which nothing but tautologies is derivable.
+
 ## The theories
 - `presburger.py` — the addition fragment `(0, S, +)` with induction: **Presburger
   arithmetic**, complete and decidable.
@@ -146,11 +168,56 @@ fragment parses back.
 - `peano_proofs.py` — multiplication laws and positive cancellation, consuming the
   proved Presburger kit.
 - `algebra.py` — monoids, rings (incl. non-commutative models), and a many-sorted
-  monoid action `M ↷ X` (the shape that points toward modules/Clifford).
+  monoid action `M ↷ X` (the shape that points toward modules/Clifford). Its
+  shared axiom names (`CHAR2`, `NONTRIVIAL`, distributivity, …) are what the
+  concrete rings below are assembled from; `algebra_proofs.py` holds the derived
+  recipes the commutative-ring normalizer reuses.
 - `robinson.py` — Robinson's `(1, S, ·)` arithmetic experiment: addition
   eliminated into a definable bridge over multiplication and successor.
 - `robinson_proofs.py` — that bridge proved *inside* PEANO, plus two of Robinson's
   §2 axioms as theorems and a note on why the third is refutable instead.
+- `rigidity.py` — the checked justification of the whole Robinson programme:
+  extend her `(1, S, ·)` theory by a fresh unary `f` with `f(1)=1` and
+  `f(S x)=S(f x)`, and `Induct` (based at 1) derives `f(x)=x`. Every
+  successor-preserving self-map of the positive integers is the identity — so
+  adjoining `S` kills the prime-permuting automorphisms of `(ℕ, ·)` that hide
+  addition, which is *why* `+` becomes definable at all. Given rigidity, the
+  other brachymorphism law `f(x·y)=f(x)·f(y)` (Wehrung 2024) drops out by
+  rewriting.
+- `divisibility.py` — `a | b := ∃k. a·k=b` in PEANO with its elementary laws;
+  `robinson_divisibility.py` — her Theorem 1.2 formula (2) transcribed in
+  successor and divisibility only, with no primitive `+` or `·` symbol in it.
+- `parity.py` — the 2-adic kit in PEANO: the case split `n = m·2 ∨ n = S(m·2)`,
+  even ≠ odd, cancellation by 2, and Euclid's lemma at the prime 2.
+- `order.py` — `≤` as a witnessed sum `∃w. a+w=b`, discreteness, the dyadic
+  descent step, and `course_of_values`: strong induction compiled down to the
+  structural `Induct` rule.
+- `groupring2.py` — the characteristic-2 group ring of the Promislow group as an
+  equational presentation: a noncommutative unital char-2 ring plus four named
+  group elements, their inverse equations, and the two presentation relations.
+  `kaplansky_proofs.py` derives the normal-form library and the concrete
+  equations `u*v = 1`, `v*u = 1` for the solver-found 21-term unit — the
+  Kaplansky-unit shape Gardam settled. Coordinates and support size are guarded
+  independently, in the tests, not by the kernel.
+- `cubicring.py` — the commutative ring `ℤ[θ | θ³ = 2]` over constants `θ, k, m, n`,
+  one non-ring axiom `θ·(θ·θ) = 1+1`. `cubicring_proofs.py` checks the HRT
+  Lemma 7.1 norm factorization `d·e = k³+2m³+4n³−6kmn`, arranged
+  subtraction-free so the conjugate cancellation is a paid combination.
+- `diffring2.py` — the differential commutative ring of characteristic 2 on
+  generators `X, Y, Z`. `x + x = 0` retires `neg`, and the derivations `DX/DY/DZ`
+  are *function symbols* exhausted by additivity, Leibniz, and their generator
+  values, so `D(0)=0` and `D(1)=0` are theorems rather than axioms.
+  `diffring2_proofs.py` and `jacobian2_proofs.py` carry its lemma kit and the
+  characteristic-2 Jacobian counterexample.
+- `groebner2.py` — an untrusted, deterministically bounded Gröbner
+  ideal-membership search over F₂. It proves nothing: a zero remainder is
+  returned only with a cofactor vector, which the caller replays as ordinary
+  equality proofs, and budget exhaustion is a distinct value from a completed
+  nonzero remainder.
+
+A `2` suffix in a module name means **characteristic two**, never a version
+number: `groupring2`, `diffring2`, `groebner2`, `jacobian2_proofs` are the
+char-2 layer, and `integer_pairs`/`ring_z` are unrelated to it.
 
 ## On `+` vs `×`: the honest foundational note
 Peano defines `×` recursively from `+` (`x·S(y) = x·y + x`). That axiom *contains a
@@ -224,7 +291,10 @@ nodes). Robinson's rendered Theorem 1.2 formula (2) is transcribed literally as
 a multiplication graph containing only `S`, `|`, equality, and logic. It measures
 331 nodes. Its report is deliberately incomplete with exactly `totality:*` and
 `uniqueness:*` open: those are the Chinese-remainder/prime debts in Robinson's
-argument, now isolated rather than blurred into the transcription.
+argument, now isolated rather than blurred into the transcription. The same
+graph relativized to the positives (624 nodes, composed with PEANO
+divisibility) pays only its domain-nonemptiness obligation and carries the same
+two debts openly.
 
 `bridges.py` lands Robinson's §2 twice over the same 19-node translation
 `x + y = z ↦ S(x·z)·S(y·z) = S((z·z)·S(x·y))`. Into her own `(1, S, ·)` theory,
@@ -238,7 +308,8 @@ checked theorem (`uniqueness_descends`): A5' maps bridge solutions injectively *
 the second argument, so uniqueness propagates *downward* — while induction only
 climbs, and no axiom inverts a bridge. Our open obligation is the paper's own open
 question, with the reason it resists derivable and derived. Into PEANO relativized to the positives
-(`δ(x) := ∃k. x = S(k)`), **every obligation is paid** (toll: 484,089 proof nodes):
+(`δ(x) := ∃k. x = S(k)`), **every obligation is paid** (the δ-guard makes it a
+21-node bridge; toll: 484,107 proof nodes):
 the guarded A5' theorem settles the translated recursion axiom and the bridge
 converse settles uniqueness — and the relativization is forced, since unguarded
 A5' is false at zero. The δ-guard on `S(a) ≠ 1` earns its keep the same way: at
@@ -253,7 +324,7 @@ signature translates away: `0 ↦ 1`, `S(x) ↦ x·2`, `x + y ↦ x·y`, relativ
 `pow2(t) := ∀d (d|t → d≠1 → 2|d)` — "every divisor except 1 is even", a
 definition of *power of two* with no exponentiation, spoken entirely in the
 paid divisibility predicate. The 16-node bridge lands in PEANO **complete**
-(toll: 116,358 proof nodes). The toll's engine is
+(toll: 116,388 proof nodes). The toll's engine is
 `parity.py`: the 2-adic case split (`n = m·2 ∨ n = S(m·2)`), even ≠ odd, and
 **Euclid's lemma at the prime 2** (`¬2|d → d|x·2 → d|x`) — proved by parity
 alone, with no order relation and no Bézout — which yields closure of the

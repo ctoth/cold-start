@@ -1,9 +1,14 @@
 """The derived judgement `hyps |- conclusion`.
 
-Its own module so both `proof.py` (whose rule methods produce and recurse on
-sequents) and `checker.py` can import it without a cycle. A `Sequent` is inert:
-holding one proves nothing -- authority comes only from `check()` returning one
-without raising (the De Bruijn design: trust the verifier, not the object).
+A result value, not a proof step: `proof.py`'s inert rule data never mentions a
+sequent, and `checker.py` alone builds one, by deriving it. The judgement gets
+its own module because everything downstream of derivation -- `checker.py`,
+`theory.py`, `certificate.py`, `codec.py`, `verify.py`, the Lean export --
+needs to name the checker's result without importing the checker.
+
+A `Sequent` is inert: holding one proves nothing -- authority comes only from
+`check()` returning one without raising (the De Bruijn design: trust the
+verifier, not the object).
 """
 
 from __future__ import annotations

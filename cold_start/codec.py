@@ -1,9 +1,11 @@
 """Canonical external encodings for syntax and portable DAG certificates.
 
-Standalone term/formula bytes remain an untrusted Hamblin adapter. Proofs cross
-the external boundary only inside the versioned ``CSPC`` certificate format,
-which embeds a theory key, semantic fingerprint, claimed sequent, canonical
-syntax table, and canonical proof DAG.
+One hand-rolled, untrusted byte format, owned here and depending on nothing
+outside the standard library: length-prefixed uvarints and UTF-8 strings over
+tables built from the canonical owner sets. Proofs cross the external boundary
+only inside the versioned ``CSPC`` certificate format, which embeds a theory
+key, semantic fingerprint, claimed sequent, canonical syntax table, and
+canonical proof DAG.
 """
 
 from __future__ import annotations
