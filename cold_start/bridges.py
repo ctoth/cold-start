@@ -31,7 +31,7 @@ Untrusted, like every prover module: `check` remains the only judge.
 from __future__ import annotations
 
 from .interp import GraphSymbol, Interpretation, ObligationKey, TermSymbol
-from .peano import PEANO
+from .peano import PEANO, positive_peano
 from .presburger import ADD_SUCC_F as P_ADD_SUCC
 from .presburger import SUCC_INJ as P_SUCC_INJ
 from .presburger import SUCC_NEQ_ZERO, induction
@@ -222,12 +222,6 @@ def robinson_interpretation() -> Interpretation:
 # open obligations: base-1 Presburger is interpreted in PEANO's positives.
 
 
-def positive(t: Term) -> Formula:
-    """δ(t): ∃k. t = S(k) -- membership in the positive domain. `t` must not
-    contain a free `k`; every use here applies it to k-free terms."""
-    return exists("k", "", Eq(t, S(Var("k"))))
-
-
 def _succ_ne_one_positive() -> Pf:
     """δ(a) → ¬(S(a) = 1). The guard earns its keep: at a = 0 the conclusion
     is false, so no unguarded proof exists. Under a = S(k), injectivity turns
@@ -239,7 +233,7 @@ def _succ_ne_one_positive() -> Pf:
     sk_zero = Trans(Sym(Assume(a_pos)), a_zero)  # S(k) = 0
     contra = MP(Inst(Axiom(SUCC_NEQ_ZERO), "x", k), sk_zero)
     not_one = ImpIntro(Eq(S(_a), _NATURAL_ONE), contra)
-    return ImpIntro(positive(_a), ExistsElim("k", Assume(positive(_a)), not_one))
+    return ImpIntro(positive_peano(_a), ExistsElim("k", Assume(positive_peano(_a)), not_one))
 
 
 def _rewrite_by(eq: Eq) -> Rule:
@@ -261,9 +255,10 @@ def _add_succ_positive_relativized() -> Pf:
     stepped = MP(Inst(robinson_add_succ_positive(), "c", k), at_sk)
     back = Rule(Eq(S(k), _c), Sym(Assume(c_pos)), frozenset())
     at_c = normalize_equality(bridge(_a, S(_b), S(S(k))), stepped, (back,))
-    body = ImpIntro(positive(_c), ExistsElim("k", Assume(positive(_c)), ImpIntro(hyp, at_c)))
+    pos_c = positive_peano(_c)
+    body = ImpIntro(pos_c, ExistsElim("k", Assume(pos_c), ImpIntro(hyp, at_c)))
     for_all = ForallIntro("c", "", body)
-    return ImpIntro(positive(_a), ImpIntro(positive(_b), for_all))
+    return ImpIntro(positive_peano(_a), ImpIntro(positive_peano(_b), for_all))
 
 
 def _bridge_total_positive() -> Pf:
@@ -279,12 +274,13 @@ def _bridge_total_positive() -> Pf:
         Cong("+", (Refl(_a), Assume(b_pos))),  # a+b = a+S(j)
         Inst(Inst(Axiom(P_ADD_SUCC), "x", _a), "y", j),  # a+S(j) = S(a+j)
     )
-    ab_pos = ExistsIntro(positive(ab), add(_a, j), sum_succ)
-    packed = and_intro(positive(ab), bridge(_a, _b, ab), ab_pos, bridge_theorem())
-    claim = exists("c!", "", And(positive(Var("c!")), bridge(_a, _b, Var("c!"))))
+    ab_pos = ExistsIntro(positive_peano(ab), add(_a, j), sum_succ)
+    packed = and_intro(positive_peano(ab), bridge(_a, _b, ab), ab_pos, bridge_theorem())
+    claim = exists("c!", "", And(positive_peano(Var("c!")), bridge(_a, _b, Var("c!"))))
     intro = ExistsIntro(claim, ab, packed)
     guarded = ImpIntro(
-        positive(_a), ImpIntro(positive(_b), ExistsElim("j", Assume(positive(_b)), intro))
+        positive_peano(_a),
+        ImpIntro(positive_peano(_b), ExistsElim("j", Assume(positive_peano(_b)), intro)),
     )
     return Inst(Inst(guarded, "a", Var("x!0")), "b", Var("x!1"))
 
@@ -305,9 +301,10 @@ def _bridge_unique_positive() -> Pf:
     sum_j = MP(Inst(bridge_converse_positive(), "c", j), h2_at)
     d_val = Trans(Assume(d_pos), Sym(sum_j))  # d = a+b
     core = ImpIntro(h1, ImpIntro(h2, Trans(c_val, Sym(d_val))))
-    elim = ExistsElim("k", Assume(positive(_c)), ExistsElim("j", Assume(positive(_d)), core))
+    inner = ExistsElim("j", Assume(positive_peano(_d)), core)
+    elim = ExistsElim("k", Assume(positive_peano(_c)), inner)
     guarded = elim
-    for g in (positive(_d), positive(_c), positive(_b), positive(_a)):
+    for g in (positive_peano(_d), positive_peano(_c), positive_peano(_b), positive_peano(_a)):
         guarded = ImpIntro(g, guarded)
     out = guarded
     for var, target in (("a", "x!0"), ("b", "x!1"), ("c", "c!"), ("d", "d!")):
@@ -322,21 +319,21 @@ def robinson_into_peano() -> Interpretation:
     bridge theorem; the domain debts by one witness each."""
     x0 = Var("x!0")
     succ_inj_pay = ImpIntro(
-        positive(_a),
-        ImpIntro(positive(_b), Inst(Inst(Axiom(P_SUCC_INJ), "x", _a), "y", _b)),
+        positive_peano(_a),
+        ImpIntro(positive_peano(_b), Inst(Inst(Axiom(P_SUCC_INJ), "x", _a), "y", _b)),
     )
-    add_one_pay = ImpIntro(positive(_a), robinson_add_one())
-    closure_s = ImpIntro(positive(x0), ExistsIntro(positive(S(x0)), x0, Refl(S(x0))))
+    add_one_pay = ImpIntro(positive_peano(_a), robinson_add_one())
+    closure_s = ImpIntro(positive_peano(x0), ExistsIntro(positive_peano(S(x0)), x0, Refl(S(x0))))
     natural_one = _NATURAL_ONE
-    one_pos = ExistsIntro(positive(natural_one), ZERO, Refl(natural_one))
-    nonempty = ExistsIntro(exists("x!", "", positive(Var("x!"))), natural_one, one_pos)
+    one_pos = ExistsIntro(positive_peano(natural_one), ZERO, Refl(natural_one))
+    nonempty = ExistsIntro(exists("x!", "", positive_peano(Var("x!"))), natural_one, one_pos)
     return Interpretation(
         name="robinson-1949-s2-into-peano-positives",
         source=PRESBURGER_ONE,
         target=PEANO,
         symbols=(PLUS,),
         terms=(TermSymbol("1", 0, lambda args: natural_one),),
-        domain=positive,
+        domain=positive_peano,
         retained_funs=(("S", 1),),
         retained_consts=(natural_one,),
         payments=(

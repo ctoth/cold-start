@@ -17,7 +17,7 @@ from dataclasses import replace
 
 from . import vocabulary as _v
 from .presburger import PRESBURGER, PRESBURGER_SIG
-from .syntax import Eq, Formula, Var
+from .syntax import Eq, Formula, Term, Var, exists
 from .theory import Signature
 
 # --- multiplication axioms (recursion on the second argument) -------------
@@ -40,3 +40,19 @@ PEANO = replace(
     axioms=PRESBURGER.axioms | {MUL_ZERO_F, MUL_SUCC_F},
     signature=PEANO_SIG,
 )
+
+
+def positive_peano(term: Term) -> Formula:
+    """The positive PEANO domain, ``exists k. term = S(k)``.
+
+    The domain predicate every relativized interpretation into PEANO guards
+    with. The witness name is freshened against the term's own free variables,
+    so the predicate never captures.
+    """
+    used = term.free_vars()
+    name = "p!"
+    index = 0
+    while name in used:
+        index += 1
+        name = f"p!{index}"
+    return exists(name, "", Eq(term, _v.S(Var(name))))

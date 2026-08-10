@@ -28,10 +28,10 @@ from .divisibility import (
     peano_divides,
 )
 from .interp import GraphSymbol, Interpretation, ObligationKey, PredicateSymbol
-from .peano import PEANO
+from .peano import PEANO, positive_peano
 from .proof import ExistsIntro, Pf, Refl
 from .robinson_divisibility import divides, robinson_product
-from .syntax import Eq, Formula, Implies, Term, Var, exists
+from .syntax import Formula, Implies, Var, exists
 from .theory import Signature, Theory
 from .vocabulary import ZERO, S, mul
 
@@ -106,17 +106,6 @@ PRODUCT_FROM_DIVIDES = GraphSymbol(
 )
 
 
-def positive_peano(term: Term) -> Formula:
-    """The positive PEANO domain, ``exists k. term = S(k)``."""
-    used = term.free_vars()
-    name = "p!"
-    index = 0
-    while name in used:
-        index += 1
-        name = f"p!{index}"
-    return exists(name, "", Eq(term, S(Var(name))))
-
-
 PRODUCT_IN_POSITIVE_PEANO = GraphSymbol(
     "*",
     2,
@@ -188,7 +177,6 @@ __all__ = [
     "PRODUCT_IN_POSITIVE_PEANO",
     "PURE_SUCCESSOR_DIVISIBILITY",
     "divisibility_into_peano",
-    "positive_peano",
     "robinson_product_into_positive_peano",
     "robinson_product_interpretation",
 ]
