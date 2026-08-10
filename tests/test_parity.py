@@ -8,7 +8,8 @@ formula (2) ledger begins here.
 
 from __future__ import annotations
 
-from cold_start.checker import check
+from semantics import assert_theorem
+
 from cold_start.parity import (
     CANCEL_TWO,
     EUCLID_TWO,
@@ -24,30 +25,24 @@ from cold_start.peano import PEANO
 from cold_start.vocabulary import ZERO, S, mul
 
 
-def _theorem(pf, expected):
-    seq = check(pf, PEANO)
-    assert not seq.hyps
-    assert seq.concl == expected
-
-
 def test_two_is_the_second_numeral():
     assert TWO == S(S(ZERO))
 
 
 def test_parity_checks():
-    _theorem(parity(), PARITY)
+    assert_theorem(parity(), PARITY, PEANO)
 
 
 def test_even_ne_odd_checks():
-    _theorem(even_ne_odd(), EVEN_NE_ODD)
+    assert_theorem(even_ne_odd(), EVEN_NE_ODD, PEANO)
 
 
 def test_cancel_two_checks():
-    _theorem(cancel_two(), CANCEL_TWO)
+    assert_theorem(cancel_two(), CANCEL_TWO, PEANO)
 
 
 def test_euclid_two_checks():
-    _theorem(euclid_two(), EUCLID_TWO)
+    assert_theorem(euclid_two(), EUCLID_TWO, PEANO)
 
 
 def test_euclid_two_shape():

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from semantics import evaluate
+from semantics import compose_t2, evaluate
 
 import cold_start.proof as P
 from cold_start.algebra import (
@@ -42,17 +42,13 @@ class SortedModel:
     interp: dict  # symbol -> callable
 
 
-def _compose(g, f):  # (g o f)(i) = g(f(i)); transformations are tuples (h0, h1)
-    return (g[f[0]], g[f[1]])
-
-
 ACT_MODEL = SortedModel(
     "T_2 acting on {0,1}",
     carriers={
         "M": st.sampled_from([(0, 0), (0, 1), (1, 0), (1, 1)]),
         "X": st.sampled_from([0, 1]),
     },
-    interp={"e": lambda: (0, 1), "*": _compose, "act": lambda f, x: f[x]},
+    interp={"e": lambda: (0, 1), "*": compose_t2, "act": lambda f, x: f[x]},
 )
 
 

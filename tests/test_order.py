@@ -11,6 +11,8 @@ formula (2) bounding argument both wait on exactly these pieces."""
 
 from __future__ import annotations
 
+from semantics import assert_theorem
+
 from cold_start.checker import check
 from cold_start.divisibility import peano_divides
 from cold_start.order import (
@@ -40,39 +42,33 @@ from cold_start.vocabulary import ZERO, S, add, mul
 _a, _n = Var("a"), Var("n")
 
 
-def _theorem(pf, expected):
-    seq = check(pf, PEANO)
-    assert not seq.hyps
-    assert seq.concl == expected
-
-
 def test_le_is_a_witnessed_sum():
     w = Var("w")
     assert le(_a, _n) == exists("w", "", Eq(add(_a, w), _n))
 
 
 def test_le_refl_checks():
-    _theorem(le_refl(), le(_a, _a))
+    assert_theorem(le_refl(), le(_a, _a), PEANO)
 
 
 def test_le_zero_checks():
     assert LE_ZERO == Implies(le(_a, ZERO), Eq(_a, ZERO))
-    _theorem(le_zero(), LE_ZERO)
+    assert_theorem(le_zero(), LE_ZERO, PEANO)
 
 
 def test_le_antisymmetry_checks():
     b = Var("b")
     assert LE_ANTISYM == Implies(le(_a, b), Implies(le(b, _a), Eq(_a, b)))
-    _theorem(le_antisym(), LE_ANTISYM)
+    assert_theorem(le_antisym(), LE_ANTISYM, PEANO)
 
 
 def test_le_succ_split_checks():
-    _theorem(le_succ_split(), LE_SUCC_SPLIT)
+    assert_theorem(le_succ_split(), LE_SUCC_SPLIT, PEANO)
 
 
 def test_le_double_checks():
     assert LE_DOUBLE == le(_a, mul(_a, TWO))
-    _theorem(le_double(), LE_DOUBLE)
+    assert_theorem(le_double(), LE_DOUBLE, PEANO)
 
 
 def test_pos_half_le_checks():
@@ -81,7 +77,7 @@ def test_pos_half_le_checks():
         Eq(_a, S(m)),
         Implies(Eq(mul(_a, TWO), S(_n)), le(_a, _n)),
     )
-    _theorem(pos_half_le(), expected)
+    assert_theorem(pos_half_le(), expected, PEANO)
 
 
 def test_transport_rewrites_an_existential():

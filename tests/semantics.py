@@ -6,13 +6,20 @@ uniform fold: free variables come from `env` (name -> element), bound variables
 from the de Bruijn stack `denv`, function symbols from `model.interp`, and ∀/∃
 enumerate the carrier. Test files build their own models and sample assignments;
 they all share this evaluator.
+
+Alongside it live the two other helpers every such test needs: `assert_theorem`,
+the trusted-checker side of the same honesty principle (a recipe must re-derive
+its exact sequent, hypothesis-free), and `compose_t2`, the one non-commutative
+carrier operation the monoid and sorted-action models share.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from cold_start.checker import check
 from cold_start.syntax import Bottom, BVar, Eq, Exists, Forall, Fun, Implies, Rel, Var
 
 
@@ -61,3 +68,20 @@ def evaluate(node: object, model: ModelLike, env: dict, denv: tuple = ()):
     if type(node) is Exists:
         return any(evaluate(node.body, model, env, (e, *denv)) for e in _carrier(model, node.sort))
     raise TypeError(f"cannot evaluate {type(node).__name__}")
+
+
+def assert_theorem(pf, expected, theory) -> None:
+    """The recipe re-derives exactly `expected`, hypothesis-free, in `theory`."""
+    seq = check(pf, theory)
+    assert not seq.hyps
+    assert seq.concl == expected
+
+
+def env_of(model, data, names: Sequence[str]) -> dict:
+    """Sample one assignment of `names` from a single-carrier model's strategy."""
+    return {name: data.draw(model.carrier) for name in names}
+
+
+def compose_t2(g, f):
+    """Transformations of {0,1} as tuples (h(0), h(1)); (g o f)(i) = g(f(i))."""
+    return (g[f[0]], g[f[1]])

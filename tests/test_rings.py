@@ -13,7 +13,7 @@ from itertools import product
 
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from semantics import evaluate
+from semantics import env_of, evaluate
 
 import cold_start.proof as P
 from cold_start.algebra import (
@@ -85,19 +85,15 @@ RING_MODELS = [INTEGERS, Z6, MAT2]
 COMM_MODELS = [INTEGERS, Z6]
 
 
-def env_of(model: Model, data) -> dict:
-    return {n: data.draw(model.carrier) for n in VAR_POOL}
-
-
 @given(st.data())
 @settings(max_examples=300)
 def test_models_satisfy_their_theories(data):
     for ax in RING_AXIOMS:
         for model in RING_MODELS:
-            env = env_of(model, data)
+            env = env_of(model, data, VAR_POOL)
             assert evaluate(ax, model, env), f"{model.name} fails {ax!r}"
     for model in COMM_MODELS:  # the commutative ones also satisfy COMM
-        env = env_of(model, data)
+        env = env_of(model, data, VAR_POOL)
         assert evaluate(COMM, model, env)
 
 
@@ -185,7 +181,7 @@ def test_ring_proofs_sound_in_all_models(pf, data):
     seq = check(pf, RING)
     assume(not seq.hyps)
     for model in RING_MODELS:
-        env = env_of(model, data)
+        env = env_of(model, data, VAR_POOL)
         assert evaluate(seq.concl, model, env), f"UNSOUND in {model.name}: {seq!r}"
 
 
@@ -197,7 +193,7 @@ def test_mul_commutativity_is_not_a_ring_theorem(data):
     """M_2(F_2) satisfies every ring axiom but falsifies x*y = y*x, so
     commutativity cannot be derived -- it is the extra axiom of COMM_RING."""
     comm = Eq(mul(Var("x"), Var("y")), mul(Var("y"), Var("x")))
-    env = env_of(MAT2, data)
+    env = env_of(MAT2, data, VAR_POOL)
     for ax in RING_AXIOMS:
         assert evaluate(ax, MAT2, env), f"M_2(F_2) not a ring: {ax!r}"
     # explicit non-commuting witness: E12 * E21 != E21 * E12
