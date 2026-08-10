@@ -26,6 +26,7 @@ from ..syntax import (
     forall,
     map_children,
 )
+from ..theory import Signature
 
 _N = TypeVar("_N", bound=Node)  # substitution preserves the node's kind
 _ControlFrame: TypeAlias = tuple[Any, ...]
@@ -343,7 +344,26 @@ def _binder_base(supply: LeanNames) -> str:
 # well short of Lean's real grammar, let alone its proof terms.
 
 _SYMBOLS_BY_LEAN = {v: k for k, v in SYMBOL_NAMES.items()}
-_ARITY = {"0": 0, "1": 0, "S": 1, "+": 2, "*": 2}
+
+# Arities are never a second hand-maintained table: they come from a `Signature`
+# -- the caller's, when it knows which theory the text was stated over, and this
+# one otherwise. It is the arithmetic vocabulary `SYMBOL_NAMES` re-spells, and
+# the check below fails the import outright if the two ever drift apart, rather
+# than letting an unranked symbol parse silently at any arity.
+ARITHMETIC_SIGNATURE = Signature(
+    sorts=frozenset({""}),
+    ranks=(
+        ("0", (), ""),
+        ("1", (), ""),
+        ("S", ("",), ""),
+        ("+", ("", ""), ""),
+        ("*", ("", ""), ""),
+    ),
+)
+
+_UNRANKED = frozenset(SYMBOL_NAMES) - {name for name, _args, _result in ARITHMETIC_SIGNATURE.ranks}
+if _UNRANKED:
+    raise LeanError(f"the default parse signature does not rank {sorted(_UNRANKED)}")
 
 _P_IMPL = 1
 _P_EQ = 2
@@ -363,9 +383,9 @@ class _Token:
     is_name: bool
 
 
-def parse_term(text: str) -> Term:
+def parse_term(text: str, *, signature: Signature | None = None) -> Term:
     """Parse a Lean term of the exported fragment back into our syntax."""
-    parser = _Parser(text)
+    parser = _Parser(text, signature)
     node = parser.run(_P_IMPL)
     parser.expect_eof()
     if not isinstance(node, Term):
@@ -373,13 +393,18 @@ def parse_term(text: str) -> Term:
     return node
 
 
-def parse_formula(text: str) -> Formula:
+def parse_formula(text: str, *, signature: Signature | None = None) -> Formula:
     """Parse a Lean statement of the exported fragment back into our syntax.
 
     Binders come back locally nameless, so `parse_formula(render_statement(f))`
     is literally `universal_closure(f)` -- the round trip is `==`, with no alpha
-    relation in the way."""
-    parser = _Parser(text)
+    relation in the way.
+
+    `signature` is the vocabulary the text was stated over. It is what tells a
+    relation application from a function application -- `p x y` renders the same
+    either way -- so a formula containing a `Rel` only round-trips when the
+    theory's signature comes along."""
+    parser = _Parser(text, signature)
     node = parser.run(0)
     parser.expect_eof()
     if not isinstance(node, Formula):
@@ -428,10 +453,11 @@ class _Parser:
     One expression grammar covers terms and formulas; the node constructors do the
     typing (`→` needs formulas, `=` needs terms)."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, signature: Signature | None = None) -> None:
         self.tokens = _tokenize(text)
         self.i = 0
         self.bound: list[str] = []  # enclosing binder names, nearest last
+        self.signature = ARITHMETIC_SIGNATURE if signature is None else signature
 
     # --- token helpers ------------------------------------------------------
 
@@ -576,16 +602,27 @@ class _Parser:
             return _PENDING
         return self._build(name, acc)
 
-    def _build(self, name: str, args: tuple[Term, ...]) -> Term:
-        """A name applied to `args`: a known symbol at its arity, an uninterpreted
-        function, or (unapplied) a variable -- free, or a binder's own name, which
-        `_finish_quant` later abstracts into its de Bruijn index."""
-        symbol = _SYMBOLS_BY_LEAN.get(name)
-        if symbol is not None:
-            if len(args) != _ARITY[symbol]:
-                self.error(f"{name} takes {_ARITY[symbol]} argument(s), got {len(args)}")
+    def _build(self, name: str, args: tuple[Term, ...]) -> Term | Formula:
+        """A name applied to `args`: a relation or function of the signature at
+        its declared arity, an uninterpreted function, or (unapplied) a variable
+        -- free, or a binder's own name, which `_finish_quant` later abstracts
+        into its de Bruijn index."""
+        symbol = _SYMBOLS_BY_LEAN.get(name, name)
+        relation_rank = self.signature.relation(symbol)
+        if relation_rank is not None:
+            self._check_arity(name, len(relation_rank), args)
+            return Rel(symbol, args)
+        function_rank = self.signature.rank(symbol)
+        if function_rank is not None:
+            self._check_arity(name, len(function_rank[0]), args)
             return Fun(symbol, args)
+        if symbol != name:  # a symbol we re-spell must be one the signature ranks
+            self.error(f"{name} is not a symbol of this signature")
         return Fun(name, args) if args else Var(name)
+
+    def _check_arity(self, name: str, arity: int, args: tuple[Term, ...]) -> None:
+        if len(args) != arity:
+            self.error(f"{name} takes {arity} argument(s), got {len(args)}")
 
     def _combine(self, op: str, left: object, right: object) -> Formula:
         if op in _ARROWS:
@@ -599,6 +636,7 @@ class _Parser:
 
 __all__ = [
     "ABSTRACT_STYLE",
+    "ARITHMETIC_SIGNATURE",
     "ATOM_PRECEDENCE",
     "CARRIER",
     "LeanNames",

@@ -59,12 +59,13 @@ from cold_start.syntax import (
     Fun,
     Implies,
     Not,
+    Rel,
     Term,
     Var,
     exists,
     forall,
 )
-from cold_start.theory import Theory
+from cold_start.theory import Signature, Theory
 from cold_start.vocabulary import ZERO, S, add, mul, numeral
 
 
@@ -135,6 +136,39 @@ def test_parse_rejects_trailing_junk():
         parse_formula("x = zero )")
 
 
+def test_parse_reads_a_relation_only_against_a_signature():
+    """`«|» x y` is a relation or a function depending on the vocabulary; only a
+    signature settles it, so the parser asks for one rather than guessing."""
+    signature = Signature(
+        sorts=frozenset({""}),
+        ranks=(),
+        relations=(("|", ("", "")),),
+    )
+    text = render_statement(Rel("|", (Var("x"), Var("y"))))
+    assert text == "∀ x : M, ∀ y : M, «|» x y"
+    assert parse_formula(text, signature=signature) == universal_closure(
+        Rel("|", (Var("x"), Var("y")))
+    )
+    with pytest.raises(LeanError):
+        parse_formula(text)  # without the signature it reads as a term
+
+
+def test_parse_checks_relation_arity_against_the_signature():
+    signature = Signature(sorts=frozenset({""}), ranks=(), relations=(("even", ("",)),))
+    assert parse_formula("even x", signature=signature) == Rel("even", (Var("x"),))
+    with pytest.raises(LeanError):
+        parse_formula("even x x", signature=signature)
+
+
+def test_parse_takes_function_arities_from_the_signature():
+    """A theory that spells `S` as a binary symbol is read at ITS arity, not at
+    the arithmetic default's."""
+    signature = Signature(sorts=frozenset({""}), ranks=(("S", ("", ""), ""),))
+    assert parse_term("succ x y", signature=signature) == Fun("S", (Var("x"), Var("y")))
+    with pytest.raises(LeanError):
+        parse_term("succ x", signature=signature)
+
+
 AXIOM_CORPUS = [
     ADD_ZERO_F,
     ADD_SUCC_F,
@@ -169,8 +203,26 @@ def terms() -> st.SearchStrategy[Term]:
     )
 
 
+# The relations the property test may generate, declared exactly as a theory
+# would declare them -- the parser reads a relation application only against a
+# signature, because `p x y` is otherwise indistinguishable from a function.
+RELATION_SIGNATURE = Signature(
+    sorts=frozenset({""}),
+    ranks=(("0", (), ""), ("S", ("",), ""), ("+", ("", ""), ""), ("*", ("", ""), "")),
+    relations=(("|", ("", "")), ("even", ("",)), ("absurd", ())),
+)
+
+
+def relations() -> st.SearchStrategy[Formula]:
+    return st.one_of(
+        st.builds(lambda a, b: Rel("|", (a, b)), terms(), terms()),
+        st.builds(lambda a: Rel("even", (a,)), terms()),
+        st.just(Rel("absurd", ())),
+    )
+
+
 def formulas() -> st.SearchStrategy[Formula]:
-    leaf = st.one_of(st.builds(Eq, terms(), terms()), st.just(Bottom()))
+    leaf = st.one_of(st.builds(Eq, terms(), terms()), st.just(Bottom()), relations())
     return st.recursive(
         leaf,
         lambda kids: st.one_of(
@@ -184,7 +236,8 @@ def formulas() -> st.SearchStrategy[Formula]:
 
 @given(formulas())
 def test_statements_round_trip_through_lean_text(formula: Formula):
-    assert parse_formula(render_statement(formula)) == universal_closure(formula)
+    parsed = parse_formula(render_statement(formula), signature=RELATION_SIGNATURE)
+    assert parsed == universal_closure(formula)
 
 
 def test_existential_statements_round_trip():
