@@ -2,7 +2,11 @@
 
 Date: 2026-08-08
 
-Status: accepted for full execution on 2026-08-08; implementation in progress.
+Status: complete. Accepted for full execution on 2026-08-08; the campaign
+reached the fixed point stated below and handed off in
+`certified-algebra-phase-7.md`, which resumes the separate certifying-Cooper
+milestone. The sections below are kept as written, as the record of the
+decision and its execution.
 
 ## Decision summary
 
