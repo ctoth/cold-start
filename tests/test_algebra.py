@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from semantics import evaluate
+from semantics import compose_t2, env_of, evaluate
 
 import cold_start.proof as P
 from cold_start.algebra import (
@@ -43,11 +43,6 @@ class Model:
     interp: dict  # function symbol name -> python callable
 
 
-def _compose(g, f):
-    # transformations of {0,1} as tuples (h(0), h(1)); (g o f)(x) = g(f(x))
-    return (g[f[0]], g[f[1]])
-
-
 STRINGS = Model(
     "strings(++,'')",
     st.text(alphabet="ab", max_size=4),
@@ -58,16 +53,12 @@ NAT_TIMES = Model("(N,*,1)", st.integers(0, 12), {"e": lambda: 1, "*": lambda a,
 TRANSF = Model(
     "T_2(compose,id)",
     st.sampled_from([(0, 0), (0, 1), (1, 0), (1, 1)]),
-    {"e": lambda: (0, 1), "*": _compose},
+    {"e": lambda: (0, 1), "*": compose_t2},
 )
 
 MONOID_MODELS = [STRINGS, NAT_PLUS, NAT_TIMES, TRANSF]
 COMM_MODELS = [NAT_PLUS, NAT_TIMES]
 NONCOMMUTATIVE = [STRINGS, TRANSF]
-
-
-def env_of(model: Model, data) -> dict:
-    return {n: data.draw(model.carrier) for n in VAR_POOL}
 
 
 # --- the models really are models -----------------------------------------
@@ -78,7 +69,7 @@ def env_of(model: Model, data) -> dict:
 def test_models_satisfy_their_theories(data):
     for theory, models in ((MONOID, MONOID_MODELS), (COMM_MONOID, COMM_MODELS)):
         for model in models:
-            env = env_of(model, data)
+            env = env_of(model, data, VAR_POOL)
             for ax in theory.axioms:
                 assert evaluate(ax, model, env), f"{model.name} fails {ax!r}"
 
@@ -150,7 +141,7 @@ def test_monoid_proofs_sound_in_all_models(pf, data):
     seq = check(pf, MONOID)
     assume(not seq.hyps)
     for model in MONOID_MODELS:
-        env = env_of(model, data)
+        env = env_of(model, data, VAR_POOL)
         assert evaluate(seq.concl, model, env), f"UNSOUND in {model.name}: {seq!r}"
 
 
@@ -164,7 +155,7 @@ def test_commutativity_is_not_a_monoid_theorem(data):
     the monoid axioms -- it is a genuine extra assumption (COMM_MONOID)."""
     comm = Eq(mul(Var("x"), Var("y")), mul(Var("y"), Var("x")))
     for model in NONCOMMUTATIVE:
-        env = env_of(model, data)
+        env = env_of(model, data, VAR_POOL)
         for ax in MONOID.axioms:
             assert evaluate(ax, model, env), f"{model.name} not a monoid"
     # explicit witness in strings: "a"++"b" != "b"++"a"
