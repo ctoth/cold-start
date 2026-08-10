@@ -157,7 +157,9 @@ class QuotientInterpretation:
                     )
             if signature.relations:
                 rel = signature.relations[0][0]
-                raise InterpError(f"missing disposition for source predicate {rel!r}")
+                raise InterpError(
+                    f"quotient interpretations do not support source predicates: {rel!r}"
+                )
 
 
 def _require_formula(value: object, label: str) -> Formula:

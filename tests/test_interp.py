@@ -15,6 +15,8 @@ A4' and A5' -- the bridge carries axioms onto axioms.
 
 from __future__ import annotations
 
+from typing import cast, get_args
+
 import pytest
 
 from cold_start.interp import (
@@ -22,6 +24,7 @@ from cold_start.interp import (
     InterpError,
     Interpretation,
     ObligationKey,
+    ObligationKind,
     obligations,
     translate,
     verify,
@@ -217,6 +220,16 @@ def test_verify_rejects_a_wrong_payment() -> None:
     )
     with pytest.raises(InterpError):
         verify(interp)
+
+
+def test_obligation_key_accepts_exactly_the_declared_kinds() -> None:
+    """The accepted vocabulary is read off ObligationKind itself, so a kind
+    added to the alias cannot be silently rejected by the constructor."""
+    for kind in get_args(ObligationKind):
+        subject = Eq(_a, _a) if kind == "axiom" else "s"
+        assert ObligationKey(kind, subject).kind == kind
+    with pytest.raises(InterpError, match="unknown obligation kind"):
+        ObligationKey(cast(ObligationKind, "definability"), "s")
 
 
 def test_verify_rejects_a_conditional_payment() -> None:
