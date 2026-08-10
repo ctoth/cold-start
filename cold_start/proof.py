@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .syntax import Formula, Term
+from .syntax import Formula, Term, subnodes
 
 
 class Pf:
@@ -116,6 +116,13 @@ class ExistsElim(Pf):
     eigenvar: str
     sub_ex: Pf
     sub_use: Pf
+
+
+def proof_size(pf: Pf) -> int:
+    """Proof-node occurrences in `pf` -- what the certificate modules report as
+    a toll. The formulas a proof carries are not counted; `syntax.node_size`
+    counts every node instead, and the two numbers differ by a lot."""
+    return sum(1 for node in subnodes(pf) if isinstance(node, Pf))
 
 
 CANONICAL_PROOF_TYPES: frozenset[type[Pf]] = frozenset(

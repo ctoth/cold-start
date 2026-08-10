@@ -144,11 +144,13 @@ def test_theory_validates_and_carries_the_axioms() -> None:
 
 
 def test_char2_ring_lemmas_check() -> None:
-    a = Var("a")
+    a, x = Var("a"), Var("x")
     expected = {
         zero_mul_rule(): Eq(mul(ZERO, a), ZERO),
         mul_zero_rule(): Eq(mul(a, ZERO), ZERO),
-        zero_add_rule(): Eq(add(ZERO, a), a),
+        # `0 + x = x` is shared with the integer-ring kit, and states its hole
+        # under that kit's name.
+        zero_add_rule(): Eq(add(ZERO, x), x),
     }
     for rule, concl in expected.items():
         assert check(rule.proof, DIFF_RING_2) == Sequent(frozenset(), concl)

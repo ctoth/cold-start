@@ -51,15 +51,15 @@ from .peano_proofs import (
 )
 from .presburger import ADD_SUCC_F, SUCC_INJ
 from .presburger_proofs import ADD_ASSOC, add_assoc, add_cancel_right, add_kit
-from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Sym, Trans
+from .proof import MP, Assume, Axiom, Cong, ImpIntro, Inst, Pf, Trans
 from .robinson import ADD_ONE, ADD_SUCC, bridge, positive_numeral
 from .syntax import Eq, Formula, Implies, Term, Var
 from .tactics import (
     Rule,
     axiom_rule,
+    denormalize_equality,
     hypothesis_rule,
     lemma_rule,
-    normalize,
     normalize_equality,
     prove_eq,
 )
@@ -176,7 +176,7 @@ def bridge_residual() -> Pf:
     """
     hyp = bridge(_a, _b, _c)
     rules = poly_kit()
-    normalized = normalize_equality(hyp, Assume(hyp), rules, POLY_BUDGET)
+    _, normalized = normalize_equality(hyp, Assume(hyp), rules, POLY_BUDGET)
 
     ac = mul(_a, _c)
     bc = mul(_b, _c)
@@ -201,9 +201,7 @@ def bridge_residual() -> Pf:
     residual_normal = MP(cancel, cancellable)
 
     residual = Eq(mul(add(_a, _b), _c), c_squared)
-    _, left_to_normal = normalize(residual.lhs, rules, POLY_BUDGET)
-    _, right_to_normal = normalize(residual.rhs, rules, POLY_BUDGET)
-    folded = Trans(left_to_normal, Trans(residual_normal, Sym(right_to_normal)))
+    folded = denormalize_equality(residual, residual_normal, rules, POLY_BUDGET)
     return ImpIntro(hyp, folded)
 
 
@@ -283,9 +281,8 @@ def _instance_at(sigma: dict[str, Term], rewrite: tuple[Rule, ...]) -> Pf:
     `L_tgt = R_tgt`, which is the axiom on the nose."""
     instance = lemma_rule(BRIDGE_SUM, bridge_theorem()).instance(sigma)
     source = bridge(sigma["a"], sigma["b"], add(sigma["a"], sigma["b"]))
-    _, left = normalize(source.lhs, rewrite)
-    _, right = normalize(source.rhs, rewrite)
-    return Trans(Sym(left), Trans(instance, right))
+    _, pf = normalize_equality(source, instance, rewrite)
+    return pf
 
 
 def robinson_add_one() -> Pf:

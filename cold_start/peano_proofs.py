@@ -22,7 +22,14 @@ from .proof import (
 )
 from .ring_nf import AlgebraContext
 from .syntax import Eq, Formula, Implies, Term, Var, forall
-from .tactics import Rule, axiom_rule, by_induction, lemma_rule, normalize_equality
+from .tactics import (
+    Rule,
+    axiom_rule,
+    by_induction,
+    lemma_rule,
+    normalize_equality,
+    simultaneous_inst,
+)
 from .vocabulary import ZERO, S, add, mul, numeral
 
 _x, _y, _z, _n = Var("x"), Var("y"), Var("z"), Var("n")
@@ -214,7 +221,7 @@ def _zero_product_cancel(z: Term) -> Pf:
         lemma_rule(MUL_ZERO_LEFT, mul_zero_left()),
         lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),
     )
-    zero_eq_succ = normalize_equality(step_hyp, Assume(step_hyp), nonzero_rules)
+    _, zero_eq_succ = normalize_equality(step_hyp, Assume(step_hyp), nonzero_rules)
     successor = add(mul(y, S(z)), z)
     successor_ne_zero = Inst(Axiom(SUCC_NEQ_ZERO), "x", successor)
     contradiction = MP(successor_ne_zero, Sym(zero_eq_succ))
@@ -250,7 +257,7 @@ def mul_cancel_right_succ() -> Pf:
         lemma_rule(MUL_ZERO_LEFT, mul_zero_left()),
         lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),
     )
-    succ_eq_zero = normalize_equality(
+    _, succ_eq_zero = normalize_equality(
         nested_base_hyp,
         Assume(nested_base_hyp),
         nonzero_rules,
@@ -264,21 +271,15 @@ def mul_cancel_right_succ() -> Pf:
     )
 
     nested_step_hyp = Eq(mul(S(x), S(z)), mul(S(y), S(z)))
-    unfolded = normalize_equality(
+    _, unfolded = normalize_equality(
         nested_step_hyp,
         Assume(nested_step_hyp),
         (lemma_rule(MUL_SUCC_LEFT, mul_succ_left()),),
     )
-    # Instantiate z first: the x/y replacements contain z and must not be
-    # rewritten again by a later sequential Inst node.
-    add_cancel = Inst(
-        Inst(
-            Inst(add_cancel_right(), "z", S(z)),
-            "x",
-            mul(x, S(z)),
-        ),
-        "y",
-        mul(y, S(z)),
+    # The x/y replacements contain z, so all three must move at once.
+    add_cancel = simultaneous_inst(
+        add_cancel_right(),
+        {"x": mul(x, S(z)), "y": mul(y, S(z)), "z": S(z)},
     )
     products_equal = MP(add_cancel, unfolded)
     outer_ih_at_y = ForallElim(Assume(pred), y)

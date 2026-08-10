@@ -53,23 +53,13 @@ from .proof import (
 )
 from .prop import Or, and_left, or_elim, or_left, or_right
 from .syntax import Eq, Formula, Implies, Term, Var, exists, forall, instantiate
-from .tactics import Rule, lemma_rule, prove_eq, transport
+from .tactics import Rule, fresh_name, lemma_rule, prove_eq, transport
 from .vocabulary import ZERO, S, add, mul
-
-
-def _fresh(stem: str, *terms: Term) -> str:
-    used = {name for term in terms for name in term.free_vars()}
-    if stem not in used:
-        return stem
-    index = 0
-    while f"{stem}{index}" in used:
-        index += 1
-    return f"{stem}{index}"
 
 
 def le(a: Term, b: Term) -> Formula:
     """``a <= b`` as ``exists w, a + w = b`` -- order from addition alone."""
-    witness_name = _fresh("w", a, b)
+    witness_name = fresh_name("w", a, b)
     return exists(witness_name, "", Eq(add(a, Var(witness_name)), b))
 
 

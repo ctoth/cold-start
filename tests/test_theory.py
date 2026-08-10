@@ -33,6 +33,39 @@ from cold_start.syntax import Eq, Fun, Rel, Var
 from cold_start.theory import Signature, Theory
 
 
+def test_extending_a_signature_keeps_its_relations() -> None:
+    """Adding a function symbol must not silently drop the relation vocabulary.
+    Rebuilding a `Signature` by hand did exactly that whenever the caller forgot
+    `relations=`, so extension is the signature's own operation."""
+    base = Signature(
+        sorts=frozenset({"N"}),
+        ranks=(("0", (), "N"),),
+        relations=(("|", ("N", "N")),),
+    )
+    extended = base.extend((("f", ("N",), "N"),))
+    assert extended.relations == base.relations
+    assert extended.relation("|") == ("N", "N")
+    assert extended.ranks == (("0", (), "N"), ("f", ("N",), "N"))
+    assert extended.sorts == base.sorts
+
+
+def test_extending_a_signature_rejects_a_symbol_it_already_declares() -> None:
+    base = Signature(sorts=frozenset({"N"}), ranks=(("0", (), "N"),))
+    with pytest.raises(ValueError, match="duplicate function symbol"):
+        base.extend((("0", (), "N"),))
+
+
+def test_the_extended_theories_all_kept_their_relations() -> None:
+    for extended, base in (
+        (PEANO, PRESBURGER),
+        (SQUARE_ARITHMETIC, PRESBURGER),
+        (ROBINSON_PEANO_F, ROBINSON_PEANO),
+    ):
+        assert extended.signature is not None
+        assert base.signature is not None
+        assert extended.signature.relations == base.signature.relations
+
+
 def test_signature_rejects_duplicate_function_declarations() -> None:
     with pytest.raises(ValueError, match="duplicate function symbol"):
         Signature(

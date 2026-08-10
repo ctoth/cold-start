@@ -36,6 +36,8 @@ from cold_start.tactics import (
     _under_context,
     axiom_rule,
     by_induction,
+    denormalize_equality,
+    fresh_name,
     hypothesis_rule,
     lemma_rule,
     match,
@@ -43,6 +45,7 @@ from cold_start.tactics import (
     normalize_equality,  # transport a proved equation, not just a bare term
     prove_eq,
     rewrite_step,
+    simultaneous_inst,
 )
 from cold_start.vocabulary import ZERO, S, add, mul, numeral
 
@@ -568,21 +571,38 @@ def test_prove_eq_computes_numeral_addition(a, b):
 def test_normalize_equality_transports_a_proved_equation():
     x, y = Var("x"), Var("y")
     source = Eq(add(x, ZERO), add(y, ZERO))
-    transported = normalize_equality(source, Assume(source), ADD_RULES)
+    # The normal form comes back with the recipe: callers need both, and
+    # rebuilding the Eq by hand is how three copies of this got written.
+    normal, transported = normalize_equality(source, Assume(source), ADD_RULES)
 
     seq = check(transported, PRESBURGER)
 
-    assert seq.concl == Eq(x, y)
+    assert normal == Eq(x, y)
+    assert seq.concl == normal
     assert seq.hyps == frozenset({source})
 
 
 def test_normalize_equality_does_not_authorize_a_mismatched_proof():
     x, y = Var("x"), Var("y")
     source = Eq(add(x, ZERO), add(y, ZERO))
-    forged = normalize_equality(source, Refl(add(x, ZERO)), ADD_RULES)
+    _, forged = normalize_equality(source, Refl(add(x, ZERO)), ADD_RULES)
 
     with pytest.raises(ValueError, match="middle terms differ"):
         check(forged, PRESBURGER)
+
+
+def test_denormalize_equality_carries_a_normal_form_proof_back_to_the_target():
+    """The mirror of `normalize_equality`: given a proof that the normal forms
+    agree, hand back a proof of the original equality."""
+    x = Var("x")
+    target = Eq(add(x, ZERO), add(ZERO, ZERO))
+    normal, _ = normalize_equality(target, Assume(target), ADD_RULES)
+    assert normal == Eq(x, ZERO)
+
+    folded = denormalize_equality(target, Assume(normal), ADD_RULES)
+    seq = check(folded, PRESBURGER)
+    assert seq.concl == target
+    assert seq.hyps == frozenset({normal})
 
 
 @given(
@@ -651,3 +671,68 @@ def test_a_non_permutative_rule_may_not_be_ordered():
     # calling it "ordered" would be a lie. (It needs no taming anyway.)
     with pytest.raises(TacticError):
         axiom_rule(ADD_ZERO_F, ordered=True)
+
+
+# --- one owner for fresh names -------------------------------------------
+
+
+def test_fresh_name_keeps_the_stem_when_nothing_shadows_it():
+    assert fresh_name("w", add(x, y)) == "w"
+
+
+def test_fresh_name_avoids_free_variables_of_every_node_in_scope():
+    # Nodes contribute their free variables; bare strings contribute themselves.
+    assert fresh_name("x", add(x, y)) == "x0"
+    assert fresh_name("x", add(x, y), Var("x0")) == "x1"
+    assert fresh_name("x", "x", "x0") == "x1"
+
+
+def test_fresh_name_counts_only_free_occurrences():
+    bound = Implies(Eq(x, x), Eq(y, y))
+    assert fresh_name("z", bound) == "z"
+    assert fresh_name("y", bound) == "y0"
+
+
+# --- simultaneous instantiation ------------------------------------------
+
+
+def test_simultaneous_inst_swaps_two_variables_at_once():
+    """`Inst` substitutes sequentially, so x := y followed by y := x collapses
+    both sides onto one variable. A simultaneous substitution must not."""
+    pf = simultaneous_inst(add_comm(), {"x": y, "y": x})
+    assert check(pf, PRESBURGER).concl == Eq(add(y, x), add(x, y))
+
+
+def test_a_sequential_pair_of_insts_really_does_collapse_the_swap():
+    # The bug simultaneous_inst exists to prevent, spelled out.
+    naive = Inst(Inst(add_comm(), "x", y), "y", x)
+    assert check(naive, PRESBURGER).concl == Eq(add(x, x), add(x, x))
+
+
+def test_simultaneous_inst_does_not_capture_a_bang_name_already_in_scope():
+    """The staging slots are named against everything in `scope`, so a theorem
+    that already talks about `x!` does not have it hijacked."""
+    bang = Var("x!")
+    pf = Inst(add_comm(), "y", bang)
+    concl = check(pf, PRESBURGER).concl
+    assert concl == Eq(add(x, bang), add(bang, x))
+    moved = simultaneous_inst(pf, {"x": bang}, concl)
+    assert check(moved, PRESBURGER).concl == Eq(add(bang, bang), add(bang, bang))
+
+
+def test_simultaneous_inst_of_nothing_is_the_proof_itself():
+    assert simultaneous_inst(add_comm(), {}) == add_comm()
+
+
+def test_simultaneous_inst_carries_the_sort_of_each_staged_variable():
+    # In a many-sorted theory the staging slot must be declared at the sort of
+    # the variable it stands in for, or the checker rejects the Inst.
+    m, n, xX = Var("m", "M"), Var("n", "M"), Var("x", "X")
+    pf = simultaneous_inst(
+        Axiom(ACT_COMP),
+        {"m": n, "n": m},
+        sorts={"m": "M", "n": "M"},
+    )
+    assert check(pf, MONOID_ACTION).concl == Eq(
+        act(n, act(m, xX)), act(Fun("*", (n, m)), xX)
+    )

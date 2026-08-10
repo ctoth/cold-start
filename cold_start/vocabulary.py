@@ -7,6 +7,8 @@ symbols cannot drift between theory and prover modules.
 
 from __future__ import annotations
 
+from functools import reduce
+
 from .syntax import Fun, Term
 
 ZERO: Term = Fun("0", ())
@@ -29,6 +31,20 @@ def neg(term: Term) -> Term:
     return Fun("neg", (term,))
 
 
+def product(*factors: Term) -> Term:
+    """The right-nested product of one or more factors: a*(b*c)."""
+    if not factors:
+        raise ValueError("a product needs at least one factor")
+    return reduce(lambda acc, factor: mul(factor, acc), reversed(factors[:-1]), factors[-1])
+
+
+def summation(*terms: Term) -> Term:
+    """The right-nested sum of one or more terms: a+(b+c)."""
+    if not terms:
+        raise ValueError("a sum needs at least one term")
+    return reduce(lambda acc, term: add(term, acc), reversed(terms[:-1]), terms[-1])
+
+
 def numeral(value: int) -> Term:
     if type(value) is not int or value < 0:
         raise ValueError("natural numerals require a nonnegative genuine int")
@@ -38,4 +54,14 @@ def numeral(value: int) -> Term:
     return term
 
 
-__all__ = ["ONE", "ZERO", "S", "add", "mul", "neg", "numeral"]
+__all__ = [
+    "ONE",
+    "ZERO",
+    "S",
+    "add",
+    "mul",
+    "neg",
+    "numeral",
+    "product",
+    "summation",
+]

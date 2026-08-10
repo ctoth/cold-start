@@ -43,7 +43,7 @@ from .cubicring import (
     residue_minus_term,
     residue_plus_term,
 )
-from .proof import Pf, Sym
+from .proof import Pf, Sym, proof_size
 from .ring_nf import elaborate_combination
 from .syntax import Eq, Formula
 from .tactics import axiom_rule
@@ -76,32 +76,10 @@ def factorization_proof() -> Pf:
     )
 
 
-def _toll(pf: Pf) -> int:
-    """Proof nodes in `pf` -- the certificate's cost, counted like the
-    Jacobian certificate's toll column."""
-    from dataclasses import fields as dc_fields
-    from dataclasses import is_dataclass
-    from typing import cast
-
-    count = 0
-    stack: list[object] = [pf]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, Pf) and is_dataclass(node):
-            count += 1
-            for f in dc_fields(node):
-                value: object = getattr(node, f.name)
-                if type(value) is tuple:
-                    stack.extend(cast("tuple[object, ...]", value))
-                else:
-                    stack.append(value)
-    return count
-
-
 def main() -> None:
     proof = factorization_proof()
     sequent = check(proof, CUBIC_RING)
-    print(f"norm factorization (subtraction-free): {_toll(proof):,} proof nodes")
+    print(f"norm factorization (subtraction-free): {proof_size(proof):,} proof nodes")
     print(f"checked: {sequent!r}")
 
 
@@ -110,7 +88,6 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "CUBIC_RING_CONTEXT",
     "factorization_proof",
     "factorization_statement",
 ]

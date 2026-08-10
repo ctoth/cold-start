@@ -54,6 +54,7 @@ from .syntax import (
     Var,
     exists,
     forall,
+    node_size,
     subnodes,
     validate,
 )
@@ -421,11 +422,6 @@ def validate_payments(payments: tuple[Payment, ...]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _size(node: Node | Pf) -> int:
-    """Node count of any syntax or proof tree -- the common measure."""
-    return sum(1 for _ in subnodes(node))
-
-
 def _has_relational(node: Node, names: GraphMap) -> bool:
     return any(type(n) is Fun and n.name in names for n in subnodes(node))
 
@@ -761,7 +757,7 @@ def verify_obligations(
                 f"payment for {o.label!r} proves the wrong thing:\n"
                 f"  owed: {o.formula!r}\n  paid: {seq.concl!r}"
             )
-        statuses.append(ObligationStatus(o, paid=True, toll=_size(pf)))
+        statuses.append(ObligationStatus(o, paid=True, toll=node_size(pf)))
     return tuple(statuses)
 
 
@@ -769,7 +765,7 @@ def verify(interp: Interpretation) -> BridgeReport:
     """Verify the artifact's structural ledger and measure its bridge."""
     statuses = verify_obligations(obligations(interp), interp.payments, interp.target)
     bridge_size = sum(
-        _size(symbol.instance())
+        node_size(symbol.instance())
         for symbol in (*interp.symbols, *interp.predicates, *interp.terms)
     )
     return BridgeReport(name=interp.name, bridge_size=bridge_size, statuses=statuses)

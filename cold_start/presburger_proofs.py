@@ -169,13 +169,11 @@ def add_cancel_right() -> Pf:
     ``normalize_equality`` supplies the algebraic transport inside each case.
     """
     base_hyp = Eq(add(_x, ZERO), add(_y, ZERO))
-    base = ImpIntro(
-        base_hyp,
-        normalize_equality(base_hyp, Assume(base_hyp), ADD_RULES),
-    )
+    _, base_normal = normalize_equality(base_hyp, Assume(base_hyp), ADD_RULES)
+    base = ImpIntro(base_hyp, base_normal)
 
     step_hyp = Eq(add(_x, S(_z)), add(_y, S(_z)))
-    unfolded = normalize_equality(step_hyp, Assume(step_hyp), ADD_RULES)
+    _, unfolded = normalize_equality(step_hyp, Assume(step_hyp), ADD_RULES)
     injective = Inst(
         Inst(Axiom(SUCC_INJ), "x", add(_x, _z)),
         "y",

@@ -84,6 +84,14 @@ def subnodes(node: object) -> Iterator[object]:
         stack.extend(child for child in children(n) if _is_node(child))
 
 
+def node_size(node: object) -> int:
+    """How many nodes the tree rooted at `node` has -- the common size measure.
+
+    The bridge ledger's `bridge_size` and per-obligation `toll` columns are this
+    number, and nothing else in the repository needs its own node counter."""
+    return sum(1 for _ in subnodes(node))
+
+
 def map_children(node: object, fn: Callable[[object], object]) -> object:
     """Rebuild `node`, replacing each immediate sub-node with `fn(sub-node)`."""
     if not is_dataclass(node) or isinstance(node, type):

@@ -20,9 +20,7 @@ determinant, collisions, and their use of the generic certified algebra.
 
 from __future__ import annotations
 
-from functools import reduce
 from time import perf_counter
-from typing import cast
 
 from .diffring2 import D_AXIOMS, GEN_X, GEN_Y, GEN_Z, NONTRIVIAL, dx, dy, dz
 from .diffring2_proofs import (
@@ -36,44 +34,34 @@ from .diffring2_proofs import (
     derivation_zero_proofs as _derivation_zero_proofs,
 )
 from .groebner2 import CertifiedMembership, prove_ideal_membership
-from .proof import Assume, Axiom, ExistsIntro, Pf, Sym, Trans
+from .proof import Assume, Axiom, ExistsIntro, Pf, Sym, Trans, proof_size
 from .prop import And, and_intro
 from .ring_nf import ring_eq
 from .syntax import Eq, Formula, Not, Term, Var, exists
 from .tactics import Rule, axiom_rule, lemma_rule, normalize
-from .vocabulary import ONE, ZERO, add, mul
+from .vocabulary import ONE, ZERO, add, mul, product, summation
 
 # --- the map, as term builders --------------------------------------------
 
 
-def _m(*factors: Term) -> Term:
-    """A monomial: the product of `factors`, right-nested."""
-    return reduce(lambda acc, f: mul(f, acc), reversed(factors[:-1]), factors[-1])
-
-
-def _s(*terms: Term) -> Term:
-    """A polynomial: the sum of `terms`, right-nested."""
-    return reduce(lambda acc, t: add(t, acc), reversed(terms[:-1]), terms[-1])
-
-
 def f1(x: Term, y: Term, z: Term) -> Term:
-    return _s(
+    return summation(
         z,
-        _m(x, y),
-        _m(x, y, y),
-        _m(x, x, y, y),
-        _m(x, x, y, z),
-        _m(x, x, y, y, z),
-        _m(x, x, x, y, y, z),
+        product(x, y),
+        product(x, y, y),
+        product(x, x, y, y),
+        product(x, x, y, z),
+        product(x, x, y, y, z),
+        product(x, x, x, y, y, z),
     )
 
 
 def f2(x: Term, y: Term, z: Term) -> Term:
-    return _s(y, _m(x, y, y))
+    return summation(y, product(x, y, y))
 
 
 def f3(x: Term, y: Term, z: Term) -> Term:
-    return _s(x, y, _m(x, y, y), _m(x, x, z))
+    return summation(x, y, product(x, y, y), product(x, x, z))
 
 
 COMPONENTS = (f1, f2, f3)
@@ -95,12 +83,12 @@ def derivative_statements() -> tuple[Formula, ...]:
     x, y, z = GEN_X, GEN_Y, GEN_Z
     rows = (
         (
-            _s(y, _m(y, y), _m(x, x, y, y, z)),  # dF1/dx
-            _s(x, _m(x, x, z)),  # dF1/dy
-            _s(ONE, _m(x, x, y), _m(x, x, y, y), _m(x, x, x, y, y)),  # dF1/dz
+            summation(y, product(y, y), product(x, x, y, y, z)),  # dF1/dx
+            summation(x, product(x, x, z)),  # dF1/dy
+            summation(ONE, product(x, x, y), product(x, x, y, y), product(x, x, x, y, y)),  # dF1/dz
         ),
-        (_m(y, y), ONE, ZERO),  # dF2/dx, dF2/dy, dF2/dz
-        (_s(ONE, _m(y, y)), ONE, _m(x, x)),  # dF3/dx, dF3/dy, dF3/dz
+        (product(y, y), ONE, ZERO),  # dF2/dx, dF2/dy, dF2/dz
+        (summation(ONE, product(y, y)), ONE, product(x, x)),  # dF3/dx, dF3/dy, dF3/dz
     )
     return tuple(
         Eq(d(component(x, y, z)), rhs)
@@ -278,27 +266,6 @@ def jacobian_ideal_consequence() -> CertifiedMembership:
 # --- the answer surface ---------------------------------------------------
 
 
-def _toll(pf: Pf) -> int:
-    """Proof nodes in `pf` -- the certificate's cost, counted like the
-    bridge ledger's toll column."""
-    from dataclasses import fields as dc_fields
-    from dataclasses import is_dataclass
-
-    count = 0
-    stack: list[object] = [pf]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, Pf) and is_dataclass(node):
-            count += 1
-            for f in dc_fields(node):
-                value: object = getattr(node, f.name)
-                if type(value) is tuple:
-                    stack.extend(cast("tuple[object, ...]", value))
-                else:
-                    stack.append(value)
-    return count
-
-
 def main() -> None:
     """Re-check every theorem of the certificate and print its toll.
     Like the ledger: numbers re-derived by the trusted checker on every
@@ -323,7 +290,7 @@ def main() -> None:
         toll = 0
         for pf in proofs:
             check(pf, DIFF_RING_2)
-            toll += _toll(pf)
+            toll += proof_size(pf)
         total += toll
         print(f"{label:<28} toll {toll:>9,}")
     print(f"{'TOTAL':<28} toll {total:>9,}")
@@ -343,11 +310,9 @@ if __name__ == "__main__":
 __all__ = [
     "COLLISION_POINTS",
     "COLLISION_VALUE",
-    "COMPONENTS",
     "collision_proofs",
     "collision_statements",
     "derivative_proofs",
-    "derivative_rules",
     "derivative_statements",
     "det_proof",
     "det_term",

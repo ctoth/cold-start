@@ -49,25 +49,15 @@ from .proof import (
 )
 from .prop import and_left, and_right, or_elim
 from .syntax import Eq, Formula, Implies, Term, Var, exists, instantiate
-from .tactics import lemma_rule, prove_eq
+from .tactics import fresh_name, lemma_rule, prove_eq
 from .vocabulary import ZERO, S, add, mul
 
 ONE = S(ZERO)
 
 
-def _fresh(stem: str, *terms: Term) -> str:
-    used = {name for term in terms for name in term.free_vars()}
-    if stem not in used:
-        return stem
-    index = 0
-    while f"{stem}{index}" in used:
-        index += 1
-    return f"{stem}{index}"
-
-
 def peano_divides(a: Term, b: Term) -> Formula:
     """``a | b`` interpreted in PEANO as ``exists k, a*k=b``."""
-    witness_name = _fresh("k", a, b)
+    witness_name = fresh_name("k", a, b)
     witness = Var(witness_name)
     return exists(witness_name, "", Eq(mul(a, witness), b))
 

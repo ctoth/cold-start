@@ -11,19 +11,22 @@ not for the polymorphism discipline the trusted core lives under.
 The layer is a small equational engine:
 
     match(pattern, target)         first-order matching, pattern Vars are holes
+    fresh_name(stem, *scope)       the one owner of fresh-name generation
+    simultaneous_inst(pf, subs)    all of `subs` at once, staged through slots
     Rule                           a directed equation + the Pf that justifies it
     Rule(..., ordered=True)        a permutative rule, fired only downhill
     Rule.fire(sigma)               the rewritten term and its proof, together
     rewrite_step(term, rules)      rewrite the leftmost-outermost redex
     normalize(term, rules)         rewrite to a fixpoint, Trans-chained
     normalize_equality(eq, pf, rules) transport a proved equation to normal form
+    denormalize_equality(eq, pf, rules) and the mirror, back from normal form
     prove_eq(goal, rules)          normalize both sides, join with Trans/Sym
     by_induction(var, pred, rules) base + step by prove_eq, closed by Induct
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, is_dataclass
 from typing import TypeAlias, cast
 
@@ -152,13 +155,73 @@ def match(
 # ---------------------------------------------------------------------------
 
 
-def _fresh(base: str, avoid: set[str]) -> str:
-    k = 0
-    name = f"{base}!"
-    while name in avoid:
-        k += 1
-        name = f"{base}!{k}"
-    return name
+def fresh_name(stem: str, *scope: Node | str) -> str:
+    """The first of ``stem``, ``stem0``, ``stem1``, ... that ``scope`` leaves free.
+
+    The one owner of fresh-name generation: binder witnesses in `order`,
+    `divisibility` and `robinson_divisibility` name themselves this way, and so
+    do the staging slots of `simultaneous_inst`. A `Node` in `scope` contributes
+    its free variables; a bare `str` contributes itself.
+    """
+    avoid: set[str] = set()
+    for item in scope:
+        if type(item) is str:
+            avoid.add(item)
+        else:
+            avoid |= set(cast(Node, item).free_vars())
+    if stem not in avoid:
+        return stem
+    index = 0
+    while f"{stem}{index}" in avoid:
+        index += 1
+    return f"{stem}{index}"
+
+
+def simultaneous_inst(
+    proof: Pf,
+    subs: Mapping[str, Term],
+    *scope: Node | str,
+    sorts: Mapping[str, str] | None = None,
+) -> Pf:
+    """`proof` with every name in `subs` replaced *at once*.
+
+    The checker's `Inst` substitutes one variable at a time, so instantiating
+    x := y and then y := 0 would rewrite the `y` the first step introduced --
+    and a swap x := y, y := x would collapse both onto one variable. Every
+    simultaneous substitution therefore has to stage its replacements through
+    fresh slot variables first, and this is the one place that does it.
+
+    `scope` names everything else the slots must dodge -- typically the
+    theorem's conclusion, whose other free variables `subs` never mentions.
+    `sorts` gives the sort of each substituted variable; a slot declared at the
+    wrong sort is rejected by the checker in a many-sorted theory.
+    """
+    raw = cast(dict[object, object], cast(object, subs))
+    for name, term in raw.items():
+        if type(name) is not str or not isinstance(term, Term):
+            raise TacticError(f"a substitution must bind names to terms, got {name!r} -> {term!r}")
+    if not subs:
+        return proof
+    sorts = sorts or {}
+    avoid: set[str] = set(subs)
+    for item in scope:
+        if type(item) is str:
+            avoid.add(item)
+        else:
+            avoid |= set(cast(Node, item).free_vars())
+    for t in subs.values():
+        avoid |= set(t.free_vars())
+    names = sorted(subs)
+    slots: dict[str, str] = {}
+    for name in names:
+        slots[name] = fresh_name(f"{name}!", *avoid)
+        avoid.add(slots[name])
+    pf = proof
+    for name in names:
+        pf = Inst(pf, name, Var(slots[name], sorts.get(name, "")))
+    for name in names:
+        pf = Inst(pf, slots[name], subs[name])
+    return pf
 
 
 def _subst_all(term: Term, sigma: Substitution) -> Term:
@@ -314,12 +377,8 @@ class Rule:
     def instance(self, sigma: Substitution) -> Pf:
         """A `Pf` of `eq` with every hole replaced per `sigma`.
 
-        `Inst` substitutes *sequentially*, so instantiating x := y and then
-        y := 0 would rewrite the `y` the first step introduced. We therefore
-        rename all holes to fresh names first and only then substitute -- a
-        simultaneous substitution, spelled in the trusted core's sequential
-        primitive. Holes `sigma` does not mention are renamed back to
-        themselves."""
+        Holes `sigma` does not mention are substituted for themselves, so the
+        whole hole set moves in one `simultaneous_inst` step."""
         raw_sigma = cast(dict[object, object], cast(object, sigma))
         for name, term in raw_sigma.items():
             if type(name) is not str or not isinstance(term, Term):
@@ -333,20 +392,8 @@ class Rule:
                     f"variable {name!r} is used at two sorts ({sorts[name]!r} and {sort!r}) "
                     f"in {self.eq!r}"
                 )
-        avoid = set(self.eq.free_vars())
-        for t in sigma.values():
-            avoid |= set(t.free_vars())
-        holes = sorted(self.vars)
-        renaming: dict[str, str] = {}
-        for v in holes:
-            renaming[v] = _fresh(v, avoid)
-            avoid.add(renaming[v])
-        pf = self.proof
-        for v in holes:
-            pf = Inst(pf, v, Var(renaming[v], sorts.get(v, "")))
-        for v in holes:
-            pf = Inst(pf, renaming[v], sigma.get(v, Var(v, sorts.get(v, ""))))
-        return pf
+        subs = {v: sigma.get(v, Var(v, sorts.get(v, ""))) for v in self.vars}
+        return simultaneous_inst(self.proof, subs, self.eq, sorts=sorts)
 
     def fire(self, sigma: Substitution) -> RewriteResult:
         """The rule applied at a match: `(rhs under sigma, Pf of lhs = rhs under
@@ -506,7 +553,7 @@ def normalize_equality(
     proof: Pf,
     rules: Iterable[Rule],
     budget: int = DEFAULT_BUDGET,
-) -> Pf:
+) -> tuple[Eq, Pf]:
     """Transport a proof of ``lhs = rhs`` to the equality of its normal forms.
 
     If normalization emits ``lhs = lhs_nf`` and ``rhs = rhs_nf``, the returned
@@ -516,15 +563,38 @@ def normalize_equality(
     exposing the algebraic content of that equality for a later inference such
     as injectivity or cancellation.
 
+    Both halves come back together -- ``Eq(lhs_nf, rhs_nf)`` and its recipe --
+    because a caller that has to rebuild the statement by hand ends up
+    rebuilding the recipe too, which is how three copies of this got written.
+
     The caller supplies ``source`` because tactics are deliberately untrusted
     and do not derive proof conclusions.  A mismatch between it and ``proof``
     produces an invalid ``Trans`` node that the checker rejects.
     """
     eq = _equation(source)
     rules = tuple(rules)
+    left_nf, left_pf = normalize(eq.lhs, rules, budget)
+    right_nf, right_pf = normalize(eq.rhs, rules, budget)
+    return Eq(left_nf, right_nf), Trans(Sym(left_pf), Trans(proof, right_pf))
+
+
+def denormalize_equality(
+    target: Formula,
+    proof: Pf,
+    rules: Iterable[Rule],
+    budget: int = DEFAULT_BUDGET,
+) -> Pf:
+    """The mirror of :func:`normalize_equality`: fold a normal-form proof back.
+
+    Given a proof of ``lhs_nf = rhs_nf``, the returned recipe is
+    ``lhs = lhs_nf = rhs_nf = rhs`` -- the equality the caller actually wants,
+    reached through the normal forms it was easier to prove there.
+    """
+    eq = _equation(target)
+    rules = tuple(rules)
     _, left_pf = normalize(eq.lhs, rules, budget)
     _, right_pf = normalize(eq.rhs, rules, budget)
-    return Trans(Sym(left_pf), Trans(proof, right_pf))
+    return Trans(left_pf, Trans(proof, Sym(right_pf)))
 
 
 # ---------------------------------------------------------------------------
@@ -569,12 +639,12 @@ def transport(pattern: Formula, var: str, eq: Eq, eq_pf: Pf, pf: Pf) -> Pf:
         back = transport(pattern.ant, var, Eq(eq.rhs, eq.lhs), Sym(eq_pf), Assume(moved_ant))
         return ImpIntro(moved_ant, transport(pattern.con, var, eq, eq_pf, MP(pf, back)))
     if type(pattern) is Forall:
-        u = _fresh("t", set(pattern.free_vars()) | set(eq.free_vars()) | {var})
+        u = fresh_name("t!", pattern, eq, var)
         opened = instantiate(pattern, Var(u, pattern.sort))
         inner = transport(opened, var, eq, eq_pf, ForallElim(pf, Var(u, pattern.sort)))
         return ForallIntro(u, pattern.sort, inner)
     if type(pattern) is Exists:
-        u = _fresh("t", set(pattern.free_vars()) | set(eq.free_vars()) | {var})
+        u = fresh_name("t!", pattern, eq, var)
         opened = instantiate(pattern, Var(u, pattern.sort))
         assumption = opened.subst(var, eq.lhs)
         moved = transport(opened, var, eq, eq_pf, Assume(assumption))
@@ -653,6 +723,8 @@ __all__ = [
     "TacticError",
     "axiom_rule",
     "by_induction",
+    "denormalize_equality",
+    "fresh_name",
     "hypothesis_rule",
     "lemma_rule",
     "match",
@@ -660,5 +732,6 @@ __all__ = [
     "normalize_equality",
     "prove_eq",
     "rewrite_step",
+    "simultaneous_inst",
     "transport",
 ]
