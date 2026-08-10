@@ -21,6 +21,7 @@ from hypothesis import strategies as st
 
 import cold_start.lean.coverage as lean_coverage
 import cold_start.lean.proof as lean_proof
+from cold_start.algebra import MONOID
 from cold_start.lean.corpus import (
     CORPUS_NAMES,
     CORPUS_PATH,
@@ -46,7 +47,6 @@ from cold_start.lean.syntax import (
     render_term,
     universal_closure,
 )
-from cold_start.algebra import MONOID
 from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO
 from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
