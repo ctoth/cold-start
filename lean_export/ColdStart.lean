@@ -188,32 +188,32 @@ theorem coldstart_skolem_payment {M : Type} (zero : M) (succ : M → M) (add : M
     : ∀ x_2 : M, (∀ x : M, (∃ y : M, mul x y = x_2) → (x = succ zero → False) → ∃ z : M, mul (succ (succ zero)) z = x) → ∀ n : M, (∀ m : M, (∃ a : M, mul m a = n) → (m = succ zero → False) → ∃ b : M, mul (succ (succ zero)) b = m) → n = succ zero → mul x_2 n = x_2 :=
   fun x_2 : M => (fun h : ∀ x : M, (∃ y : M, mul x y = x_2) → (x = succ zero → False) → ∃ z : M, mul (succ (succ zero)) z = x => (fun x_5 : M => (fun h_1 : ∀ x : M, (∃ y : M, mul x y = x_5) → (x = succ zero → False) → ∃ z : M, mul (succ (succ zero)) z = x => (fun h_2 : x_5 = succ zero => (Eq.trans (congr (congrArg mul (Eq.refl x_2)) h_2) (Eq.trans (Eq.trans (Eq.trans (Eq.trans (Eq.refl (mul x_2 (succ zero))) (ax_mul_succ x_2 zero)) (congr (congrArg add (ax_mul_zero x_2)) (Eq.refl x_2))) (ind (fun n_1 : M => add zero n_1 = n_1) (Eq.trans (Eq.trans (Eq.refl (add zero zero)) (ax_add_zero zero)) (Eq.symm (Eq.refl zero))) (fun n_2 : M => (fun h_3 : add zero n_2 = n_2 => (Eq.trans (Eq.trans (Eq.trans (Eq.refl (add zero (succ n_2))) (ax_add_succ zero n_2)) (congrArg succ h_3)) (Eq.symm (Eq.refl (succ n_2)))))) x_2)) (Eq.symm (Eq.refl x_2))))))))
 
-theorem coldstart_theory_presburger_one {M : Type} (one : M) (succ : M → M) (add : M → M → M)
+theorem coldstart_presburger_one_add_two {M : Type} (one : M) (succ : M → M) (add : M → M → M)
     (ax1 : ∀ a : M, add a one = succ a)
     (ax3 : ∀ a : M, ∀ b : M, add a (succ b) = succ (add a b))
     (ax_succ_inj : ∀ a : M, ∀ b : M, succ a = succ b → a = b)
     (ax_succ_ne_one : ∀ a : M, succ a = one → False)
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+    : ∀ a : M, add a (succ one) = succ (succ a) :=
+  fun a : M => (Eq.trans (ax3 a one) (congrArg succ (ax1 a)))
 
-theorem coldstart_theory_semigroup {M : Type} (mul : M → M → M) (ax1 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+theorem coldstart_semigroup_reassociation {M : Type} (mul : M → M → M) (ax1 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
+    : ∀ w : M, ∀ x : M, ∀ y : M, ∀ z : M, mul (mul (mul w x) y) z = mul w (mul x (mul y z)) :=
+  fun w : M => fun x : M => fun y : M => fun z : M => (Eq.trans (ax1 (mul w x) y z) (ax1 w x (mul y z)))
 
-theorem coldstart_theory_monoid {M : Type} (e : M) (mul : M → M → M) (ax1 : ∀ x : M, mul e x = x)
+theorem coldstart_monoid_unit_idempotent {M : Type} (e : M) (mul : M → M → M) (ax1 : ∀ x : M, mul e x = x)
     (ax2 : ∀ x : M, mul x e = x)
     (ax3 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+    : mul e e = e :=
+  (ax1 e)
 
-theorem coldstart_theory_commutative_monoid {M : Type} (e : M) (mul : M → M → M) (ax1 : ∀ x : M, mul e x = x)
+theorem coldstart_commutative_monoid_right_identity {M : Type} (e : M) (mul : M → M → M) (ax1 : ∀ x : M, mul e x = x)
     (ax2 : ∀ x : M, mul x e = x)
     (ax3 : ∀ x : M, ∀ y : M, mul x y = mul y x)
     (ax4 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+    : ∀ x : M, mul x e = x :=
+  fun x : M => (Eq.trans (ax3 x e) (ax1 x))
 
-theorem coldstart_theory_ring {M : Type} (one : M) (zero : M) (neg : M → M)
+theorem coldstart_ring_mul_add_one {M : Type} (one : M) (zero : M) (neg : M → M)
     (add : M → M → M)
     (mul : M → M → M)
     (ax1 : ∀ x : M, add x (neg x) = zero)
@@ -225,10 +225,10 @@ theorem coldstart_theory_ring {M : Type} (one : M) (zero : M) (neg : M → M)
     (ax8 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
     (ax9 : ∀ x : M, ∀ y : M, ∀ z : M, mul x (add y z) = add (mul x y) (mul x z))
     (ax_add_zero : ∀ x : M, add x zero = x)
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+    : ∀ x : M, ∀ y : M, mul x (add y one) = add (mul x y) x :=
+  fun x : M => fun y : M => (Eq.trans (ax9 x y one) (congr (congrArg add (Eq.refl (mul x y))) (ax4 x)))
 
-theorem coldstart_theory_commutative_ring {M : Type} (one : M) (zero : M) (neg : M → M)
+theorem coldstart_commutative_ring_add_cancel_right {M : Type} (one : M) (zero : M) (neg : M → M)
     (add : M → M → M)
     (mul : M → M → M)
     (ax1 : ∀ x : M, add x (neg x) = zero)
@@ -241,28 +241,96 @@ theorem coldstart_theory_commutative_ring {M : Type} (one : M) (zero : M) (neg :
     (ax8 : ∀ x : M, ∀ y : M, ∀ z : M, mul (add x y) z = add (mul x z) (mul y z))
     (ax9 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
     (ax_add_zero : ∀ x : M, add x zero = x)
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+    : ∀ x : M, ∀ y : M, ∀ z : M, add x z = add y z → x = y :=
+  fun x : M => fun y : M => fun z : M => (fun h : add x z = add y z => (Eq.trans (Eq.symm (Eq.trans (ax7 x z (neg z)) (Eq.trans (congr (congrArg add (Eq.refl x)) (ax1 z)) (ax_add_zero x)))) (Eq.trans (congr (congrArg add h) (Eq.refl (neg z))) (Eq.trans (ax7 y z (neg z)) (Eq.trans (congr (congrArg add (Eq.refl y)) (ax1 z)) (ax_add_zero y))))))
 
-theorem coldstart_theory_abelian_group {M : Type} (zero : M) (neg : M → M) (add : M → M → M)
+theorem coldstart_abelian_group_left_identity {M : Type} (zero : M) (neg : M → M) (add : M → M → M)
     (ax1 : ∀ x : M, add x (neg x) = zero)
     (ax3 : ∀ x : M, ∀ y : M, add x y = add y x)
     (ax4 : ∀ x : M, ∀ y : M, ∀ z : M, add (add x y) z = add x (add y z))
     (ax_add_zero : ∀ x : M, add x zero = x)
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+    : ∀ x : M, add zero x = x :=
+  fun x : M => (Eq.trans (ax3 zero x) (ax_add_zero x))
 
-theorem coldstart_theory_successor_divisibility {M : Type}
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+theorem coldstart_group_ring_inverse_cancels {M : Type} (A : M) (B : M) (one : M)
+    (zero : M)
+    («A'» : M)
+    («B'» : M)
+    (add : M → M → M)
+    (mul : M → M → M)
+    (ax1 : mul A (mul A B) = mul B (mul «A'» «A'»))
+    (ax10 : ∀ x : M, mul one x = x)
+    (ax11 : ∀ x : M, mul x one = x)
+    (ax12 : ∀ x : M, ∀ y : M, add x y = add y x)
+    (ax13 : ∀ x : M, ∀ y : M, ∀ z : M, add (add x y) z = add x (add y z))
+    (ax14 : ∀ x : M, ∀ y : M, ∀ z : M, mul (add x y) z = add (mul x z) (mul y z))
+    (ax15 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
+    (ax16 : ∀ x : M, ∀ y : M, ∀ z : M, mul x (add y z) = add (mul x y) (mul x z))
+    (ax2 : mul A «A'» = one)
+    (ax3 : mul B (mul B A) = mul A (mul «B'» «B'»))
+    (ax4 : mul B «B'» = one)
+    (ax5 : mul «A'» A = one)
+    (ax6 : mul «B'» B = one)
+    (ax7 : zero = one → False)
+    (ax8 : ∀ x : M, add x x = zero)
+    (ax_add_zero : ∀ x : M, add x zero = x)
+    : ∀ tail : M, mul «A'» (mul A tail) = tail :=
+  fun tail : M => (Eq.trans (Eq.trans (Eq.symm (ax15 «A'» A tail)) (congr (congrArg mul ax5) (Eq.refl tail))) (ax10 tail))
 
-theorem coldstart_theory_bare_multiplication {M : Type}
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+theorem coldstart_cubic_ring_theta_fourth {M : Type} (one : M) (th : M) (zero : M)
+    (neg : M → M)
+    (add : M → M → M)
+    (mul : M → M → M)
+    (ax1 : mul th (mul th th) = add one one)
+    (ax10 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
+    (ax11 : ∀ x : M, ∀ y : M, ∀ z : M, mul x (add y z) = add (mul x y) (mul x z))
+    (ax2 : ∀ x : M, add x (neg x) = zero)
+    (ax4 : ∀ x : M, mul one x = x)
+    (ax5 : ∀ x : M, mul x one = x)
+    (ax6 : ∀ x : M, ∀ y : M, add x y = add y x)
+    (ax7 : ∀ x : M, ∀ y : M, mul x y = mul y x)
+    (ax8 : ∀ x : M, ∀ y : M, ∀ z : M, add (add x y) z = add x (add y z))
+    (ax9 : ∀ x : M, ∀ y : M, ∀ z : M, mul (add x y) z = add (mul x z) (mul y z))
+    (ax_add_zero : ∀ x : M, add x zero = x)
+    : mul th (mul th (mul th th)) = mul (add one one) th :=
+  (Eq.trans (congr (congrArg mul (Eq.refl th)) ax1) (ax7 th (add one one)))
 
-theorem coldstart_theory_multiplication_from_square {M : Type}
-    : ∀ x : M, x = x :=
-  fun x : M => (Eq.refl x)
+theorem coldstart_differential_ring_derivation_of_zero {M : Type} (X : M) (Y : M) (Z : M)
+    (one : M)
+    (zero : M)
+    (DX : M → M)
+    (DY : M → M)
+    (DZ : M → M)
+    (add : M → M → M)
+    (mul : M → M → M)
+    (ax1 : DX X = one)
+    (ax10 : zero = one → False)
+    (ax11 : ∀ x : M, add x x = zero)
+    (ax13 : ∀ x : M, mul one x = x)
+    (ax14 : ∀ x : M, mul x one = x)
+    (ax15 : ∀ x : M, ∀ y : M, DX (add x y) = add (DX x) (DX y))
+    (ax16 : ∀ x : M, ∀ y : M, DX (mul x y) = add (mul (DX x) y) (mul x (DX y)))
+    (ax17 : ∀ x : M, ∀ y : M, DY (add x y) = add (DY x) (DY y))
+    (ax18 : ∀ x : M, ∀ y : M, DY (mul x y) = add (mul (DY x) y) (mul x (DY y)))
+    (ax19 : ∀ x : M, ∀ y : M, DZ (add x y) = add (DZ x) (DZ y))
+    (ax2 : DX Y = zero)
+    (ax20 : ∀ x : M, ∀ y : M, DZ (mul x y) = add (mul (DZ x) y) (mul x (DZ y)))
+    (ax21 : ∀ x : M, ∀ y : M, add x y = add y x)
+    (ax22 : ∀ x : M, ∀ y : M, mul x y = mul y x)
+    (ax23 : ∀ x : M, ∀ y : M, ∀ z : M, add (add x y) z = add x (add y z))
+    (ax24 : ∀ x : M, ∀ y : M, ∀ z : M, mul (add x y) z = add (mul x z) (mul y z))
+    (ax25 : ∀ x : M, ∀ y : M, ∀ z : M, mul (mul x y) z = mul x (mul y z))
+    (ax26 : ∀ x : M, ∀ y : M, ∀ z : M, mul x (add y z) = add (mul x y) (mul x z))
+    (ax3 : DX Z = zero)
+    (ax4 : DY X = zero)
+    (ax5 : DY Y = one)
+    (ax6 : DY Z = zero)
+    (ax7 : DZ X = zero)
+    (ax8 : DZ Y = zero)
+    (ax9 : DZ Z = one)
+    (ax_add_zero : ∀ x : M, add x zero = x)
+    : DX zero = zero :=
+  (Eq.trans (Eq.trans (congrArg DX (Eq.symm (ax_add_zero zero))) (ax15 zero zero)) (ax11 (DX zero)))
 
 /-
   The epilogue: registered semantic models discharge every hypothesis, so the
