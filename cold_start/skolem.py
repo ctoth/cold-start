@@ -476,16 +476,6 @@ def skolem_interpretation() -> Interpretation:
     )
 
 
-if __name__ == "__main__":
-    from .interp import verify
-
-    report = verify(skolem_interpretation())
-    print(
-        f"{report.name}: bridge {report.bridge_size} nodes; "
-        f"toll {report.total_toll}; open {report.open_labels()}"
-    )
-
-
 __all__ = [
     "ADD_AS_MUL",
     "NOT_POW2_ZERO",

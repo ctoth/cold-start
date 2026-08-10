@@ -348,16 +348,3 @@ def robinson_into_peano() -> Interpretation:
             (ObligationKey.closure(natural_one), one_pos),
         ),
     )
-
-
-if __name__ == "__main__":
-    from .checker import check
-    from .interp import verify
-
-    print("bridge_total:", check(bridge_total(), ROBINSON_PEANO))
-    for build in (robinson_interpretation, robinson_into_peano):
-        report = verify(build())
-        print(
-            f"{report.name}: bridge {report.bridge_size} nodes; "
-            f"toll {report.total_toll}; open {report.open_labels()}"
-        )

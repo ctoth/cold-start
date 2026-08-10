@@ -303,16 +303,6 @@ def ring_z_interpretation() -> QuotientInterpretation:
     )
 
 
-if __name__ == "__main__":
-    from .quotient import verify
-
-    report = verify(ring_z_interpretation())
-    print(
-        f"{report.name}: bridge {report.bridge_size} nodes; "
-        f"toll {report.total_toll}; open {report.open_labels()}"
-    )
-
-
 __all__ = [
     "MUL_DIFFERENCE_PRODUCT",
     "ONE_ABOVE_DIAGONAL",
