@@ -11,6 +11,9 @@ permissions:
   contents: read
 
 jobs:
+  # The slices below hand-list every tests/test_*.py module, so an omission would
+  # silently never run. tests/test_tools.py asserts this file names exactly the
+  # modules present on disk; add new test modules to a slice or CI goes red.
   python-tests:
     name: Python / ${{ matrix.slice }}
     runs-on: ubuntu-latest
@@ -29,6 +32,7 @@ jobs:
           - slice: proof-libraries
             tests: >-
               tests/test_algebra.py tests/test_brachynomial.py tests/test_combination.py
+              tests/test_cubicring.py
               tests/test_divisibility_proofs.py tests/test_model.py tests/test_mul_laws.py
               tests/test_groebner2.py tests/test_groupring2.py tests/test_jacobian2.py
               tests/test_order.py tests/test_padoa.py tests/test_parity.py
