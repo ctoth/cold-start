@@ -24,10 +24,18 @@ import cold_start.lean.proof as lean_proof
 from cold_start.lean.corpus import (
     CORPUS_NAMES,
     CORPUS_PATH,
+    CorpusEntry,
+    corpus_entries,
     export_corpus,
     write_corpus,
 )
-from cold_start.lean.coverage import corpus_coverage
+from cold_start.lean.coverage import (
+    ASSERTED_FEATURES,
+    DERIVED_FEATURES,
+    cites_its_theory,
+    corpus_coverage,
+    format_coverage,
+)
 from cold_start.lean.proof import export_theorem
 from cold_start.lean.syntax import (
     LeanError,
@@ -38,6 +46,7 @@ from cold_start.lean.syntax import (
     render_term,
     universal_closure,
 )
+from cold_start.algebra import MONOID
 from cold_start.peano import MUL_SUCC_F, MUL_ZERO_F, PEANO
 from cold_start.peano_proofs import mul_proof
 from cold_start.presburger import (
@@ -372,6 +381,56 @@ def test_corpus_semantically_covers_the_proof_language_and_official_theories():
     assert report.missing_proof_rules == frozenset()
     assert report.missing_features == frozenset()
     assert report.missing_theories == frozenset()
+
+
+def test_the_corpus_carries_no_vacuous_theorem(corpus_text: str):
+    """`∀ x : M, x = x` holds in the empty theory, so a theorem of that shape
+    measures nothing. The corpus used to contain ten of them."""
+    assert ": ∀ x : M, x = x :=" not in corpus_text
+    assert all(cites_its_theory(entry) for entry in corpus_entries())
+
+
+def test_a_filler_theorem_does_not_certify_its_theory():
+    """The self-certifying hole: coverage compared the official roster against
+    theories the corpus mentioned, and the corpus mentioned every one of them by
+    padding. A proof that cites no axiom now covers nothing."""
+    filler = CorpusEntry("coldstart_theory_monoid", Refl(Var("x")), MONOID)
+    assert not cites_its_theory(filler)
+
+    report = corpus_coverage([filler])
+    assert "monoid" in report.missing_theories
+    assert report.theories == frozenset()
+    assert not report.complete
+    assert "monoid" in format_coverage(report)
+
+
+def test_format_coverage_names_every_gap_and_documented_exclusion():
+    report = corpus_coverage([CorpusEntry("only", Refl(Var("x")), MONOID)])
+    text = format_coverage(report)
+    assert "INCOMPLETE" in text
+    for name in report.missing_theories:
+        assert name in text
+    for name in report.missing_features:
+        assert name in text
+    for name, reason in report.excluded_theories:
+        assert name in text
+        assert reason in text
+
+
+def test_coverage_distinguishes_derived_features_from_asserted_labels():
+    report = corpus_coverage()
+    assert report.derived_features == DERIVED_FEATURES
+    assert report.asserted_features <= ASSERTED_FEATURES
+    assert not (report.asserted_features & DERIVED_FEATURES)
+    assert "asserted (unchecked)" in format_coverage(report)
+
+
+def test_a_derived_feature_may_not_be_hand_asserted():
+    """Hand-labelling a proof "induction" would let a corpus claim a family it
+    does not exercise; only the proof tree may say so."""
+    entry = CorpusEntry("liar", Refl(Var("x")), MONOID, frozenset({"induction"}))
+    with pytest.raises(ValueError, match="derived feature"):
+        corpus_coverage([entry])
 
 
 def test_lean_coverage_inspection_deduplicates_identity_and_terminates_on_cycles() -> None:

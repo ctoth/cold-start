@@ -228,6 +228,13 @@ def corpus_entries() -> list[CorpusEntry]:
     """
     ordinary = divisibility_into_peano()
     quotient = integers_interpretation()
+    # The quotient interpretation's first obligation is discharged by plain
+    # reflexivity, which is a theorem of no theory at all; the first RESPECT
+    # obligation -- that the constant respects the equivalence -- is the
+    # smallest payment that actually uses the target's axioms.
+    quotient_payment = next(
+        proof for key, proof in quotient.payments if key.kind == "respect"
+    )
     return [
         CorpusEntry(
             "coldstart_left_identity",
@@ -281,7 +288,9 @@ def corpus_entries() -> list[CorpusEntry]:
             "coldstart_relation_reflexive",
             Axiom(DIVIDES_REFL_ATOM),
             DIVISIBILITY_CORE,
-            frozenset({"relations"}),
+            # "relations" is not asserted here: coverage derives it from this
+            # entry's own `Rel` nodes.
+            frozenset({"proof-family:divisibility"}),
         ),
         CorpusEntry(
             "coldstart_ordinary_interpretation_payment",
@@ -291,7 +300,7 @@ def corpus_entries() -> list[CorpusEntry]:
         ),
         CorpusEntry(
             "coldstart_quotient_interpretation_payment",
-            quotient.payments[0][1],
+            quotient_payment,
             quotient.target,
             frozenset({"quotient-interpretation", "proof-family:integer-pairs"}),
         ),
