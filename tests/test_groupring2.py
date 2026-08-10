@@ -10,8 +10,9 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from cold_start.algebra import COMM
+from cold_start.certificate import Certificate
 from cold_start.checker import check
-from cold_start.codec import encode_certificate, make_certificate
+from cold_start.codec import encode_certificate, theory_fingerprint
 from cold_start.groupring2 import (
     A_INV,
     B_INV,
@@ -28,10 +29,10 @@ from cold_start.kaplansky_proofs import (
     group_term,
     lemma_library,
     u_term,
-    unit_product_proofs,
     unit_product_statements,
     uv_product_proof,
     v_term,
+    vu_product_proof,
     witness_coordinates,
 )
 from cold_start.sequent import Sequent
@@ -169,16 +170,29 @@ def test_witness_ring_terms_and_product_statements_match_the_model():
         assert evaluate(statement.lhs) == evaluate(statement.rhs) == R_ONE
 
 
-def test_both_unit_product_theorems_are_checked():
-    for statement, proof in zip(
-        unit_product_statements(), unit_product_proofs(), strict=True
-    ):
-        assert check(proof, GROUP_RING_P2) == Sequent(frozenset(), statement)
+def test_vu_product_theorem_is_checked():
+    _, vu_statement = unit_product_statements()
+    assert check(vu_product_proof(), GROUP_RING_P2) == Sequent(
+        frozenset(), vu_statement
+    )
 
 
-def test_unit_product_proof_verifies_in_a_fresh_process():
+def test_uv_product_theorem_is_checked_in_a_fresh_process():
+    """The one full check of u*v=1, paid by an independent verifier process.
+
+    The certificate is assembled directly rather than through
+    ``make_certificate``, which would re-derive the claim here first: the
+    embedded claim is the theorem we assert, and the fresh process is what
+    re-derives all 1.7M nodes and rejects any mismatch.
+    """
+    uv_statement, _ = unit_product_statements()
     proof_bytes = encode_certificate(
-        make_certificate("groupring2", GROUP_RING_P2, uv_product_proof())
+        Certificate(
+            "groupring2",
+            theory_fingerprint(GROUP_RING_P2),
+            Sequent(frozenset(), uv_statement),
+            uv_product_proof(),
+        )
     )
     result = subprocess.run(
         [sys.executable, "-m", "cold_start.verify"],
@@ -188,4 +202,4 @@ def test_unit_product_proof_verifies_in_a_fresh_process():
         timeout=3600,
     )
     assert result.returncode == 0, result.stderr.decode()
-    assert repr(unit_product_statements()[0]) in result.stdout.decode()
+    assert repr(uv_statement) in result.stdout.decode()
