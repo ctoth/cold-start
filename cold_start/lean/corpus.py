@@ -9,7 +9,11 @@ from .. import algebra as _algebra
 from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
-from ..bridges import PRESBURGER_ONE
+from ..algebra_proofs import ring_add_cancel_right
+from ..bridges import ADD_ONE_F, ADD_SUCC_F, PRESBURGER_ONE
+from ..cubicring import CUBE, CUBIC_RING, GEN_TH, TWO
+from ..diffring2 import DIFF_RING_2
+from ..diffring2_proofs import derivation_zero_proofs
 from ..divisibility_bridges import (
     BARE_MULTIPLICATION,
     DIVIDES_REFL_ATOM,
@@ -17,12 +21,14 @@ from ..divisibility_bridges import (
     PURE_SUCCESSOR_DIVISIBILITY,
     divisibility_into_peano,
 )
+from ..groupring2 import GROUP_RING_P2
 from ..integers import integers_interpretation
+from ..kaplansky_proofs import cancellation_rules
 from ..order import le_refl
 from ..parity import parity
 from ..peano_proofs import mul_cancel_right_succ, mul_proof
 from ..presburger_proofs import add_proof, left_identity_proof
-from ..proof import Axiom, Pf, Refl
+from ..proof import Axiom, Cong, Pf, Refl, Trans
 from ..robinson_divisibility_proofs import coprime_one_left
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
 from ..skolem import skolem_interpretation
@@ -30,7 +36,9 @@ from ..squaring import SQUARE_ARITHMETIC
 from ..squaring_bridges import BARE_MULTIPLICATION_FROM_SQUARE
 from ..squaring_proofs import square_product_total, square_product_unique
 from ..syntax import Var
+from ..tactics import axiom_rule
 from ..theory import Theory
+from ..vocabulary import ONE, ZERO, mul
 from .models import model_for
 from .proof import LeanProofExport
 
@@ -91,9 +99,9 @@ class CorpusEntry:
 
 
 OFFICIAL_THEORIES: tuple[tuple[str, Theory], ...] = (
-    # Every named theory in Lean's deliberately one-carrier fragment.  The
-    # many-sorted MONOID_ACTION theory is checked by Python but cannot be stated
-    # by this adapter without changing its one-carrier semantics.
+    # Every theory the corpus is expected to carry a REAL theorem for. Coverage
+    # is measured against this roster: a theory listed here with no theorem of
+    # its own is reported missing, by name. Nothing is padded to close the gap.
     ("presburger-one", PRESBURGER_ONE),
     ("presburger", _presburger.PRESBURGER),
     ("peano", _peano.PEANO),
@@ -105,11 +113,110 @@ OFFICIAL_THEORIES: tuple[tuple[str, Theory], ...] = (
     ("commutative-ring", _algebra.COMM_RING),
     ("abelian-group", _algebra.AB_GROUP),
     ("divisibility-core", DIVISIBILITY_CORE),
-    ("successor-divisibility", PURE_SUCCESSOR_DIVISIBILITY),
-    ("bare-multiplication", BARE_MULTIPLICATION),
     ("addition-and-square", SQUARE_ARITHMETIC),
-    ("multiplication-from-square", BARE_MULTIPLICATION_FROM_SQUARE),
+    ("group-ring-p2", GROUP_RING_P2),
+    ("cubic-ring", CUBIC_RING),
+    ("differential-ring", DIFF_RING_2),
 )
+
+EXCLUDED_THEORIES: tuple[tuple[str, Theory, str], ...] = (
+    # Theories the export deliberately carries no theorem for, each with the
+    # reason it cannot have one. An exclusion is stated here and reported; it is
+    # never hidden behind a filler theorem.
+    (
+        "monoid-action",
+        _algebra.MONOID_ACTION,
+        "many-sorted (a monoid acting on a set): Lean's one-carrier fragment "
+        "cannot state it without changing its semantics",
+    ),
+    (
+        "successor-divisibility",
+        PURE_SUCCESSOR_DIVISIBILITY,
+        "an axiom-free interpretation SOURCE signature: nothing but tautologies "
+        "is derivable in it, so no honest theorem exists",
+    ),
+    (
+        "bare-multiplication",
+        BARE_MULTIPLICATION,
+        "an axiom-free interpretation SOURCE signature: nothing but tautologies "
+        "is derivable in it, so no honest theorem exists",
+    ),
+    (
+        "multiplication-from-square",
+        BARE_MULTIPLICATION_FROM_SQUARE,
+        "an axiom-free interpretation SOURCE signature: nothing but tautologies "
+        "is derivable in it, so no honest theorem exists",
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Small theorems for the theories that have no proof module of their own
+# ---------------------------------------------------------------------------
+# Each is written out here rather than generated: a theorem stands for its
+# theory only if it actually USES that theory's axioms, and the shortest honest
+# way to say so is to derive one real fact per theory by hand.
+
+_x, _y, _z, _w = Var("x"), Var("y"), Var("z"), Var("w")
+_a = Var("a")
+
+
+def semigroup_reassociation() -> Pf:
+    """((w*x)*y)*z = w*(x*(y*z)): the associativity axiom used twice."""
+    assoc = axiom_rule(_algebra.ASSOC)
+    return Trans(
+        assoc.instance({"x": mul(_w, _x), "y": _y, "z": _z}),
+        assoc.instance({"x": _w, "y": _x, "z": mul(_y, _z)}),
+    )
+
+
+def monoid_unit_idempotent() -> Pf:
+    """e*e = e: the left identity read at the unit itself."""
+    return axiom_rule(_algebra.LEFT_ID).instance({"x": _algebra.E})
+
+
+def commutative_monoid_right_identity() -> Pf:
+    """x*e = x, derived from commutativity and the LEFT identity -- the right
+    identity axiom is redundant once `*` commutes, and this proof shows it."""
+    return Trans(
+        axiom_rule(_algebra.COMM).instance({"x": _x, "y": _algebra.E}),
+        axiom_rule(_algebra.LEFT_ID).instance({"x": _x}),
+    )
+
+
+def abelian_group_left_identity() -> Pf:
+    """0+x = x, from commutativity of `+` and the right-sided axiom."""
+    return Trans(
+        axiom_rule(_algebra.ADD_COMM).instance({"x": ZERO, "y": _x}),
+        axiom_rule(_algebra.ADD_ZERO).instance({"x": _x}),
+    )
+
+
+def ring_mul_add_one() -> Pf:
+    """x*(y+1) = x*y + x: distributivity followed by the right unit, under the
+    congruence rule -- the shape every polynomial expansion is made of."""
+    return Trans(
+        axiom_rule(_algebra.DIST_LEFT).instance({"x": _x, "y": _y, "z": ONE}),
+        Cong("+", (Refl(mul(_x, _y)), axiom_rule(_algebra.MUL_RIGHT_ID).instance({"x": _x}))),
+    )
+
+
+def presburger_one_add_two() -> Pf:
+    """a + S 1 = S (S a) in the 1-based Presburger theory, which has no zero."""
+    return Trans(
+        axiom_rule(ADD_SUCC_F).instance({"a": _a, "b": ONE}),
+        Cong("S", (axiom_rule(ADD_ONE_F).instance({"a": _a}),)),
+    )
+
+
+def cubic_ring_theta_fourth() -> Pf:
+    """th*(th*(th*th)) = 2*th in Z[th | th^3 = 2]: the cube relation under a
+    congruence, then commutativity. The full norm factorization lives in
+    `cubicring_proofs`; it is a 2.4 MB export, so the corpus carries this one."""
+    return Trans(
+        Cong("*", (Refl(GEN_TH), Axiom(CUBE))),
+        axiom_rule(_algebra.COMM).instance({"x": GEN_TH, "y": TWO}),
+    )
 
 
 def corpus_entries() -> list[CorpusEntry]:
@@ -121,7 +228,14 @@ def corpus_entries() -> list[CorpusEntry]:
     """
     ordinary = divisibility_into_peano()
     quotient = integers_interpretation()
-    primary = [
+    # The quotient interpretation's first obligation is discharged by plain
+    # reflexivity, which is a theorem of no theory at all; the first RESPECT
+    # obligation -- that the constant respects the equivalence -- is the
+    # smallest payment that actually uses the target's axioms.
+    quotient_payment = next(
+        proof for key, proof in quotient.payments if key.kind == "respect"
+    )
+    return [
         CorpusEntry(
             "coldstart_left_identity",
             left_identity_proof(),
@@ -174,7 +288,9 @@ def corpus_entries() -> list[CorpusEntry]:
             "coldstart_relation_reflexive",
             Axiom(DIVIDES_REFL_ATOM),
             DIVISIBILITY_CORE,
-            frozenset({"relations"}),
+            # "relations" is not asserted here: coverage derives it from this
+            # entry's own `Rel` nodes.
+            frozenset({"proof-family:divisibility"}),
         ),
         CorpusEntry(
             "coldstart_ordinary_interpretation_payment",
@@ -184,7 +300,7 @@ def corpus_entries() -> list[CorpusEntry]:
         ),
         CorpusEntry(
             "coldstart_quotient_interpretation_payment",
-            quotient.payments[0][1],
+            quotient_payment,
             quotient.target,
             frozenset({"quotient-interpretation", "proof-family:integer-pairs"}),
         ),
@@ -212,14 +328,67 @@ def corpus_entries() -> list[CorpusEntry]:
             _peano.PEANO,
             frozenset({"proof-family:skolem", "ordinary-interpretation"}),
         ),
+        CorpusEntry(
+            "coldstart_presburger_one_add_two",
+            presburger_one_add_two(),
+            PRESBURGER_ONE,
+            frozenset({"proof-family:presburger"}),
+        ),
+        CorpusEntry(
+            "coldstart_semigroup_reassociation",
+            semigroup_reassociation(),
+            _algebra.SEMIGROUP,
+            frozenset({"proof-family:algebra"}),
+        ),
+        CorpusEntry(
+            "coldstart_monoid_unit_idempotent",
+            monoid_unit_idempotent(),
+            _algebra.MONOID,
+            frozenset({"proof-family:algebra"}),
+        ),
+        CorpusEntry(
+            "coldstart_commutative_monoid_right_identity",
+            commutative_monoid_right_identity(),
+            _algebra.COMM_MONOID,
+            frozenset({"proof-family:algebra"}),
+        ),
+        CorpusEntry(
+            "coldstart_ring_mul_add_one",
+            ring_mul_add_one(),
+            _algebra.RING,
+            frozenset({"proof-family:algebra"}),
+        ),
+        CorpusEntry(
+            "coldstart_commutative_ring_add_cancel_right",
+            ring_add_cancel_right(),
+            _algebra.COMM_RING,
+            frozenset({"proof-family:algebra"}),
+        ),
+        CorpusEntry(
+            "coldstart_abelian_group_left_identity",
+            abelian_group_left_identity(),
+            _algebra.AB_GROUP,
+            frozenset({"proof-family:algebra"}),
+        ),
+        CorpusEntry(
+            "coldstart_group_ring_inverse_cancels",
+            cancellation_rules()[0].proof,
+            GROUP_RING_P2,
+            frozenset({"proof-family:group-ring"}),
+        ),
+        CorpusEntry(
+            "coldstart_cubic_ring_theta_fourth",
+            cubic_ring_theta_fourth(),
+            CUBIC_RING,
+            frozenset({"proof-family:cubic-ring"}),
+        ),
+        CorpusEntry(
+            "coldstart_differential_ring_derivation_of_zero",
+            derivation_zero_proofs()[0],
+            DIFF_RING_2,
+            frozenset({"proof-family:differential-ring"}),
+        ),
     ]
-    represented = {id(entry.theory) for entry in primary}
-    coverage = [
-        CorpusEntry(f"coldstart_theory_{slug.replace('-', '_')}", Refl(Var("x")), theory)
-        for slug, theory in OFFICIAL_THEORIES
-        if id(theory) not in represented
-    ]
-    return [*primary, *coverage]
 
 
 CORPUS_NAMES = tuple(entry.name for entry in corpus_entries())
@@ -253,6 +422,7 @@ __all__ = [
     "CORPUS_NAMES",
     "CORPUS_PATH",
     "CorpusEntry",
+    "EXCLUDED_THEORIES",
     "OFFICIAL_THEORIES",
     "corpus_entries",
     "export_corpus",
