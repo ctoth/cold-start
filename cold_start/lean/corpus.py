@@ -9,13 +9,13 @@ from .. import algebra as _algebra
 from .. import peano as _peano
 from .. import presburger as _presburger
 from .. import robinson as _robinson
+from ..algebra import BARE_MULTIPLICATION
 from ..algebra_proofs import ring_add_cancel_right
 from ..bridges import ADD_ONE_F, ADD_SUCC_F, PRESBURGER_ONE
 from ..cubicring import CUBE, CUBIC_RING, GEN_TH, TWO
 from ..diffring2 import DIFF_RING_2
 from ..diffring2_proofs import derivation_zero_proofs
 from ..divisibility_bridges import (
-    BARE_MULTIPLICATION,
     DIVIDES_REFL_ATOM,
     DIVISIBILITY_CORE,
     PURE_SUCCESSOR_DIVISIBILITY,
@@ -33,7 +33,6 @@ from ..robinson_divisibility_proofs import coprime_one_left
 from ..robinson_proofs import bridge_converse_positive, robinson_add_proof
 from ..skolem import skolem_interpretation
 from ..squaring import SQUARE_ARITHMETIC
-from ..squaring_bridges import BARE_MULTIPLICATION_FROM_SQUARE
 from ..squaring_proofs import square_product_total, square_product_unique
 from ..syntax import Var
 from ..tactics import axiom_rule
@@ -138,12 +137,6 @@ EXCLUDED_THEORIES: tuple[tuple[str, Theory, str], ...] = (
     (
         "bare-multiplication",
         BARE_MULTIPLICATION,
-        "an axiom-free interpretation SOURCE signature: nothing but tautologies "
-        "is derivable in it, so no honest theorem exists",
-    ),
-    (
-        "multiplication-from-square",
-        BARE_MULTIPLICATION_FROM_SQUARE,
         "an axiom-free interpretation SOURCE signature: nothing but tautologies "
         "is derivable in it, so no honest theorem exists",
     ),

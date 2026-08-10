@@ -46,9 +46,9 @@ from .integer_pairs import (
     ADD_COMPONENTWISE,
     NEG_AS_SWAP,
     ZERO_AS_DIAGONAL,
-    Orientation,
     add_graph,
     assume,
+    cancel,
     flip,
     guarded_axiom_payment,
     int_eq,
@@ -67,10 +67,9 @@ from .integer_pairs import (
 )
 from .interp import ObligationKey
 from .peano import PEANO
-from .peano_proofs import PEANO_SEMIRING_CONTEXT
-from .proof import Assume, ImpIntro, Pf, Sym
+from .proof import Assume, Pf, Sym
 from .quotient import QuotientInterpretation, Vec, VecSymbol, vec
-from .ring_nf import CombinationSource, elaborate_combination
+from .ring_nf import CombinationSource
 from .syntax import Eq, Term
 from .vocabulary import ZERO, S, add, mul
 
@@ -103,32 +102,12 @@ MUL_DIFFERENCE_PRODUCT = VecSymbol("*", 2, _g_mul)
 # ---------------------------------------------------------------------------
 
 
-def _ring_cancel(goal: Eq, hyps: tuple[CombinationSource, ...]) -> Pf:
-    return elaborate_combination(goal, hyps, PEANO_SEMIRING_CONTEXT)
-
-
 def _scale(eq: Eq, coeff: Term) -> CombinationSource:
     return eq, Assume(eq), coeff
 
 
 def _scale_flip(eq: Eq, coeff: Term) -> CombinationSource:
     return Eq(eq.rhs, eq.lhs), Sym(Assume(eq)), coeff
-
-
-def _pay_ring_respect(symbol: VecSymbol, orient: Orientation) -> Pf:
-    """The respect chain, discharged in obligation order: one ~ per argument
-    slot, then the two graph hypotheses, one combination at the core."""
-    args, primed = symbol.canonical_args(2), symbol.primed_args(2)
-    c, d = vec("c!", 2), vec("d!", 2)
-    eps_hyps = tuple(int_eq(old, new) for old, new in zip(args, primed, strict=True))
-    g_c = symbol.graph(args, c)
-    g_d = symbol.graph(primed, d)
-    assert type(g_c) is Eq and type(g_d) is Eq
-    core = _ring_cancel(int_eq(c, d), orient(eps_hyps, g_c, g_d))
-    out = ImpIntro(g_c, ImpIntro(g_d, core))
-    for hyp in reversed(eps_hyps):
-        out = ImpIntro(hyp, out)
-    return out
 
 
 def _orient_one(
@@ -179,7 +158,7 @@ def _pay_mul_assoc() -> Pf:
     g2 = _g_mul((_x, _u), _u0)
     g3 = _g_mul((_x, _y), _u1)
     g4 = _g_mul((_u1, _z), _u2)
-    core = _ring_cancel(
+    core = cancel(
         int_eq(_u2, _u0),
         (
             flip(g4),
@@ -196,7 +175,7 @@ def _pay_mul_assoc() -> Pf:
 def _pay_mul_left_id() -> Pf:
     g1 = _g_one((), _u)
     g2 = _g_mul((_u, _x), _u0)
-    core = _ring_cancel(
+    core = cancel(
         int_eq(_u0, _x),
         (flip(g2), _scale(g1, _x[0]), _scale_flip(g1, _x[1])),
     )
@@ -206,7 +185,7 @@ def _pay_mul_left_id() -> Pf:
 def _pay_mul_right_id() -> Pf:
     g1 = _g_one((), _u)
     g2 = _g_mul((_x, _u), _u0)
-    core = _ring_cancel(
+    core = cancel(
         int_eq(_u0, _x),
         (flip(g2), _scale(g1, _x[0]), _scale_flip(g1, _x[1])),
     )
@@ -218,7 +197,7 @@ def _pay_mul_comm() -> Pf:
     the ADD_COMM shape with the semiring kit sorting the monomials."""
     g_r = _g_mul((_y, _x), _u)
     g_l = _g_mul((_x, _y), _u0)
-    core = _ring_cancel(int_eq(_u0, _u), (flip(g_l), assume(g_r)))
+    core = cancel(int_eq(_u0, _u), (flip(g_l), assume(g_r)))
     return guarded_axiom_payment((("u!", g_r), ("u!0", g_l)), core)
 
 
@@ -228,7 +207,7 @@ def _pay_dist_left() -> Pf:
     g3 = add_graph((_u, _u0), _u1)
     g4 = add_graph((_y, _z), _u2)
     g5 = _g_mul((_x, _u2), _u3)
-    core = _ring_cancel(
+    core = cancel(
         int_eq(_u3, _u1),
         (
             flip(g5),
@@ -251,7 +230,7 @@ def _pay_dist_right() -> Pf:
     g3 = add_graph((_u, _u0), _u1)
     g4 = add_graph((_x, _y), _u2)
     g5 = _g_mul((_u2, _z), _u3)
-    core = _ring_cancel(
+    core = cancel(
         int_eq(_u3, _u1),
         (
             flip(g5),
@@ -300,7 +279,7 @@ def ring_z_interpretation() -> QuotientInterpretation:
             (ObligationKey.totality("0"), pay_totality(ZERO_AS_DIAGONAL, (ZERO, ZERO))),
             (ObligationKey.respect("0"), pay_respect(ZERO_AS_DIAGONAL, orient_zero)),
             (ObligationKey.totality("1"), pay_totality(ONE_ABOVE_DIAGONAL, (S(ZERO), ZERO))),
-            (ObligationKey.respect("1"), _pay_ring_respect(ONE_ABOVE_DIAGONAL, _orient_one)),
+            (ObligationKey.respect("1"), pay_respect(ONE_ABOVE_DIAGONAL, _orient_one)),
             (
                 ObligationKey.totality("+"),
                 pay_totality(ADD_COMPONENTWISE, (add(x0[0], x1[0]), add(x0[1], x1[1]))),
@@ -309,7 +288,7 @@ def ring_z_interpretation() -> QuotientInterpretation:
             (ObligationKey.totality("neg"), pay_totality(NEG_AS_SWAP, (x0[1], x0[0]))),
             (ObligationKey.respect("neg"), pay_respect(NEG_AS_SWAP, orient_neg)),
             (ObligationKey.totality("*"), pay_totality(MUL_DIFFERENCE_PRODUCT, product_image)),
-            (ObligationKey.respect("*"), _pay_ring_respect(MUL_DIFFERENCE_PRODUCT, _orient_mul)),
+            (ObligationKey.respect("*"), pay_respect(MUL_DIFFERENCE_PRODUCT, _orient_mul)),
             (ObligationKey.axiom(ADD_ZERO), pay_add_zero()),
             (ObligationKey.axiom(ADD_COMM), pay_add_comm()),
             (ObligationKey.axiom(ADD_ASSOC), pay_add_assoc()),
@@ -321,16 +300,6 @@ def ring_z_interpretation() -> QuotientInterpretation:
             (ObligationKey.axiom(DIST_LEFT), _pay_dist_left()),
             (ObligationKey.axiom(DIST_RIGHT), _pay_dist_right()),
         ),
-    )
-
-
-if __name__ == "__main__":
-    from .quotient import verify
-
-    report = verify(ring_z_interpretation())
-    print(
-        f"{report.name}: bridge {report.bridge_size} nodes; "
-        f"toll {report.total_toll}; open {report.open_labels()}"
     )
 
 

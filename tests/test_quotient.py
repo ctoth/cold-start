@@ -27,7 +27,7 @@ from cold_start.quotient import (
 )
 from cold_start.syntax import Eq, Formula, Implies, Term, Var, exists, forall
 from cold_start.tactics import prove_eq
-from cold_start.theory import Theory
+from cold_start.theory import Signature, Theory
 from cold_start.vocabulary import ZERO as R0
 from cold_start.vocabulary import add, mul
 
@@ -130,6 +130,23 @@ def test_translate_structure_and_rejections() -> None:
         translate(Eq(mul(_x, _y), _x), SYMBOLS, eps, 2)
     with pytest.raises(InterpError):
         translate(exists("k", "", Eq(Var("k"), _x)), SYMBOLS, eps, 2)
+
+
+def test_source_relations_are_refused_as_unsupported() -> None:
+    """A quotient interpretation has no place to put a source predicate --
+    VecSymbol translates functions only -- so the rejection must say the
+    feature is unsupported, not blame the artifact for a missing disposition
+    it could never have supplied."""
+    relational = Theory(
+        axioms=frozenset(),
+        signature=Signature(
+            sorts=frozenset({""}),
+            ranks=(("0", (), ""), ("+", ("", ""), ""), ("neg", ("",), "")),
+            relations=(("<", ("", "")),),
+        ),
+    )
+    with pytest.raises(InterpError, match="do not support source predicates"):
+        _interp(relational)
 
 
 # --- obligations -----------------------------------------------------------

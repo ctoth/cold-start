@@ -43,6 +43,12 @@ MONOID_SIG = Signature(
     ranks=(("e", (), ""), ("*", ("", ""), "")),
 )
 
+BARE_MULTIPLICATION = Theory(axioms=frozenset(), signature=SEMIGROUP_SIG)
+"""One binary symbol and not a single axiom: the source theory every
+"multiplication interpreted somewhere else" bridge starts from. A semigroup
+with associativity taken away, so the interpretation owes nothing but the
+graph's own definedness."""
+
 SEMIGROUP = Theory(axioms=frozenset({ASSOC}), signature=SEMIGROUP_SIG)
 MONOID = Theory(axioms=frozenset({ASSOC, LEFT_ID, RIGHT_ID}), signature=MONOID_SIG)
 COMM_MONOID = Theory(

@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Literal, TypeAlias, cast
+from typing import Literal, TypeAlias, cast, get_args
 
 from .checker import check
 from .proof import Pf
@@ -78,6 +78,9 @@ ObligationKind: TypeAlias = Literal[
     "domain",
     "closure",
 ]
+_OBLIGATION_KINDS: frozenset[str] = frozenset(get_args(ObligationKind))
+"""The kinds ObligationKey accepts, read off the alias itself so the vocabulary
+cannot drift from the type."""
 ObligationSubject: TypeAlias = Formula | Term | str
 Payment: TypeAlias = tuple["ObligationKey", Pf]
 
@@ -190,16 +193,7 @@ class ObligationKey:
     subject: ObligationSubject
 
     def __post_init__(self) -> None:
-        allowed = {
-            "axiom",
-            "totality",
-            "uniqueness",
-            "respect",
-            "equivalence",
-            "domain",
-            "closure",
-        }
-        if self.kind not in allowed:
+        if self.kind not in _OBLIGATION_KINDS:
             raise InterpError(f"unknown obligation kind {self.kind!r}")
         if self.kind == "axiom":
             _require_formula(self.subject, "axiom obligation subject")

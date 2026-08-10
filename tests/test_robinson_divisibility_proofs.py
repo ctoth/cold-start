@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from cold_start.checker import check
 from cold_start.divisibility import ONE, peano_divides
-from cold_start.divisibility_bridges import positive_peano
-from cold_start.peano import PEANO
+from cold_start.peano import PEANO, positive_peano
 from cold_start.prop import And, Or
 from cold_start.robinson_divisibility import lcm, robinson_product, unit_case
 from cold_start.robinson_divisibility_proofs import (

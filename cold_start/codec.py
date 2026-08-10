@@ -13,18 +13,14 @@ from dataclasses import dataclass, fields
 from hashlib import sha256
 from typing import Any, Literal, TypeAlias, cast, get_args, get_origin, get_type_hints
 
-import hamblin
-
 from .certificate import Certificate
 from .checker import check, validate_proof
 from .proof import CANONICAL_PROOF_TYPES, Pf
 from .sequent import Sequent
 from .syntax import (
     CANONICAL_NODE_TYPES,
-    BVar,
     Formula,
     Node,
-    Term,
     children,
     validate,
 )
@@ -40,7 +36,6 @@ _PROOF = 4
 _PROOF_TUPLE = 5
 _KNOWN_FIELD_TAGS = frozenset({_INT, _STRING, _SYNTAX, _SYNTAX_TUPLE, _PROOF, _PROOF_TUPLE})
 
-_TERM_TYPES = frozenset(cls for cls in CANONICAL_NODE_TYPES if issubclass(cls, Term))
 _FORMULA_TYPES = frozenset(cls for cls in CANONICAL_NODE_TYPES if issubclass(cls, Formula))
 
 
@@ -165,45 +160,6 @@ def _require_root(
 ) -> None:
     if type(value) not in kinds:
         raise error(f"expected {label}, got {type(value).__name__}")
-
-
-def _open_term_depth(term: Term) -> int:
-    depth = 0
-    stack: list[object] = [term]
-    while stack:
-        node = stack.pop()
-        if type(node) is BVar and type(node.index) is int:
-            depth = max(depth, node.index + 1)
-        if type(node) in CANONICAL_NODE_TYPES:
-            stack.extend(children(node))
-    return depth
-
-
-def encode_term(term: Term) -> bytes:
-    _require_root(term, _TERM_TYPES, "a term", TypeError)
-    validate(term, _open_term_depth(term))
-    return hamblin.encode(term)
-
-
-def decode_term(data: bytes) -> Term:
-    node = hamblin.decode(data, _SYNTAX_REGISTRY)
-    _require_root(node, _TERM_TYPES, "a term", ValueError)
-    term = cast(Term, node)
-    validate(term, _open_term_depth(term))
-    return term
-
-
-def encode_formula(formula: Formula) -> bytes:
-    _require_root(formula, _FORMULA_TYPES, "a formula", TypeError)
-    validate(formula)
-    return hamblin.encode(formula)
-
-
-def decode_formula(data: bytes) -> Formula:
-    node = hamblin.decode(data, _SYNTAX_REGISTRY)
-    _require_root(node, _FORMULA_TYPES, "a formula", ValueError)
-    validate(node)
-    return cast(Formula, node)
 
 
 def _uvarint(value: int) -> bytes:
@@ -573,8 +529,7 @@ def _read_entry(
     table: Literal["syntax", "proof"],
     current: int,
     total: int,
-) -> tuple[object, bytes]:
-    start = reader.position
+) -> object:
     class_name = reader.string()
     node_type = registry.get(class_name)
     if node_type is None:
@@ -631,7 +586,7 @@ def _read_entry(
         node = node_type(*values)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"malformed {class_name} field value: {exc}") from exc
-    return node, reader.data[start : reader.position]
+    return node
 
 
 def _read_count(reader: _Reader, limit: int, label: str) -> int:
@@ -667,7 +622,7 @@ def decode_certificate(
     syntax_keys: set[bytes] = set()
     syntax_indices: dict[int, int] = {}
     for index in range(syntax_count):
-        node, _raw_record = _read_entry(
+        node = _read_entry(
             reader,
             _SYNTAX_REGISTRY,
             _SYNTAX_SCHEMAS,
@@ -695,7 +650,7 @@ def decode_certificate(
     proof_keys: set[bytes] = set()
     proof_indices: dict[int, int] = {}
     for index in range(proof_count):
-        node, _raw_record = _read_entry(
+        node = _read_entry(
             reader,
             _PROOF_REGISTRY,
             _PROOF_SCHEMAS,
@@ -788,11 +743,7 @@ __all__ = [
     "DEFAULT_CERTIFICATE_LIMITS",
     "CertificateLimits",
     "decode_certificate",
-    "decode_formula",
-    "decode_term",
     "encode_certificate",
-    "encode_formula",
-    "encode_term",
     "make_certificate",
     "require_lowered_certificate_limits",
     "theory_fingerprint",

@@ -12,12 +12,7 @@ from semantics import Model, evaluate
 
 from cold_start.certificate import Certificate
 from cold_start.checker import check
-from cold_start.codec import (
-    decode_certificate,
-    decode_formula,
-    encode_certificate,
-    encode_formula,
-)
+from cold_start.codec import decode_certificate, encode_certificate
 from cold_start.notation import format_formula, parse_formula
 from cold_start.proof import Assume, Axiom
 from cold_start.sequent import Sequent
@@ -28,7 +23,6 @@ from cold_start.theory import Signature, Theory
 def test_relation_round_trips_through_syntax_and_proof_bytes():
     claim = Rel("|", (Var("a"), Var("b")))
 
-    assert decode_formula(encode_formula(claim)) == claim
     certificate = Certificate(
         "unused",
         b"\x00" * 32,

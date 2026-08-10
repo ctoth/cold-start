@@ -9,6 +9,7 @@ import pytest
 
 from cold_start.algebra import (
     AB_GROUP,
+    BARE_MULTIPLICATION,
     COMM_MONOID,
     COMM_RING,
     MONOID,
@@ -19,7 +20,6 @@ from cold_start.algebra import (
 from cold_start.bridges import PRESBURGER_ONE
 from cold_start.checker import check
 from cold_start.divisibility_bridges import (
-    BARE_MULTIPLICATION,
     DIVISIBILITY_CORE,
     PURE_SUCCESSOR_DIVISIBILITY,
 )
@@ -29,7 +29,6 @@ from cold_start.proof import Assume, Refl
 from cold_start.rigidity import ROBINSON_PEANO_F
 from cold_start.robinson import ROBINSON_PEANO
 from cold_start.squaring import SQUARE_ARITHMETIC
-from cold_start.squaring_bridges import BARE_MULTIPLICATION_FROM_SQUARE
 from cold_start.syntax import Eq, Fun, Rel, Var
 from cold_start.theory import Signature, Theory
 
@@ -209,7 +208,6 @@ def test_check_revalidates_an_exact_theory_before_using_it() -> None:
         PURE_SUCCESSOR_DIVISIBILITY,
         BARE_MULTIPLICATION,
         SQUARE_ARITHMETIC,
-        BARE_MULTIPLICATION_FROM_SQUARE,
     ],
 )
 def test_exported_named_theories_have_closed_signatures(theory: Theory) -> None:

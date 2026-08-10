@@ -35,9 +35,8 @@ from .divisibility import (
     one_divides,
     peano_divides,
 )
-from .divisibility_bridges import positive_peano
 from .order import le, le_antisym
-from .peano import MUL_SUCC_F, MUL_ZERO_F
+from .peano import MUL_SUCC_F, MUL_ZERO_F, positive_peano
 from .presburger import ADD_SUCC_F, SUCC_NEQ_ZERO
 from .presburger_proofs import add_comm, zero_or_succ
 from .proof import (

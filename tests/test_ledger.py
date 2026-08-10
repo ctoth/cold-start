@@ -7,15 +7,56 @@ each through the trusted checker, and renders one honest table."""
 
 from __future__ import annotations
 
+import ast
+import pathlib
+
 import pytest
 
 from cold_start.interp import BridgeReport
 from cold_start.ledger import ARTIFACTS, format_ledger, ledger
 
+_ARTIFACT_TYPES = frozenset({"Interpretation", "QuotientInterpretation"})
+_PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "cold_start"
+
+
+def _builds_an_artifact(node: ast.FunctionDef) -> bool:
+    """Does this function return, or construct, a bridge artifact?"""
+    returns = node.returns
+    if isinstance(returns, ast.Name) and returns.id in _ARTIFACT_TYPES:
+        return True
+    return any(
+        isinstance(sub, ast.Call)
+        and isinstance(sub.func, ast.Name)
+        and sub.func.id in _ARTIFACT_TYPES
+        for sub in ast.walk(node)
+    )
+
+
+def _artifact_factories() -> set[str]:
+    """Every artifact-building function in the package, by source text alone.
+
+    A text scan, deliberately: the registry stays an explicit hand-written
+    tuple, and production code never discovers its own artifacts at import
+    time. This is the test that makes forgetting to register a new bridge
+    fail loudly instead of quietly shrinking the ledger.
+    """
+    found: set[str] = set()
+    for path in sorted(_PACKAGE.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and _builds_an_artifact(node):
+                found.add(node.name)
+    return found
+
 
 @pytest.fixture(scope="module")
 def reports():
     return ledger()
+
+
+def test_every_artifact_factory_in_the_package_is_registered() -> None:
+    registered = {build.__name__ for build in ARTIFACTS}
+    assert _artifact_factories() == registered
 
 
 def test_ledger_covers_every_artifact(reports):
