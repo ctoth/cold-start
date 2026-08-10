@@ -234,4 +234,4 @@ COMM_RING_CONTEXT = AlgebraContext(
 )
 
 
-__all__ = ["COMM_RING_CONTEXT", "ring_add_cancel_right"]
+__all__ = ["COMM_RING_CONTEXT"]

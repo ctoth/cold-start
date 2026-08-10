@@ -88,7 +88,6 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "CUBIC_RING_CONTEXT",
     "factorization_proof",
     "factorization_statement",
 ]

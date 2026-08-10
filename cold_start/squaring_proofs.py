@@ -174,9 +174,7 @@ def square_product_unique() -> Pf:
 
 
 __all__ = [
-    "DOUBLE_INJECTIVE",
     "double_injective",
-    "square_kit",
     "square_product_total",
     "square_product_unique",
 ]

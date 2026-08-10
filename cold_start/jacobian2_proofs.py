@@ -310,11 +310,9 @@ if __name__ == "__main__":
 __all__ = [
     "COLLISION_POINTS",
     "COLLISION_VALUE",
-    "COMPONENTS",
     "collision_proofs",
     "collision_statements",
     "derivative_proofs",
-    "derivative_rules",
     "derivative_statements",
     "det_proof",
     "det_term",

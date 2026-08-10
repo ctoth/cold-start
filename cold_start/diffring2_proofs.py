@@ -203,12 +203,9 @@ DIFF_RING_2_CONTEXT = AlgebraContext(
 
 __all__ = [
     "DIFF_RING_2_CONTEXT",
-    "add_rotate_rule",
-    "cancel_pair_rule",
     "derivation_one_proofs",
     "derivation_zero_proofs",
     "evaluation_rules",
-    "mul_rotate_rule",
     "mul_zero_rule",
     "zero_add_rule",
     "zero_mul_rule",

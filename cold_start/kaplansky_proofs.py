@@ -303,16 +303,6 @@ def action_lemmas() -> tuple[Rule, ...]:
     return tuple(lemma_rule(equation, proof) for equation, proof in pairs)
 
 
-@cache
-def action_rules() -> tuple[Rule, ...]:
-    """Direct and tail-preserving forms of every action lemma."""
-    direct_actions = action_lemmas()
-    return (
-        *direct_actions,
-        *(_tail_lift(rule.eq, rule.proof) for rule in direct_actions),
-    )
-
-
 def _prove_to(goal: Eq, rules: Sequence[Rule], budget: int = 20_000) -> Pf:
     """Rewrite the left side and stop as soon as the exact target is reached."""
     current = goal.lhs
@@ -618,23 +608,6 @@ def _macro_cancellation_rules() -> tuple[Rule, ...]:
             direct = lemma_rule(goal, proof)
             out.extend((direct, _factor_tail_lift(direct, (left, right), ())))
     return tuple(out)
-
-
-@cache
-def collection_rules() -> tuple[Rule, ...]:
-    """Factor-preserving rules for X,Y,Z factors followed by a transversal."""
-    return (
-        *(
-            rule
-            for rule in _section_product_rules()
-            if rule.eq.lhs != rule.eq.rhs
-        ),
-        *_section_action_rules(),
-        *_macro_cancellation_rules(),
-        *_commutation_collection_rules(),
-        axiom_rule(MUL_LEFT_ID),
-        axiom_rule(MUL_RIGHT_ID),
-    )
 
 
 def _concatenation_proof(
@@ -1103,20 +1076,9 @@ if __name__ == "__main__":
 
 __all__ = [
     "X",
-    "X_INV",
     "Y",
-    "Y_INV",
     "Z",
-    "Z_INV",
-    "action_lemmas",
-    "action_rules",
-    "cancellation_rules",
-    "commutation_lemmas",
-    "collection_rules",
-    "coordinate_product",
-    "ground_multiplication_lemma",
     "ground_multiplication_lemmas",
-    "group_factors",
     "group_term",
     "lemma_library",
     "unit_product_proofs",
@@ -1124,6 +1086,5 @@ __all__ = [
     "u_term",
     "uv_product_proof",
     "v_term",
-    "vu_product_proof",
     "witness_coordinates",
 ]
