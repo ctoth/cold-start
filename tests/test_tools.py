@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,8 @@ import pytest
 from tools import mutate
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+TEST_PATH_PATTERN = re.compile(r"tests/test_[A-Za-z0-9_]+\.py")
 EXPECTED_TRUSTED_SOURCES = (
     Path("cold_start/checker.py"),
     Path("cold_start/proof.py"),
@@ -24,6 +27,23 @@ EXPECTED_PORTABLE_SOURCES = (
     Path("cold_start/codec.py"),
     Path("cold_start/verify.py"),
 )
+
+
+def test_ci_runs_every_test_module_on_disk():
+    """CI hand-lists its test slices, so an added module can silently never run."""
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    named = set(TEST_PATH_PATTERN.findall(workflow))
+    on_disk = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "tests").glob("test_*.py")
+    }
+
+    assert not (on_disk - named), (
+        f"test modules missing from ci.yml: {sorted(on_disk - named)}"
+    )
+    assert not (named - on_disk), (
+        f"ci.yml names test modules that do not exist: {sorted(named - on_disk)}"
+    )
 
 
 def test_mutation_campaigns_equal_the_declared_source_boundaries():

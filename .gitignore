@@ -18,6 +18,9 @@ temp/
 # coverage / tooling output
 .coverage
 htmlcov/
+.hypothesis/
+.benchmarks/
+.package-smoke/
 papers/**/pngs/
 papers/**/*.pdf
 
