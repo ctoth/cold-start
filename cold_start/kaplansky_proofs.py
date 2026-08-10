@@ -24,6 +24,7 @@ from .algebra import (
     MUL_LEFT_ID,
     MUL_RIGHT_ID,
 )
+from .algebra_proofs import rotate_rule, zero_add_rule
 from .groupring2 import (
     A_INV,
     A_LEFT_INV,
@@ -841,42 +842,7 @@ def ground_multiplication_lemmas(
     return tuple(ground_multiplication_lemma(g, h) for g in left for h in right)
 
 
-_add_x, _add_y, _add_z = Var("add_x"), Var("add_y"), Var("add_z")
-
-
-@cache
-def _add_rotate_rule() -> Rule:
-    """x+(y+z) = y+(x+z), ordered to complete additive AC sorting."""
-    assoc = axiom_rule(ADD_ASSOC)
-    proof = Trans(
-        Trans(
-            Sym(
-                assoc.instance(
-                    {"x": _add_x, "y": _add_y, "z": _add_z}
-                )
-            ),
-            Cong(
-                "+",
-                (
-                    axiom_rule(ADD_COMM).instance(
-                        {"x": _add_x, "y": _add_y}
-                    ),
-                    Refl(_add_z),
-                ),
-            ),
-        ),
-        assoc.instance({"x": _add_y, "y": _add_x, "z": _add_z}),
-    )
-    goal = Eq(
-        add(_add_x, add(_add_y, _add_z)),
-        add(_add_y, add(_add_x, _add_z)),
-    )
-    return Rule(
-        goal,
-        proof,
-        frozenset({_add_x.name, _add_y.name, _add_z.name}),
-        ordered=True,
-    )
+_add_x, _add_y = Var("add_x"), Var("add_y")
 
 
 @cache
@@ -909,24 +875,21 @@ def _cancel_pair_rule() -> Rule:
 
 
 @cache
-def _zero_add_rule() -> Rule:
-    proof = Trans(
-        axiom_rule(ADD_COMM).instance({"x": ZERO, "y": _add_x}),
-        axiom_rule(ADD_ZERO).instance({"x": _add_x}),
-    )
-    return lemma_rule(Eq(add(ZERO, _add_x), _add_x), proof)
-
-
 def _additive_rules() -> tuple[Rule, ...]:
-    """Canonical additive normalization and cancellation in characteristic two."""
+    """Canonical additive normalization and cancellation in characteristic two.
+
+    Associativity, ordered commutativity and the shared rotation rule sort a
+    sum; CHAR2 and the cancellation pair it proves collapse duplicate terms --
+    this kit's inverse recipe is CHAR2, never ADD_NEG, which the theory does
+    not have."""
     return (
         axiom_rule(ADD_ASSOC),
         axiom_rule(ADD_COMM, ordered=True),
-        _add_rotate_rule(),
+        rotate_rule(ADD_ASSOC, ADD_COMM, "+", add),
         axiom_rule(CHAR2),
         _cancel_pair_rule(),
         axiom_rule(ADD_ZERO),
-        _zero_add_rule(),
+        zero_add_rule(),
     )
 
 

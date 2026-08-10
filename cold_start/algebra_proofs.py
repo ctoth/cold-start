@@ -25,12 +25,16 @@ from .vocabulary import ONE, ZERO, add, mul, neg
 _x, _y, _z = Var("x"), Var("y"), Var("z")
 
 
-def _rotate_rule(
+def rotate_rule(
     assoc: Formula,
     comm: Formula,
     name: str,
     operation: Callable[[Term, Term], Term],
 ) -> Rule:
+    """``x@(y@z) = y@(x@z)``, the ordered rule that completes AC sorting for
+    an associative-commutative `@`. Derived from whichever associativity and
+    commutativity axioms the caller's theory owns, so a characteristic-two
+    ring and an integer ring share the construction without sharing axioms."""
     assoc_rule = axiom_rule(assoc)
     proof = Trans(
         Trans(
@@ -47,7 +51,8 @@ def _rotate_rule(
     )
 
 
-def _zero_add_rule() -> Rule:
+def zero_add_rule() -> Rule:
+    """``0 + x = x``, from additive commutativity and the additive unit."""
     proof = Trans(
         axiom_rule(ADD_COMM).instance({"x": ZERO, "y": _x}),
         axiom_rule(ADD_ZERO).instance({"x": _x}),
@@ -63,7 +68,7 @@ def _cancel_pair_rule() -> Rule:
                 "+",
                 (axiom_rule(ADD_NEG).instance({"x": _x}), Refl(_y)),
             ),
-            _zero_add_rule().instance({"x": _y}),
+            zero_add_rule().instance({"x": _y}),
         ),
     )
     return lemma_rule(Eq(add(_x, add(neg(_x), _y)), _y), proof)
@@ -105,7 +110,7 @@ def _zero_mul_rule() -> Rule:
         ),
         axiom_rule(DIST_RIGHT).instance({"x": ZERO, "y": ZERO, "z": _x}),
     )
-    cancellable = Trans(_zero_add_rule().instance({"x": product}), duplicate)
+    cancellable = Trans(zero_add_rule().instance({"x": product}), duplicate)
     proof = Sym(MP(_cancel(ZERO, product, product), cancellable))
     return lemma_rule(Eq(product, ZERO), proof)
 
@@ -120,7 +125,7 @@ def _mul_zero_rule() -> Rule:
 
 def _neg_zero_rule() -> Rule:
     proof = Trans(
-        Sym(_zero_add_rule().instance({"x": neg(ZERO)})),
+        Sym(zero_add_rule().instance({"x": neg(ZERO)})),
         axiom_rule(ADD_NEG).instance({"x": ZERO}),
     )
     return lemma_rule(Eq(neg(ZERO), ZERO), proof)
@@ -139,14 +144,14 @@ def _neg_neg_rule() -> Rule:
 
 def _additive_rules() -> tuple[Rule, ...]:
     return (
-        _zero_add_rule(),
+        zero_add_rule(),
         axiom_rule(ADD_ZERO),
         axiom_rule(ADD_NEG),
         _neg_zero_rule(),
         _neg_neg_rule(),
         axiom_rule(ADD_ASSOC),
         axiom_rule(ADD_COMM, ordered=True),
-        _rotate_rule(ADD_ASSOC, ADD_COMM, "+", add),
+        rotate_rule(ADD_ASSOC, ADD_COMM, "+", add),
         _cancel_pair_rule(),
     )
 
@@ -215,7 +220,7 @@ def _merge_rules() -> tuple[Rule, ...]:
         axiom_rule(DIST_RIGHT),
         axiom_rule(MUL_ASSOC),
         axiom_rule(COMM, ordered=True),
-        _rotate_rule(MUL_ASSOC, COMM, "*", mul),
+        rotate_rule(MUL_ASSOC, COMM, "*", mul),
     )
 
 
@@ -234,4 +239,4 @@ COMM_RING_CONTEXT = AlgebraContext(
 )
 
 
-__all__ = ["COMM_RING_CONTEXT"]
+__all__ = ["COMM_RING_CONTEXT", "rotate_rule", "zero_add_rule"]

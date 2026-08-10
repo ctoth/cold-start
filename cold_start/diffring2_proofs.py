@@ -7,8 +7,6 @@ actually contains that axiom can accept the emitted proof.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from .algebra import (
     ADD_ASSOC,
     ADD_COMM,
@@ -20,10 +18,11 @@ from .algebra import (
     MUL_LEFT_ID,
     MUL_RIGHT_ID,
 )
+from .algebra_proofs import rotate_rule, zero_add_rule
 from .diffring2 import CHAR2, D_AXIOMS, GENERATORS, dx, dy, dz
 from .proof import Cong, Pf, Refl, Sym, Trans
 from .ring_nf import AlgebraContext
-from .syntax import Eq, Formula, Term, Var
+from .syntax import Eq, Var
 from .tactics import Rule, axiom_rule, lemma_rule
 from .vocabulary import ONE, ZERO, add, mul
 
@@ -54,44 +53,6 @@ def mul_zero_rule() -> Rule:
         zero_mul_rule().proof,
     )
     return lemma_rule(Eq(mul(_a, ZERO), ZERO), proof)
-
-
-def zero_add_rule() -> Rule:
-    proof = Trans(
-        axiom_rule(ADD_COMM).instance({"x": ZERO, "y": _a}),
-        axiom_rule(ADD_ZERO).instance({"x": _a}),
-    )
-    return lemma_rule(Eq(add(ZERO, _a), _a), proof)
-
-
-def _rotate_rule(
-    assoc: Formula,
-    comm: Formula,
-    name: str,
-    op: Callable[[Term, Term], Term],
-) -> Rule:
-    assoc_rule = axiom_rule(assoc)
-    proof = Trans(
-        Trans(
-            Sym(assoc_rule.instance({"x": _x, "y": _y, "z": _z})),
-            Cong(name, (axiom_rule(comm).instance({"x": _x, "y": _y}), Refl(_z))),
-        ),
-        assoc_rule.instance({"x": _y, "y": _x, "z": _z}),
-    )
-    return Rule(
-        Eq(op(_x, op(_y, _z)), op(_y, op(_x, _z))),
-        proof,
-        frozenset({"x", "y", "z"}),
-        ordered=True,
-    )
-
-
-def add_rotate_rule() -> Rule:
-    return _rotate_rule(ADD_ASSOC, ADD_COMM, "+", add)
-
-
-def mul_rotate_rule() -> Rule:
-    return _rotate_rule(MUL_ASSOC, COMM, "*", mul)
 
 
 def cancel_pair_rule() -> Rule:
@@ -180,8 +141,8 @@ def _merge_rules() -> tuple[Rule, ...]:
         axiom_rule(MUL_ASSOC),
         axiom_rule(ADD_COMM, ordered=True),
         axiom_rule(COMM, ordered=True),
-        add_rotate_rule(),
-        mul_rotate_rule(),
+        rotate_rule(ADD_ASSOC, ADD_COMM, "+", add),
+        rotate_rule(MUL_ASSOC, COMM, "*", mul),
         cancel_pair_rule(),
     )
 
