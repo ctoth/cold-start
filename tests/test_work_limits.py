@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import cast
+from dataclasses import fields, replace
+from typing import cast, get_args
 
 import pytest
 
@@ -22,9 +22,12 @@ from cold_start.theory import Signature, Theory
 from cold_start.verify import THEORIES, verify_bytes, verify_certificate
 from cold_start.work import (
     DEFAULT_WORK_LIMITS,
+    CumulativeName,
+    MaximumName,
     WorkLimitError,
     WorkLimits,
     WorkMeter,
+    WorkUsage,
     require_lowered_work_limits,
 )
 
@@ -145,6 +148,31 @@ def test_cumulative_usage_exactly_at_its_limit_is_accepted() -> None:
     meter.consume("proof_nodes", 2)
 
     assert meter.snapshot().proof_nodes == 2
+
+
+@pytest.mark.parametrize("name", ["no_such_counter", "single_term_nodes"])
+def test_consuming_a_name_that_is_not_a_cumulative_counter_is_rejected(
+    name: str,
+) -> None:
+    with pytest.raises(KeyError, match=name):
+        WorkMeter().consume(cast(CumulativeName, name))
+
+
+@pytest.mark.parametrize("name", ["no_such_counter", "proof_nodes"])
+def test_observing_a_name_that_is_not_a_maximum_counter_is_rejected(
+    name: str,
+) -> None:
+    with pytest.raises(KeyError, match=name):
+        WorkMeter().observe(cast(MaximumName, name), 1)
+
+
+def test_every_counter_has_exactly_one_limit_and_one_usage_field() -> None:
+    counters = {*get_args(CumulativeName), *get_args(MaximumName)}
+
+    assert {field.name for field in fields(WorkUsage)} == counters
+    assert {field.name for field in fields(WorkLimits)} == {
+        f"max_{name}" for name in counters
+    }
 
 
 @pytest.mark.parametrize("value", [-1, True])
