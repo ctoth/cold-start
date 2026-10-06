@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from hypothesis import settings
 
 from tools import mutate
 
@@ -57,6 +58,14 @@ def test_mutation_campaigns_equal_the_declared_source_boundaries():
         mutate.resolve_campaign_sources(REPO_ROOT, "portable", [])
         == EXPECTED_PORTABLE_SOURCES
     )
+
+
+def test_mutation_runs_draw_the_same_property_examples_every_time():
+    """A mutant's verdict must not depend on which random examples a run drew."""
+    profile = settings.get_profile(mutate.HYPOTHESIS_PROFILE)
+
+    assert profile.derandomize is True
+    assert profile.database is None
 
 
 def test_mutation_campaign_rejects_duplicate_sources():

@@ -30,6 +30,8 @@ from typing import Literal
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CampaignName = Literal["logical", "portable"]
+#: The tests/conftest.py profile every mutant run uses; it is derandomized.
+HYPOTHESIS_PROFILE = "mutation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,7 +272,7 @@ def run_mutations(repo_root: Path, relative: Path, campaign: CampaignName) -> in
                         cwd=workspace,
                         capture_output=True,
                         check=False,
-                        env={**os.environ, "HYPOTHESIS_PROFILE": "fast"},
+                        env={**os.environ, "HYPOTHESIS_PROFILE": HYPOTHESIS_PROFILE},
                         timeout=60,
                     )
                 except subprocess.TimeoutExpired:
