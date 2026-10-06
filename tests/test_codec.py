@@ -46,6 +46,9 @@ def test_frozen_schema_field_kinds_are_exact_and_exhaustive() -> None:
         codec._field_kind(tuple[Term])
     with pytest.raises(TypeError, match="unsupported"):
         codec._field_kind(tuple[int, ...])
+    # A class that is neither syntax nor proof is not silently read as either.
+    with pytest.raises(TypeError, match="unsupported"):
+        codec._field_kind(float)
 
 
 def test_private_unsigned_varint_rejects_bool_and_negative_values() -> None:
