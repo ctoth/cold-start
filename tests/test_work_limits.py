@@ -17,7 +17,8 @@ from cold_start.codec import (
 )
 from cold_start.peano import PEANO
 from cold_start.proof import Assume, Axiom, Cong, Inst, Refl, Sym, Trans
-from cold_start.syntax import Eq, Fun, Rel, Var
+from cold_start.sequent import Sequent
+from cold_start.syntax import BVar, Eq, Fun, Rel, Var
 from cold_start.theory import Signature, Theory
 from cold_start.verify import THEORIES, verify_bytes, verify_certificate
 from cold_start.work import (
@@ -254,6 +255,37 @@ def test_intrinsic_syntax_accounting_distinguishes_each_operation_kind() -> None
     relation_work = WorkMeter()
     Rel("R", (x,)).sort_check(signature, meter=relation_work)
     assert relation_work.snapshot().sort_steps == 3
+
+
+def test_sequent_sort_check_meters_each_hypothesis_and_its_free_variables() -> None:
+    x, y = Var("x", "S"), Var("y", "S")
+    signature = Signature(frozenset({"S"}), (), (("R", ("S",)),))
+    sequent = Sequent(frozenset({Rel("R", (x,)), Eq(x, y)}), Rel("R", (y,)))
+
+    # One per hypothesis, plus one per free variable it contributes: (1+1) + (1+2).
+    metered = WorkMeter()
+    sequent.sort_check(signature, meter=metered)
+    assert metered.snapshot().hypothesis_elements == 5
+
+    # The meter is optional: an unmetered check of the same sequent succeeds.
+    sequent.sort_check(signature)
+
+
+def test_instantiate_charges_a_rebuild_only_for_a_bound_variable_it_replaces() -> None:
+    x = Var("x", "S")
+
+    opened = WorkMeter()
+    assert BVar(0).instantiate(x, 0, opened) == x
+    assert opened.snapshot().syntax_rebuilds == 1
+
+    shifted = WorkMeter()
+    assert BVar(3).instantiate(x, 1, shifted) == BVar(2)
+    assert shifted.snapshot().syntax_rebuilds == 1
+
+    untouched = WorkMeter()
+    bound = BVar(0)
+    assert bound.instantiate(x, 1, untouched) is bound
+    assert untouched.snapshot().syntax_rebuilds == 0
 
 
 def test_defaults_accept_every_registered_theory_certificate() -> None:
