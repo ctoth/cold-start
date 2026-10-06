@@ -175,6 +175,15 @@ def test_every_counter_has_exactly_one_limit_and_one_usage_field() -> None:
     }
 
 
+@pytest.mark.parametrize("amount", [-1, True])
+def test_consumed_amount_requires_a_nonnegative_exact_int(amount: int) -> None:
+    meter = WorkMeter()
+
+    with pytest.raises(TypeError, match="work amount must be a nonnegative exact int"):
+        meter.consume("proof_nodes", amount)
+    assert meter.snapshot().proof_nodes == 0
+
+
 @pytest.mark.parametrize("value", [-1, True])
 def test_observed_maximum_requires_a_nonnegative_exact_int(value: int) -> None:
     meter = WorkMeter()
