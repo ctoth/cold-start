@@ -259,6 +259,7 @@ def run_mutations(repo_root: Path, relative: Path, campaign: CampaignName) -> in
         _, _, total = _build(tree, -1)
         print(f"{total} mutation sites in {relative}\n")
         survivors: list[str] = []
+        timeouts: list[str] = []
         try:
             for k in range(total):
                 mutant, desc, _ = _build(tree, k)
@@ -273,7 +274,9 @@ def run_mutations(repo_root: Path, relative: Path, campaign: CampaignName) -> in
                         timeout=60,
                     )
                 except subprocess.TimeoutExpired:
-                    print(f"  killed    {desc} (test timeout)")
+                    # No test failed: the run was cut off, so this is not a kill.
+                    timeouts.append(desc)
+                    print(f"  TIMEOUT   {desc}")
                 else:
                     if result.returncode == 0:
                         survivors.append(desc)
@@ -283,9 +286,14 @@ def run_mutations(repo_root: Path, relative: Path, campaign: CampaignName) -> in
         finally:
             target.write_text(original, encoding="utf-8")
 
-        print(f"\n{len(survivors)}/{total} survived")
+        print(
+            f"\n{len(survivors)}/{total} survived, "
+            f"{len(timeouts)}/{total} timed out without a verdict"
+        )
         for description in survivors:
             print("  SURVIVOR:", description)
+        for description in timeouts:
+            print("  TIMEOUT:", description)
         return 1 if survivors else 0
 
 

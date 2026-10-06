@@ -1,13 +1,38 @@
-"""Deterministic trusted work accounting for one checker invocation."""
+"""Deterministic trusted work accounting for one checker invocation.
+
+A counter is named once, in `CumulativeName` or `MaximumName`. `WorkLimits`
+holds its `max_<name>` ceiling and `WorkUsage` its final value; everything else
+here is derived from those names.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, fields
+from typing import Literal, cast, get_args
 
 
 class WorkLimitError(ValueError):
     """One named deterministic checker-work ceiling was exceeded."""
+
+
+CumulativeName = Literal[
+    "proof_nodes",
+    "proof_edges",
+    "syntax_nodes",
+    "syntax_edges",
+    "hypothesis_elements",
+    "syntax_visits",
+    "syntax_rebuilds",
+    "sort_steps",
+    "sequent_steps",
+    "string_bytes",
+]
+MaximumName = Literal[
+    "single_term_nodes",
+    "single_formula_nodes",
+    "derived_hypotheses",
+    "derived_sequent_nodes",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,25 +53,17 @@ class WorkLimits:
     max_derived_sequent_nodes: int
 
     def __post_init__(self) -> None:
-        values = (
-            ("max_proof_nodes", self.max_proof_nodes),
-            ("max_proof_edges", self.max_proof_edges),
-            ("max_syntax_nodes", self.max_syntax_nodes),
-            ("max_syntax_edges", self.max_syntax_edges),
-            ("max_hypothesis_elements", self.max_hypothesis_elements),
-            ("max_syntax_visits", self.max_syntax_visits),
-            ("max_syntax_rebuilds", self.max_syntax_rebuilds),
-            ("max_sort_steps", self.max_sort_steps),
-            ("max_sequent_steps", self.max_sequent_steps),
-            ("max_string_bytes", self.max_string_bytes),
-            ("max_single_term_nodes", self.max_single_term_nodes),
-            ("max_single_formula_nodes", self.max_single_formula_nodes),
-            ("max_derived_hypotheses", self.max_derived_hypotheses),
-            ("max_derived_sequent_nodes", self.max_derived_sequent_nodes),
-        )
-        for name, value in values:
+        for name, value in _ceilings(self).items():
             if type(value) is not int or value <= 0:
-                raise ValueError(f"{name} must be a positive exact int")
+                raise ValueError(f"max_{name} must be a positive exact int")
+
+
+def _ceilings(limits: WorkLimits) -> dict[str, int]:
+    """Each counter's ceiling, keyed by the counter's own name."""
+    return {
+        field.name.removeprefix("max_"): cast(int, getattr(limits, field.name))
+        for field in fields(limits)
+    }
 
 
 DEFAULT_WORK_LIMITS = WorkLimits(
@@ -85,77 +102,32 @@ class WorkUsage:
     derived_sequent_nodes: int
 
 
-CumulativeName = Literal[
-    "proof_nodes",
-    "proof_edges",
-    "syntax_nodes",
-    "syntax_edges",
-    "hypothesis_elements",
-    "syntax_visits",
-    "syntax_rebuilds",
-    "sort_steps",
-    "sequent_steps",
-    "string_bytes",
-]
-MaximumName = Literal[
-    "single_term_nodes",
-    "single_formula_nodes",
-    "derived_hypotheses",
-    "derived_sequent_nodes",
-]
-
-
 class WorkMeter:
     """Mutable per-call meter; no identities or counters survive a check."""
 
     __slots__ = (
+        "_ceilings",
         "_free_var_sorts",
+        "_peaks",
         "_syntax_identities",
         "_syntax_sizes",
         "_term_sorts",
-        "derived_hypotheses",
-        "derived_sequent_nodes",
-        "hypothesis_elements",
-        "limits",
-        "proof_edges",
-        "proof_nodes",
-        "sequent_steps",
-        "single_formula_nodes",
-        "single_term_nodes",
-        "sort_steps",
-        "string_bytes",
-        "syntax_edges",
-        "syntax_nodes",
-        "syntax_rebuilds",
-        "syntax_visits",
+        "_totals",
     )
 
     def __init__(self, limits: WorkLimits = DEFAULT_WORK_LIMITS) -> None:
         if type(limits) is not WorkLimits:
             raise TypeError("work limits must be exact WorkLimits")
-        self.limits = limits
-        self.proof_nodes = 0
-        self.proof_edges = 0
-        self.syntax_nodes = 0
-        self.syntax_edges = 0
-        self.hypothesis_elements = 0
-        self.syntax_visits = 0
-        self.syntax_rebuilds = 0
-        self.sort_steps = 0
-        self.sequent_steps = 0
-        self.string_bytes = 0
-        self.single_term_nodes = 0
-        self.single_formula_nodes = 0
-        self.derived_hypotheses = 0
-        self.derived_sequent_nodes = 0
+        self._ceilings = _ceilings(limits)
+        self._totals: dict[str, int] = dict.fromkeys(get_args(CumulativeName), 0)
+        self._peaks: dict[str, int] = dict.fromkeys(get_args(MaximumName), 0)
         self._syntax_identities: set[int] = set()
         self._syntax_sizes: dict[int, int] = {}
         self._term_sorts: dict[tuple[int, int, tuple[str, ...]], str] = {}
         self._free_var_sorts: dict[int, frozenset[tuple[str, str]]] = {}
 
-    @staticmethod
-    def _next(name: str, current: int, amount: int, limit: int) -> int:
-        value = current + amount
+    def _within(self, name: str, value: int) -> int:
+        limit = self._ceilings[name]
         if value > limit:
             raise WorkLimitError(
                 f"work limit exceeded: {name} would be {value} (limit {limit})"
@@ -165,94 +137,12 @@ class WorkMeter:
     def consume(self, name: CumulativeName, amount: int = 1) -> None:
         if type(amount) is not int or amount < 0:
             raise TypeError("work amount must be a nonnegative exact int")
-        match name:
-            case "proof_nodes":
-                self.proof_nodes = self._next(
-                    name, self.proof_nodes, amount, self.limits.max_proof_nodes
-                )
-            case "proof_edges":
-                self.proof_edges = self._next(
-                    name, self.proof_edges, amount, self.limits.max_proof_edges
-                )
-            case "syntax_nodes":
-                self.syntax_nodes = self._next(
-                    name, self.syntax_nodes, amount, self.limits.max_syntax_nodes
-                )
-            case "syntax_edges":
-                self.syntax_edges = self._next(
-                    name, self.syntax_edges, amount, self.limits.max_syntax_edges
-                )
-            case "hypothesis_elements":
-                self.hypothesis_elements = self._next(
-                    name,
-                    self.hypothesis_elements,
-                    amount,
-                    self.limits.max_hypothesis_elements,
-                )
-            case "syntax_visits":
-                self.syntax_visits = self._next(
-                    name, self.syntax_visits, amount, self.limits.max_syntax_visits
-                )
-            case "syntax_rebuilds":
-                self.syntax_rebuilds = self._next(
-                    name,
-                    self.syntax_rebuilds,
-                    amount,
-                    self.limits.max_syntax_rebuilds,
-                )
-            case "sort_steps":
-                self.sort_steps = self._next(
-                    name, self.sort_steps, amount, self.limits.max_sort_steps
-                )
-            case "sequent_steps":
-                self.sequent_steps = self._next(
-                    name, self.sequent_steps, amount, self.limits.max_sequent_steps
-                )
-            case "string_bytes":
-                self.string_bytes = self._next(
-                    name, self.string_bytes, amount, self.limits.max_string_bytes
-                )
-
-    @staticmethod
-    def _maximum(name: str, current: int, value: int, limit: int) -> int:
-        if value > limit:
-            raise WorkLimitError(
-                f"work limit exceeded: {name} would be {value} (limit {limit})"
-            )
-        return max(current, value)
+        self._totals[name] = self._within(name, self._totals[name] + amount)
 
     def observe(self, name: MaximumName, value: int) -> None:
         if type(value) is not int or value < 0:
             raise TypeError("work maximum must be a nonnegative exact int")
-        match name:
-            case "single_term_nodes":
-                self.single_term_nodes = self._maximum(
-                    name,
-                    self.single_term_nodes,
-                    value,
-                    self.limits.max_single_term_nodes,
-                )
-            case "single_formula_nodes":
-                self.single_formula_nodes = self._maximum(
-                    name,
-                    self.single_formula_nodes,
-                    value,
-                    self.limits.max_single_formula_nodes,
-                )
-            case "derived_hypotheses":
-                self.derived_hypotheses = self._maximum(
-                    name,
-                    self.derived_hypotheses,
-                    value,
-                    self.limits.max_derived_hypotheses,
-                )
-            case "derived_sequent_nodes":
-                self.derived_sequent_nodes = self._maximum(
-                    name,
-                    self.derived_sequent_nodes,
-                    value,
-                    self.limits.max_derived_sequent_nodes,
-                )
+        self._peaks[name] = max(self._peaks[name], self._within(name, value))
 
     def input_syntax(self, identity: int, edge_count: int) -> bool:
         if identity in self._syntax_identities:
@@ -265,11 +155,11 @@ class WorkMeter:
     def inspect_string(self, value: str) -> None:
         if type(value) is not str:
             raise TypeError("metered string must be an exact str")
-        remaining = self.limits.max_string_bytes - self.string_bytes
-        if len(value) > remaining:
+        limit = self._ceilings["string_bytes"]
+        if len(value) > limit - self._totals["string_bytes"]:
             raise WorkLimitError(
                 "work limit exceeded: string_bytes minimum character count "
-                f"would exceed limit {self.limits.max_string_bytes}"
+                f"would exceed limit {limit}"
             )
         self.consume("string_bytes", len(value.encode("utf-8")))
 
@@ -329,22 +219,7 @@ class WorkMeter:
             raise RuntimeError("syntax identity changed free variables during one check")
 
     def snapshot(self) -> WorkUsage:
-        return WorkUsage(
-            proof_nodes=self.proof_nodes,
-            proof_edges=self.proof_edges,
-            syntax_nodes=self.syntax_nodes,
-            syntax_edges=self.syntax_edges,
-            hypothesis_elements=self.hypothesis_elements,
-            syntax_visits=self.syntax_visits,
-            syntax_rebuilds=self.syntax_rebuilds,
-            sort_steps=self.sort_steps,
-            sequent_steps=self.sequent_steps,
-            string_bytes=self.string_bytes,
-            single_term_nodes=self.single_term_nodes,
-            single_formula_nodes=self.single_formula_nodes,
-            derived_hypotheses=self.derived_hypotheses,
-            derived_sequent_nodes=self.derived_sequent_nodes,
-        )
+        return WorkUsage(**self._totals, **self._peaks)
 
 
 def require_lowered_work_limits(
@@ -354,29 +229,16 @@ def require_lowered_work_limits(
     """Accept an exact limit set only when no repository ceiling is raised."""
     if type(limits) is not WorkLimits or type(ceiling) is not WorkLimits:
         raise TypeError("work limits and ceiling must be exact WorkLimits")
-    comparisons = (
-        (limits.max_proof_nodes, ceiling.max_proof_nodes),
-        (limits.max_proof_edges, ceiling.max_proof_edges),
-        (limits.max_syntax_nodes, ceiling.max_syntax_nodes),
-        (limits.max_syntax_edges, ceiling.max_syntax_edges),
-        (limits.max_hypothesis_elements, ceiling.max_hypothesis_elements),
-        (limits.max_syntax_visits, ceiling.max_syntax_visits),
-        (limits.max_syntax_rebuilds, ceiling.max_syntax_rebuilds),
-        (limits.max_sort_steps, ceiling.max_sort_steps),
-        (limits.max_sequent_steps, ceiling.max_sequent_steps),
-        (limits.max_string_bytes, ceiling.max_string_bytes),
-        (limits.max_single_term_nodes, ceiling.max_single_term_nodes),
-        (limits.max_single_formula_nodes, ceiling.max_single_formula_nodes),
-        (limits.max_derived_hypotheses, ceiling.max_derived_hypotheses),
-        (limits.max_derived_sequent_nodes, ceiling.max_derived_sequent_nodes),
-    )
-    if any(value > maximum for value, maximum in comparisons):
+    maxima = _ceilings(ceiling)
+    if any(value > maxima[name] for name, value in _ceilings(limits).items()):
         raise ValueError("verifier work limits may only lower repository ceilings")
     return limits
 
 
 __all__ = [
     "DEFAULT_WORK_LIMITS",
+    "CumulativeName",
+    "MaximumName",
     "WorkLimitError",
     "WorkLimits",
     "WorkMeter",
