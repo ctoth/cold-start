@@ -1,9 +1,10 @@
 """The object language: first-order terms and formulas.
 
-This module is NOT trusted. It is pure, immutable data plus structural helpers
-(free variables and substitution). Anyone may build any term or
-formula they like -- a formula is just a claim, not a proof. Trust lives in
-checker.py, which re-derives conclusions from proof terms over this language.
+Anyone may build any term or formula they like -- a formula is a claim, not a
+proof, and building one establishes nothing. The module is nonetheless part of
+the trusted base: checker.py compares nodes with `==` and derives conclusions
+with the substitution, binder, and sort operations defined here, all of them
+behind the exact-type `validate` gate at the bottom of this file.
 
 Design: one `Node` root. Structural operations are *methods*, dispatched by
 Python on the node's class -- the base `Node` carries the generic recursion over a
@@ -34,6 +35,7 @@ class SignatureProtocol(Protocol):
 
 
 Scope: TypeAlias = tuple[str, ...]
+SortAgenda: TypeAlias = "tuple[tuple[Formula, Scope], ...]"
 SortResults: TypeAlias = dict[int, str]
 ReprItem: TypeAlias = tuple[str, object]
 ReprStack: TypeAlias = list[ReprItem]
@@ -52,10 +54,8 @@ def node_fields(node: object) -> tuple[Field[object], ...]:
 
 def children(node: object) -> list[object]:
     """Immediate sub-nodes of `node`, in field order (tuple fields flattened)."""
-    if not is_dataclass(node) or isinstance(node, type):
-        raise TypeError(f"not a node: {type(node).__name__}")
     out: list[object] = []
-    for field_info in fields(node):
+    for field_info in node_fields(node):
         v = cast(object, getattr(node, field_info.name))
         if _is_node(v):
             out.append(v)
@@ -81,7 +81,7 @@ def subnodes(node: object) -> Iterator[object]:
     while stack:
         n = stack.pop()
         yield n
-        stack.extend(child for child in children(n) if _is_node(child))
+        stack.extend(children(n))
 
 
 def node_size(node: object) -> int:
@@ -94,10 +94,8 @@ def node_size(node: object) -> int:
 
 def map_children(node: object, fn: Callable[[object], object]) -> object:
     """Rebuild `node`, replacing each immediate sub-node with `fn(sub-node)`."""
-    if not is_dataclass(node) or isinstance(node, type):
-        raise TypeError(f"not a node: {type(node).__name__}")
     new: dict[str, object] = {}
-    for field_info in fields(node):
+    for field_info in node_fields(node):
         v = cast(object, getattr(node, field_info.name))
         if _is_node(v):
             new[field_info.name] = fn(v)
@@ -134,9 +132,7 @@ def _rebuild(
             meter.consume("syntax_visits")
         order.append((n, d))
         cd = d + 1 if isinstance(n, (Forall, Exists)) else d
-        for child in children(n):
-            if _is_node(child):
-                stack.append((cast(Node, child), cd))
+        stack.extend((cast(Node, child), cd) for child in children(n))
     done: dict[tuple[int, int], Node] = {}
     for n, d in reversed(order):
         if type(n) is Var and on_var is not None:
@@ -164,6 +160,17 @@ def _emit_pieces(stack: ReprStack, pieces: list[ReprItem]) -> None:
     """Push `pieces` (a forward-order list of ``("emit", node)`` / ``("lit", text)``)
     so they pop left-to-right -- the shared helper for the O(n) emit-and-join repr."""
     stack.extend(reversed(pieces))
+
+
+def _emit_application(stack: ReprStack, name: str, args: tuple[Term, ...]) -> None:
+    """Push the pieces of `name(arg, ...)`, the shape `Fun` and `Rel` share."""
+    pieces: list[ReprItem] = [("lit", name), ("lit", "(")]
+    for k, arg in enumerate(args):
+        if k:
+            pieces.append(("lit", ", "))
+        pieces.append(("emit", arg))
+    pieces.append(("lit", ")"))
+    _emit_pieces(stack, pieces)
 
 
 class Node:
@@ -224,7 +231,7 @@ class Node:
         while stack:
             n = stack.pop()
             order.append(n)
-            stack.extend(cast(Node, child) for child in children(n) if _is_node(child))
+            stack.extend(cast(Node, child) for child in children(n))
         hashes: dict[int, int] = {}
         for n in reversed(order):
             parts: list[object] = [type(n).__name__]
@@ -430,11 +437,7 @@ class Term(Node):
                 meter.consume("sort_steps")
                 meter.consume("syntax_visits")
             stack.append((t, True))
-            stack.extend(
-                (cast(Term, child), False)
-                for child in reversed(children(t))
-                if _is_node(child)
-            )
+            stack.extend((cast(Term, child), False) for child in reversed(children(t)))
         return sorts[id(self)]
 
     def _sort_step(self, sig: SignatureProtocol, scope: Scope, sorts: SortResults) -> str:
@@ -479,13 +482,7 @@ class Fun(Term):
         if not self.args:
             out.append(self.name)
             return
-        pieces: list[ReprItem] = [("lit", self.name), ("lit", "(")]
-        for k, a in enumerate(self.args):
-            if k:
-                pieces.append(("lit", ", "))
-            pieces.append(("emit", a))
-        pieces.append(("lit", ")"))
-        _emit_pieces(stack, pieces)
+        _emit_application(stack, self.name, self.args)
 
     def _sort_step(self, sig: SignatureProtocol, scope: Scope, sorts: SortResults) -> str:
         rank = sig.rank(self.name)
@@ -557,7 +554,7 @@ class Formula(Node):
 
         Iterative: the agenda of `(subformula, scope)` still to check is a heap list,
         so a formula nested thousands deep is checked without recursion. Each
-        formula's `_sort_check_step` checks its own equalities and returns the
+        formula's `_sort_check_step` checks its own terms and returns the
         sub-formula agenda (with the scope its binders extend)."""
         stack: list[tuple[Formula, Scope]] = [(self, scope)]
         while stack:
@@ -565,40 +562,13 @@ class Formula(Node):
             if meter is not None:
                 meter.consume("sort_steps")
                 meter.consume("syntax_visits")
-                if type(f) is Rel:
-                    meter.consume("sort_steps")
-            if type(f) is Eq:
-                left_sort = f.lhs.sort_of(sig, sc, meter)
-                right_sort = f.rhs.sort_of(sig, sc, meter)
-                if left_sort != right_sort:
-                    raise ValueError(
-                        f"equality across sorts: {left_sort!r} = {right_sort!r} in {f!r}"
-                    )
-                continue
-            if type(f) is Rel:
-                arg_sorts = sig.relation(f.name)
-                if arg_sorts is None:
-                    raise ValueError(f"undeclared relation {f.name!r}")
-                if len(f.args) != len(arg_sorts):
-                    raise ValueError(
-                        f"{f.name!r} expects {len(arg_sorts)} args, got {len(f.args)}"
-                    )
-                for arg, expected in zip(f.args, arg_sorts, strict=True):
-                    actual = arg.sort_of(sig, sc, meter)
-                    if actual != expected:
-                        raise ValueError(
-                            f"{f.name!r} arg has sort {actual!r}, expected {expected!r}"
-                        )
-                continue
-            stack.extend(f._sort_check_step(sig, sc))
+            stack.extend(f._sort_check_step(sig, sc, meter))
 
     def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
-        """Check this formula's own equalities; return the `(subformula, scope)`
-        agenda. Each concrete formula overrides."""
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
+        """Check this formula's own terms; return the `(subformula, scope)` agenda.
+        Each concrete formula overrides."""
         raise TypeError(f"not a formula: {self!r}")
 
 
@@ -611,6 +581,17 @@ class Eq(Formula):
 
     def _repr_emit(self, out: list[str], stack: ReprStack) -> None:
         _emit_pieces(stack, [("emit", self.lhs), ("lit", " = "), ("emit", self.rhs)])
+
+    def _sort_check_step(
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
+        left_sort = self.lhs.sort_of(sig, scope, meter)
+        right_sort = self.rhs.sort_of(sig, scope, meter)
+        if left_sort != right_sort:
+            raise ValueError(
+                f"equality across sorts: {left_sort!r} = {right_sort!r} in {self!r}"
+            )
+        return ()
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
         return ((self.lhs, depth), (self.rhs, depth))
@@ -637,13 +618,27 @@ class Rel(Formula):
                 [("emit", self.args[0]), ("lit", " | "), ("emit", self.args[1])],
             )
             return
-        pieces: list[ReprItem] = [("lit", self.name), ("lit", "(")]
-        for k, arg in enumerate(self.args):
-            if k:
-                pieces.append(("lit", ", "))
-            pieces.append(("emit", arg))
-        pieces.append(("lit", ")"))
-        _emit_pieces(stack, pieces)
+        _emit_application(stack, self.name, self.args)
+
+    def _sort_check_step(
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
+        if meter is not None:
+            meter.consume("sort_steps")
+        arg_sorts = sig.relation(self.name)
+        if arg_sorts is None:
+            raise ValueError(f"undeclared relation {self.name!r}")
+        if len(self.args) != len(arg_sorts):
+            raise ValueError(
+                f"{self.name!r} expects {len(arg_sorts)} args, got {len(self.args)}"
+            )
+        for arg, expected in zip(self.args, arg_sorts, strict=True):
+            actual = arg.sort_of(sig, scope, meter)
+            if actual != expected:
+                raise ValueError(
+                    f"{self.name!r} arg has sort {actual!r}, expected {expected!r}"
+                )
+        return ()
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
         _check_str(self.name, "Rel.name")
@@ -666,10 +661,8 @@ class Implies(Formula):
         )
 
     def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
         return ((self.ant, scope), (self.con, scope))
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
@@ -686,10 +679,8 @@ class Bottom(Formula):
         out.append(self.symbol)
 
     def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
         return ()  # the formula constant carries no sort and no children
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
@@ -701,10 +692,12 @@ def Not(a: Formula) -> Formula:  # noqa: N802 -- reads as the logical connective
 
 
 # `Forall`/`Exists` override the scope-threaded operations that need the bound sort
-# -- `sort_check` (push the sort onto the scope) and `_validate` (raise the binder
-# depth). `abstract`/`instantiate` need no override: `_rebuild` raises the depth at
-# every binder generically. `free_vars`/`subst`/`free_var_sorts` are the generic
-# `Node` versions (a quantifier's only child node is `body`; the `sort` is a str).
+# -- `sort_check` (push the sort onto the scope) and `validation_children` (raise the
+# binder depth). `abstract`/`instantiate` need no override: `_rebuild` raises the
+# depth at every binder generically. `free_vars`/`subst`/`free_var_sorts` are the
+# generic `Node` versions (a quantifier's only child node is `body`; the `sort` is a
+# str). The two classes are twins on purpose: every concrete node is a direct
+# subclass of its `Term`/`Formula` marker, so they share no binder base.
 
 
 @dataclass(frozen=True, slots=True, eq=False, repr=False)
@@ -723,10 +716,8 @@ class Forall(Formula):
         _emit_pieces(stack, [("lit", head), ("emit", self.body), ("lit", ")")])
 
     def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
         return ((self.body, (self.sort, *scope)),)
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
@@ -748,10 +739,8 @@ class Exists(Formula):
         _emit_pieces(stack, [("lit", head), ("emit", self.body), ("lit", ")")])
 
     def _sort_check_step(
-        self,
-        sig: SignatureProtocol,
-        scope: Scope,
-    ) -> tuple[tuple[Formula, Scope], ...]:
+        self, sig: SignatureProtocol, scope: Scope, meter: WorkMeter | None
+    ) -> SortAgenda:
         return ((self.body, (self.sort, *scope)),)
 
     def validation_children(self, depth: int) -> tuple[tuple[Node, int], ...]:
@@ -802,11 +791,12 @@ def instantiate(
 # every value is a genuine canonical node: a hostile Term/str subclass can override
 # __eq__ to return True for unequal things and derive `1 = 0` from reflexivity
 # alone. So before trusting `==`, we verify EXACT types all the way down. The per-
-# node field checks are the polymorphic `_validate` methods above; this `validate`
-# is the GATE in front of them: it confirms `type(node)` is exactly a canonical
-# class before calling the method. That ordering is the whole security argument -- a
-# hostile subclass could override `_validate`, but it never runs, because its exact
-# type is absent from `CANONICAL_NODE_TYPES` and the gate rejects it first.
+# node field checks are the polymorphic `validation_children` methods above; this
+# `validate` is the GATE in front of them: it confirms `type(node)` is exactly a
+# canonical class before calling the method. That ordering is the whole security
+# argument -- a hostile subclass could override `validation_children`, but it never
+# runs, because its exact type is absent from `CANONICAL_NODE_TYPES` and the gate
+# rejects it first.
 
 
 def _check_str(s: object, what: str) -> None:
@@ -843,13 +833,14 @@ def validate(
 ) -> None:
     """Exact-type well-formedness for any term or formula. The trust gate: a
     hostile __eq__-overriding subclass is rejected because its exact type is not in
-    `CANONICAL_NODE_TYPES`, so its `_validate` never runs. `depth` counts enclosing binders; a
+    `CANONICAL_NODE_TYPES`, so its `validation_children` never runs. `depth` counts
+    enclosing binders; a
     BVar is well-formed only if its index is below it (local closure: no dangling
     bound variable).
 
     Iterative: the agenda of `(node, depth)` still to check is a heap list, so a
     term or formula nested thousands deep is validated without recursion. Each
-    node's `_validate` checks its own fields and returns its children's agenda; the
+    node's `validation_children` checks its own fields and returns its children's agenda; the
     gate re-confirms every node's exact type as it is popped, before trusting it."""
     stack: list[tuple[object, int]] = [(node, depth)]
     while stack:
