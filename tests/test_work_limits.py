@@ -288,6 +288,22 @@ def test_instantiate_charges_a_rebuild_only_for_a_bound_variable_it_replaces() -
     assert untouched.snapshot().syntax_rebuilds == 0
 
 
+def test_subst_and_abstract_charge_a_rebuild_only_for_a_variable_they_replace() -> None:
+    x, y = Var("x", "S"), Var("y", "S")
+
+    replaced = WorkMeter()
+    assert x.subst("x", y, replaced) == y
+    assert replaced.snapshot().syntax_rebuilds == 1
+
+    closed = WorkMeter()
+    assert x.abstract("x", 0, closed) == BVar(0)
+    assert closed.snapshot().syntax_rebuilds == 1
+
+    untouched = WorkMeter()
+    assert x.subst("z", y, untouched) is x
+    assert untouched.snapshot().syntax_rebuilds == 0
+
+
 def test_defaults_accept_every_registered_theory_certificate() -> None:
     for key, theory in THEORIES.items():
         proof = Axiom(next(iter(theory.axioms)))
